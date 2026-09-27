@@ -12,7 +12,6 @@ import * as sdk from "../../dist/node/index.js";
 import * as signerSdk from "../../dist/web/index.js";
 import { dist } from "../node/helpers.mjs";
 import { e2eEnvironment, writeArtifacts } from "./environment.mjs";
-import { openNode } from "./node-api.js";
 import { runScenario } from "./scenario.js";
 
 test("the devnet scenario in Node", { timeout: 40 * 60_000 }, async () => {
@@ -31,7 +30,7 @@ test("the devnet scenario in Node", { timeout: 40 * 60_000 }, async () => {
 
   const report = await runScenario({
     sdk,
-    node: openNode(environment.relay),
+    relay: environment.relay,
     label: "node",
     funderPassphrase: environment.funderPassphrase,
     maxHeight: environment.maxHeight,

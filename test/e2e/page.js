@@ -10,7 +10,6 @@
 
 import * as sdk from "/dist/web/index.js";
 
-import { openNode } from "./node-api.js";
 import { runScenario } from "./scenario.js";
 
 const params = new URLSearchParams(location.search);
@@ -56,7 +55,7 @@ async function main() {
   const probe = await worker({ probe: `${relay}/node/status` });
   const report = await runScenario({
     sdk,
-    node: openNode(relay),
+    relay,
     label: params.get("label"),
     funderPassphrase: params.get("funder"),
     maxHeight: Number(params.get("maxHeight")),

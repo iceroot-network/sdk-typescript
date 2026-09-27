@@ -15,12 +15,23 @@
 //
 // After each transaction: it is forged, the node's JSON is the signed JSON, the node's record
 // carries what was signed, balances and nonces change exactly as expected, and the fee is the
-// floor (computed from the fees the node's pool reports).
+// floor (computed here from the fees the node's pool reports, and by the SDK from the milestone).
 //
-// The node is reached through `node` (node-api.js today; the SDK's node client once it exists) and
-// the second instance through `signElsewhere`. Nothing here is specific to Node or to a browser.
+// The node is reached through the SDK's own client: `connect`, the builders of `net.build`, which
+// read each draft's nonce, height and second key from the node, `net.submit`,
+// `net.transactions.wait` and the reads. Only the node's raw JSON of a transaction, which the
+// client has no call for, is read through `nodeJson` (node-json.js). The second instance is
+// reached through `signElsewhere`. Nothing here is specific to Node or to a browser.
+
+import { nodeJson } from "./node-json.js";
 
 const ROOT = 100_000_000n;
+
+/**
+ * This run's share of the node's request allowance: the Node and Chromium runs go at the same
+ * time from one address, which the node allows 100 requests a minute.
+ */
+const RATE_LIMIT = { requests: 40, windowMs: 60_000 };
 
 class ScenarioError extends Error {}
 
@@ -65,34 +76,49 @@ function throwsCode(fn, code, what) {
   throw new ScenarioError(`${what}: expected ${code}, nothing was thrown`);
 }
 
+async function rejectsCode(promise, code, what) {
+  try {
+    await promise;
+  } catch (error) {
+    equal(error.code, code, what);
+    return error;
+  }
+  throw new ScenarioError(`${what}: expected ${code}, nothing was thrown`);
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Runs the scenario. `label` names the run in validator names and logs; `funderPassphrase` is the
- * passphrase of a genesis wallet; `maxHeight` is the last height the chain may reach.
- * `signElsewhere({ draft, profile, phrase, account, index })` signs serialized draft bytes in
- * another WebAssembly instance and resolves to `{ signed, lines }`: the signed transaction's
- * serialized bytes and the review lines that instance showed.
+ * Runs the scenario against the node at `relay` (its URL with the API base path). `label` names the
+ * run in validator names and logs; `funderPassphrase` is the passphrase of a genesis wallet;
+ * `maxHeight` is the last height the chain may reach. `signElsewhere({ draft, profile, phrase,
+ * account, index })` signs serialized draft bytes in another WebAssembly instance and resolves to
+ * `{ signed, lines }`: the signed transaction's serialized bytes and the review lines that instance
+ * showed.
  */
-export async function runScenario({ sdk, node, label, funderPassphrase, maxHeight, signElsewhere, log = () => {} }) {
+export async function runScenario({ sdk, relay, label, funderPassphrase, maxHeight, signElsewhere, log = () => {} }) {
   const transactions = [];
   let checks = 0;
   const step = (message) => log(`${label}: ${message}`);
+  const raw = nodeJson(relay);
 
   // ---- connect --------------------------------------------------------------------------------
-  const configuration = await node.node.configuration();
-  const crypto = await node.node.cryptoConfiguration();
-  const relayProfile = sdk.profiles.devnet({ relays: [node.relay] });
-  const chain = sdk.Chain.load(relayProfile, crypto);
-  const profile = chain.profile;
-  equal(profile.chain.nethash, chain.nethash, "the profile is pinned to the chain");
+  const options = { rateLimit: RATE_LIMIT };
+  const net = await sdk.connect(sdk.profiles.devnet({ relays: [relay] }), options);
+  const { chain, configuration, profile } = net;
+  equal(profile.chain.nethash, chain.nethash, "connecting pins the chain's network hash");
   equal(configuration.network.nethash, chain.nethash, "the node's configuration names the chain");
   equal(configuration.network.networkByte, chain.networkByte, "the network byte");
-  equal([chain.token.symbol.length > 0, chain.token.decimals], [true, 8], "the token");
-  check(chain.capabilities.has("transfer") && chain.capabilities.has("vote"), "transfers and votes are available");
-  check(!chain.capabilities.has("finality"), "this devnet has no finality");
-  const elsewhere = sdk.profiles.devnet({ relays: relayProfile.api.relays, nethash: "00".repeat(32) });
-  throwsCode(() => sdk.Chain.load(elsewhere, crypto), "NetworkMismatch", "a profile pinned to another chain");
+  equal([net.token.symbol.length > 0, net.token.decimals], [true, 8], "the token");
+  equal(net.stage, "s1", "the format stage");
+  check(net.capabilities.has("transfer") && net.capabilities.has("vote"), "transfers and votes are available");
+  check(!net.capabilities.has("finality"), "this devnet has no finality");
+  check(net.rules.fees.floorAvailable, "the SDK computes the exact fee floor");
+  const again = await sdk.connect(profile, options);
+  equal(again.chain.nethash, chain.nethash, "the pinned profile connects again");
+  const elsewhere = sdk.profiles.devnet({ relays: [relay], nethash: "00".repeat(32) });
+  await rejectsCode(sdk.connect(elsewhere, options), "NetworkMismatch", "a profile pinned to another chain");
+  await rejectsCode(net.transactions.wait("00".repeat(32), { until: "final" }), "UnsupportedOnNetwork", "waiting for finality");
   checks += 1;
 
   const fees = configuration.poolFees;
@@ -106,61 +132,73 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
     return (addon + BigInt(Math.ceil(size / 2))) * minFee;
   };
 
-  const status = () => node.node.status();
   const height = async () => {
-    const now = (await status()).height;
+    const now = (await net.node.status()).height;
     check(now <= BigInt(maxHeight), `the chain passed its last height ${maxHeight}`);
     return now;
   };
-  const account = (address) => node.accounts.get(String(address));
-  const balance = async (address) => (await account(address)).balances[0].amount;
+  const account = (address) => net.accounts.get(address);
+  const balance = async (address) => sdk.balanceOf(await account(address));
 
   // ---- accounts -------------------------------------------------------------------------------
-  const funder = sdk.Keys.fromLegacyPassphrase(funderPassphrase, profile);
+  const funder = net.keys.fromLegacyPassphrase(funderPassphrase);
   check(funder.legacy, "the genesis wallet is a legacy import");
   const phrase = sdk.Mnemonic.generate();
   const words = phrase.split(" ");
   equal(words.length, 24, "a new phrase has 24 words");
   check(sdk.Mnemonic.check(phrase).ok, "the new phrase checks");
-  const holder = sdk.Keys.fromPhrase(phrase, profile, { account: 0, index: 0 });
-  const payee = sdk.Keys.fromPhrase(phrase, profile, { account: 0, index: 1 });
+  const holder = net.keys.fromPhrase(phrase, { account: 0, index: 0 });
+  const payee = net.keys.fromPhrase(phrase, { account: 0, index: 1 });
   equal([holder.path, payee.path], ["m/44'/1'/0'/0'/0'", "m/44'/1'/0'/0'/1'"], "hardened derivation paths");
-  const restored = sdk.Keys.fromPhrase(`  ${words.join("\n").toUpperCase()} `, profile, { account: 0, index: 0 });
+  const restored = net.keys.fromPhrase(`  ${words.join("\n").toUpperCase()} `, { account: 0, index: 0 });
   equal(restored.address, holder.address, "the phrase restores the account");
   restored.release();
   equal((await account(holder.address)).nonce, 0n, "a new account has never sent anything");
   step(`funder ${funder.address}, new account ${holder.address}`);
 
   // ---- drafts, submission, read-back ----------------------------------------------------------
+  /** Builds `operation` with its own builder of `net.build`. */
+  function builder(operation, options) {
+    switch (operation.kind) {
+      case "transfer":
+        return net.build.transfer({ ...options, to: operation.to });
+      case "vote":
+        return net.build.vote({ ...options, entries: operation.entries });
+      case "burn":
+        return net.build.burn({ ...options, amount: operation.amount });
+      case "register-second-key":
+        return net.build.registerSecondKey({ ...options, secondKey: operation.publicKey });
+      case "register-validator":
+        return net.build.registerValidator({ ...options, name: operation.name });
+      case "resign-validator":
+        return net.build.resignValidator({ ...options, resignation: operation.resignation });
+      default:
+        return net.build.draft(operation, options);
+    }
+  }
+
   /**
-   * A draft of `operation` by `sender`, with the facts the node reports: the next nonce and height
-   * and the sender's second key. When this build computes the fee floor, the draft takes the
-   * default fee choice and must come out at the floor; until then the floor from the node's fees
-   * is given as an exact fee, `below` base units under it.
+   * A draft of `operation` by `sender`. The builder reads the facts from the node (the next nonce
+   * and height, and the sender's second key) and takes the default fee, which must be the floor.
+   * With `below`, the same transaction is built again with an exact fee that many base units under
+   * the floor.
    */
   async function build(operation, sender, { memo, below = 0n } = {}) {
-    const [now, info] = await Promise.all([height(), account(sender.address)]);
-    const facts = {
-      sender,
-      nonce: info.nonce + 1n,
-      height: Number(now + 1n),
-      ...(info.secondPublicKey === undefined ? {} : { secondKey: info.secondPublicKey }),
-    };
-    const request = (fee) => ({ operation, ...(memo === undefined ? {} : { memo }), fee });
-    if (chain.rules(facts.height).fees.floorAvailable) {
-      const draft = sdk.Draft.build(chain, request("minimum"), facts);
-      equal(draft.summary.fee.source, "floor", "the default fee's source");
-      equal(draft.fee, nodeFloor(draft.kind, draft.size), `the ${draft.kind} fee is the floor`);
-      if (below === 0n) {
-        return draft;
-      }
+    await height();
+    const options = { from: sender, ...(memo === undefined ? {} : { memo }) };
+    const draft = await builder(operation, options);
+    const info = await account(sender.address);
+    equal([draft.nonce, draft.summary.from], [info.nonce + 1n, sender.address], `the ${draft.kind} draft's nonce and sender`);
+    equal(draft.summary.secondSignature, info.secondPublicKey !== undefined, "the draft knows the sender's second key");
+    equal(draft.summary.fee.source, "floor", "the default fee's source");
+    equal(draft.fee, nodeFloor(draft.kind, draft.size), `the ${draft.kind} fee is the floor`);
+    if (below === 0n) {
+      return draft;
     }
-    const probe = sdk.Draft.build(chain, request(1n), facts);
-    const floor = nodeFloor(probe.kind, probe.size);
-    const draft = sdk.Draft.build(chain, request(floor - below), facts);
-    equal(draft.size, probe.size, "the size does not depend on the fee");
-    equal(draft.fee, floor - below, "the fee");
-    return draft;
+    const low = await builder(operation, { ...options, fee: draft.fee - below });
+    equal(low.size, draft.size, "the size does not depend on the fee");
+    equal([low.fee, low.summary.fee.source], [draft.fee - below, "explicit"], "the exact fee");
+    return low;
   }
 
   /** The node's record and JSON of a signed transaction match it. */
@@ -198,7 +236,7 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
         break;
     }
     // The node's own JSON is the signed JSON, plus where the node put it.
-    const json = { ...(await node.transactions.json(signed.id)) };
+    const json = { ...(await raw.transaction(signed.id)) };
     for (const key of ["blockId", "blockHeight", "sequence", "burnedFee"]) {
       delete json[key];
     }
@@ -212,12 +250,13 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
 
   /** Submits a signed transaction, waits until it is forged and checks what the node reports. */
   async function submit(signed) {
-    const report = await node.submit(signed);
-    equal(report.outcomes.length, 1, "one outcome");
-    const [{ id, outcome }] = report.outcomes;
-    equal(id, signed.id, "the outcome's id");
+    const outcome = await net.submit(signed);
+    equal(outcome.id, signed.id, "the outcome's id");
     check(outcome.status === "accepted", `${signed.summary.kind} ${signed.id} refused: ${text(outcome)}`);
-    const record = await node.transactions.wait(signed.id, { until: "confirmed" });
+    const waited = await net.transactions.wait(signed.id, { until: "confirmed", timeoutMs: 120_000 });
+    equal([waited.state, waited.id], ["confirmed", signed.id], `the wait for ${signed.id}`);
+    const record = waited.record;
+    check(waited.confirmations >= 1n && record.block !== undefined, "the transaction is in a block");
     await checkForged(signed, record);
     transactions.push({ id: signed.id, sender: signed.summary.from, nonce: String(signed.summary.nonce), kind: signed.summary.kind });
     step(`${signed.summary.kind} ${signed.id} forged at height ${record.block.height}, fee ${signed.summary.fee}`);
@@ -233,9 +272,8 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
 
   /** Submits a transaction the node must refuse: the outcome. */
   async function refused(signed, what) {
-    const report = await node.submit(signed);
-    const [{ outcome }] = report.outcomes;
-    equal(outcome.status, "rejected", what);
+    const outcome = await net.submit(signed);
+    equal([outcome.id, outcome.status], [signed.id, "rejected"], what);
     step(`${what}: refused, ${outcome.nodeCode} (${outcome.reason}): ${outcome.message}`);
     checks += 1;
     return outcome;
@@ -252,7 +290,7 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
   const { signed: funded } = await send(funding, funder);
   const funderAfter = await account(funder.address);
   equal(funderAfter.nonce, funderBefore.nonce + 1n, "the funder's nonce");
-  equal(funderAfter.balances[0].amount, funderBefore.balances[0].amount - 1_001n * ROOT - funded.summary.fee, "the funder's balance");
+  equal(sdk.balanceOf(funderAfter), sdk.balanceOf(funderBefore) - 1_001n * ROOT - funded.summary.fee, "the funder's balance");
   let holderBalance = 1_000n * ROOT;
   let payeeBalance = ROOT;
   equal(await balance(holder.address), holderBalance, "the new account's balance");
@@ -264,7 +302,7 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
     nonce += 1n;
     holderBalance -= spent;
     const info = await account(holder.address);
-    equal([info.nonce, info.balances[0].amount], [nonce, holderBalance], `the new account after ${what}`);
+    equal([info.nonce, sdk.balanceOf(info)], [nonce, holderBalance], `the new account after ${what}`);
     return info;
   }
 
@@ -281,7 +319,10 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
   ({ signed, record } = await send(draft, holder));
   const resignedAt = record.block.height;
   await holderAfter(signed.summary.fee, "the resignation");
-  equal((await node.validators.get(name)).status, "resigned-temporary", "the validator resigned");
+  equal((await net.validators.get(name))?.status, "resigned-temporary", "the validator resigned");
+  const resolved = await net.names.resolve(name);
+  equal([resolved?.name, resolved?.address, resolved?.publicKey], [name, holder.address, holder.publicKey], "the name resolves to the account");
+  equal(await net.names.resolve(`nobody_${label}`), null, "a name nobody registered");
 
   const revokeWait = chain.rules(Number(resignedAt) + 1).resignation.blocksBeforeRevoke;
   check(typeof revokeWait === "number" && revokeWait > 0, "a revoke waits some blocks");
@@ -301,10 +342,11 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
   payeeBalance += 150_000_000n;
   equal(await balance(payee.address), payeeBalance, "the second address's balance");
 
-  const rules = chain.rules(Number(await height()) + 1);
+  await height();
+  const rules = net.rules;
   equal(rules.transfer.maxRecipients, 256, "recipients per transfer");
   const recipients = Array.from({ length: 256 }, (_, i) => {
-    const key = sdk.Keys.fromLegacyPassphrase(`sdk e2e ${label} ${phrase.slice(0, 8)} recipient ${i}`, profile);
+    const key = net.keys.fromLegacyPassphrase(`sdk e2e ${label} ${phrase.slice(0, 8)} recipient ${i}`);
     key.release();
     return { address: key.address, amount: BigInt(i + 1) };
   });
@@ -336,7 +378,7 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
   await holderAfter(minBurn + signed.summary.fee, "the burn");
 
   // ---- a second key, and a transfer it co-signs -----------------------------------------------
-  const secondKey = sdk.Keys.fromPhrase(phrase, profile, { account: 1, index: 0 });
+  const secondKey = net.keys.fromPhrase(phrase, { account: 1, index: 0 });
   draft = await build({ kind: "register-second-key", publicKey: secondKey.publicKey }, holder);
   ({ signed } = await send(draft, holder));
   equal((await holderAfter(signed.summary.fee, "the second key")).secondPublicKey, secondKey.publicKey, "the second key");
@@ -356,12 +398,31 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
   equal([low.reason, low.nodeCode], ["low-fee", "ERR_LOW_FEE"], "the refusal of a fee below the floor");
   equal((await account(holder.address)).nonce, nonce, "a refused transaction leaves the nonce");
 
+  // ---- reads of what the account did --------------------------------------------------------
+  const sent = await net.history.forAccount(holder.address, { direction: "sent", limit: 50 });
+  const sentIds = new Set(sent.items.map((record) => record.id));
+  check(
+    transactions.filter((tx) => tx.sender === holder.address).every((tx) => sentIds.has(tx.id)),
+    "the account's history holds every transaction it sent",
+  );
+  const received = await net.history.forAccount(holder.address, { direction: "received" });
+  check(received.items.some((record) => record.id === funded.id), "the account's history holds its funding");
+  const fundingRecord = await net.transactions.get(funded.id);
+  const fundingBlock = await net.blocks.get(fundingRecord.block.height);
+  equal([fundingBlock?.id, fundingBlock?.height], [fundingRecord.block.id, fundingRecord.block.height], "the funding's block by height");
+  check((await net.blocks.latest()).height >= fundingBlock.height, "the latest block is at or above it");
+  const inBlock = await net.blocks.transactions(fundingRecord.block.id);
+  check(inBlock.items.some((record) => record.id === funded.id), "the block's transactions hold the funding");
+  const supply = await net.economics.supply();
+  check(supply.supply > 0n && supply.height > 0n, "the supply the node reports");
+  checks += 1;
+
   // ---- a vote for 20 validators, and its withdrawal -------------------------------------------
   // The node takes votes only for validators that operate a node; they announce it as the chain
   // runs, at the latest in the second round.
   let operating = [];
   for (let attempt = 0; ; attempt++) {
-    operating = (await node.validators.list()).filter((v) => v.status === "active" && v.version !== undefined).map((v) => v.name);
+    operating = (await net.validators.list()).items.filter((v) => v.status === "active" && v.version !== undefined).map((v) => v.name);
     if (operating.length >= 20) {
       break;
     }
@@ -386,7 +447,7 @@ export async function runScenario({ sdk, node, label, funderPassphrase, maxHeigh
 
   // ---- a signed message, which the Rust SDK checks too ----------------------------------------
   const message = `IceRoot SDK end-to-end ${label}: ${holder.address} at ${new Date().toISOString()}`;
-  const signature = sdk.Messages.sign(holder, message);
+  const signature = net.messages.sign(holder, message);
   check(sdk.Messages.verify({ ...signature, message }, profile), "the message verifies");
   check(!sdk.Messages.verify({ ...signature, message: `${message}.` }, profile), "a changed message does not verify");
   checks += 1;
