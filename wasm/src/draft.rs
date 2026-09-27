@@ -4,6 +4,7 @@
 //! of the milestone in force, and signed as a separate step. Drafts and signed transactions
 //! serialize to bytes, so a draft can be built where the network is and signed where the key is.
 
+use iceroot_sdk::api::{AccountInfo, NodeStatus, SubmitTx};
 use iceroot_sdk::fee::{FeeChoice, FeeFigures, FeeStatistics, ResolvedFee};
 use iceroot_sdk::transaction::{
     DraftRequest, Operation, OperationKind, Recipient, Resignation, VoteEntry,
@@ -253,6 +254,69 @@ impl SignedHandle {
     }
 }
 
+impl SignedHandle {
+    /// The transaction as a submission takes it.
+    pub(crate) fn to_submit(&self) -> Result<SubmitTx> {
+        Ok(self.signed.to_submit()?)
+    }
+}
+
+/// The facts of a draft by `sender` (a public key as hex) on `chain`, from what the node reported:
+/// the sender's account (as [`crate::api::ApiCall::decode`] writes it; `undefined` when the node
+/// does not know the address yet) and the node's status (likewise). Returns the facts
+/// [`DraftHandle::build`] takes, in JSON: `{ sender, nonce, height, secondKey }`, the nonce being
+/// the account's plus one and the height the next block's.
+///
+/// The account must be the sender's (the same address, and the same public key when the node
+/// knows one), else the draft would take another account's nonce: that is refused with
+/// `WrongKey`.
+#[wasm_bindgen(js_name = onlineFacts)]
+pub fn online_facts(
+    chain: &ChainHandle,
+    sender: &str,
+    account: Option<String>,
+    status: &str,
+) -> Result<String> {
+    let sender = PublicKey::from_hex(sender)
+        .map_err(|_| BindingError::new("InvalidPublicKey", "the sender is not a public key"))?;
+    let account = account.map(|text| read_account(&text)).transpose()?;
+    let status = json::parse_object(status, "the node status")?;
+    let status = NodeStatus {
+        height: json::decimal_u64(&status, "height")?,
+        synced: status
+            .get("synced")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
+        blocks_behind: 0,
+        chain_time: 0,
+    };
+    let facts = OnlineFacts::from_node(chain.chain(), &sender, account.as_ref(), &status)?;
+    Ok(json!({
+        "sender": facts.sender.to_hex(),
+        "nonce": facts.nonce.to_string(),
+        "height": facts.height,
+        "secondKey": facts.second_key.as_ref().map(PublicKey::to_hex),
+    })
+    .to_string())
+}
+
+/// The parts of an account (in the client's JSON form) that a draft's facts depend on.
+fn read_account(text: &str) -> Result<AccountInfo> {
+    let account = json::parse_object(text, "the account")?;
+    let text = |key: &str| -> Result<Option<String>> {
+        Ok(json::optional_string(&account, key)?.map(str::to_owned))
+    };
+    Ok(AccountInfo {
+        address: json::string(&account, "address")?.to_owned(),
+        public_key: text("publicKey")?,
+        nonce: json::decimal_u64(&account, "nonce")?,
+        balances: Vec::new(),
+        vote: Vec::new(),
+        second_public_key: text("secondPublicKey")?,
+        validator_name: None,
+    })
+}
+
 fn read_request(object: &Map<String, Value>) -> Result<DraftRequest> {
     let operation = read_operation(json::object(
         json::member(object, "operation")?,
@@ -448,6 +512,55 @@ mod tests {
             "height": 2,
         })
         .to_string()
+    }
+
+    #[test]
+    fn facts_from_what_the_node_reported() {
+        let chain = devnet();
+        let key = KeyHandle::from_legacy_passphrase(&profile(), "sender".to_owned()).unwrap();
+        let sender = hex::encode(key.public_key().unwrap());
+        let address = key.address().unwrap();
+        let status = r#"{"height":"80","synced":true,"blocksBehind":"0","chainTime":"656"}"#;
+        let second = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+        let account = json!({
+            "address": address, "publicKey": sender, "nonce": "4",
+            "balances": [{ "asset": "ROOT", "amount": "1" }], "vote": [], "secondPublicKey": second,
+        })
+        .to_string();
+        let facts: Value =
+            serde_json::from_str(&online_facts(&chain, &sender, Some(account), status).unwrap())
+                .unwrap();
+        assert_eq!(
+            facts,
+            json!({ "sender": sender, "nonce": "5", "height": 81, "secondKey": second })
+        );
+        let fresh: Value =
+            serde_json::from_str(&online_facts(&chain, &sender, None, status).unwrap()).unwrap();
+        assert_eq!(
+            (fresh["nonce"].as_str(), fresh["secondKey"].is_null()),
+            (Some("1"), true)
+        );
+
+        let stranger = json!({ "address": RECIPIENT, "nonce": "1", "balances": [], "vote": [] });
+        assert_eq!(
+            online_facts(&chain, &sender, Some(stranger.to_string()), status)
+                .unwrap_err()
+                .code(),
+            "WrongKey"
+        );
+        assert_eq!(
+            online_facts(&chain, "02zz", None, status)
+                .unwrap_err()
+                .code(),
+            "InvalidPublicKey"
+        );
+        for bad in ["{}", r#"{"height":80}"#, "["] {
+            assert_eq!(
+                online_facts(&chain, &sender, None, bad).unwrap_err().code(),
+                "InvalidArgument",
+                "{bad}"
+            );
+        }
     }
 
     #[test]

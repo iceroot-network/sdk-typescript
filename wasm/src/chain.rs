@@ -1,10 +1,12 @@
 //! A network's loaded configuration: the chain a profile is bound to, its rules and economics.
 
-use iceroot_sdk::Chain;
+use iceroot_sdk::api::SolarCompat;
 use iceroot_sdk::rules::Rules;
+use iceroot_sdk::{Chain, Error};
 use serde_json::{Map, Value, json};
 use wasm_bindgen::prelude::wasm_bindgen;
 
+use crate::api::{response, to_text};
 use crate::error::Result;
 use crate::json::amount_value;
 use crate::profile::ProfileHandle;
@@ -27,6 +29,42 @@ impl ChainHandle {
         Ok(ChainHandle {
             chain: Chain::load(profile.profile(), configuration)?,
         })
+    }
+
+    /// The chain a node serves, for `profile`, from the node's answer to the `cryptoConfiguration`
+    /// call of [`crate::api::ApiCall`]: its HTTP status, headers (as [`crate::api::ApiCall::decode`]
+    /// takes them) and body. The network and milestones are loaded and checked as
+    /// [`ChainHandle::load`] does, and the genesis block's payload hash must be the network hash.
+    #[wasm_bindgen(js_name = fromNode)]
+    pub fn from_node(
+        profile: &ProfileHandle,
+        status: u16,
+        headers: &str,
+        body: &[u8],
+    ) -> Result<ChainHandle> {
+        let response = response(status, headers, body)?;
+        let configuration = SolarCompat::new(0)
+            .crypto_configuration()
+            .decode(&response)
+            .map_err(Error::from)?;
+        Ok(ChainHandle {
+            chain: Chain::from_node(profile.profile(), &configuration)?,
+        })
+    }
+
+    /// Decodes the node's answer to the `nodeConfiguration` call of [`crate::api::ApiCall`] and
+    /// refuses a node of another chain than this one: another network hash or address network
+    /// byte gives `NetworkMismatch`. Returns the configuration in JSON, as
+    /// [`crate::api::ApiCall::decode`] does.
+    #[wasm_bindgen(js_name = checkNode)]
+    pub fn check_node(&self, status: u16, headers: &str, body: &[u8]) -> Result<String> {
+        let response = response(status, headers, body)?;
+        let configuration = SolarCompat::new(0)
+            .node_configuration()
+            .decode(&response)
+            .map_err(Error::from)?;
+        self.chain.check_node(&configuration)?;
+        to_text(&configuration)
     }
 
     /// The profile, with the network hash pinned.
@@ -193,6 +231,59 @@ pub(crate) mod tests {
         .unwrap();
         assert_eq!(
             ChainHandle::load(&other, CONFIGURATION).unwrap_err().code(),
+            "NetworkMismatch"
+        );
+    }
+
+    #[test]
+    fn from_the_node_client() {
+        let mut data: Value = serde_json::from_str(CONFIGURATION).unwrap();
+        let nethash = data["network"]["nethash"].clone();
+        data["genesisBlock"] = json!({ "height": 1, "payloadHash": nethash });
+        let body = json!({ "data": data }).to_string();
+        let profile = ProfileHandle::from_json(
+            r#"{"id":"devnet","backend":"solar-compat","api":{"relays":["http://127.0.0.1:4003/api"]},"chain":{"networkByte":90},"keyScheme":"bip32-secp256k1"}"#,
+        )
+        .unwrap();
+        let chain = ChainHandle::from_node(&profile, 200, "[]", body.as_bytes()).unwrap();
+        assert_eq!(chain.nethash(), devnet().nethash());
+        assert_eq!(
+            ChainHandle::from_node(&profile, 200, "", b"{}")
+                .unwrap_err()
+                .code(),
+            "BadResponse"
+        );
+        assert_eq!(
+            ChainHandle::from_node(&profile, 503, "", b"{}")
+                .unwrap_err()
+                .code(),
+            "Refused"
+        );
+
+        let node = |nethash: &str| {
+            json!({ "data": {
+                "core": { "version": "4.3.1" }, "nethash": nethash, "slip44": 1, "wif": 252,
+                "token": "dROOT", "symbol": "dRT", "explorer": "", "version": 90,
+                "constants": { "activeDelegates": 53, "blockTime": 8 },
+                "pool": { "maxTransactionsInPool": 15000, "maxTransactionsPerSender": 150,
+                          "maxTransactionsPerRequest": 40, "maxTransactionAge": 2700,
+                          "maxTransactionBytes": 2000000 }
+            } })
+            .to_string()
+        };
+        let configuration: Value = serde_json::from_str(
+            &chain
+                .check_node(200, "", node(&chain.nethash()).as_bytes())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(configuration["pool"]["maxTransactionsPerRequest"], 40);
+        assert_eq!(configuration["seats"], 53);
+        assert_eq!(
+            chain
+                .check_node(200, "", node(&"ab".repeat(32)).as_bytes())
+                .unwrap_err()
+                .code(),
             "NetworkMismatch"
         );
     }

@@ -24,8 +24,10 @@ fixed-aux = ["iceroot-sdk/fixed-aux"]
 # The SDK's Rust core. Every key, address, signature and transaction comes from it, and through it
 # from heartwood-crypto. Until sdk-rust has a tagged release, the bindings build against a checkout
 # of sdk-rust next to this repository.
-iceroot-sdk = { path = "../../sdk-rust/crates/iceroot-sdk" }
+iceroot-sdk = { path = "../../sdk-rust/crates/iceroot-sdk", features = ["serde"] }
 js-sys = "0.3"
+# The `Serialize` trait of the node API client's answers, which the bindings write as JSON.
+serde = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.11"
 wasm-bindgen = "=0.2.129"

@@ -243,6 +243,7 @@ dependencies = [
  "iceroot-sdk",
  "js-sys",
  "secp256k1",
+ "serde",
  "serde_json",
  "sha2",
  "wasm-bindgen",
