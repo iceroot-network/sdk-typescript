@@ -1,0 +1,23 @@
+// Shared by the Node tests: the vectors, the checker and the build directories.
+
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import "../shared/vector-checks.js";
+
+export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+export const dist = join(root, "dist");
+export const testDist = join(root, "build", "test", "dist");
+export const vectors = JSON.parse(readFileSync(join(root, "test", "vectors", "wasm-native.json"), "utf8"));
+export const checks = globalThis.IceRootVectorChecks;
+
+/** Fails the test with the report's failures when the checks did not all pass. */
+export function assertReport(assert, report, { fixedAux }) {
+  assert.equal(report.failures.length, 0, JSON.stringify(report.failures.slice(0, 5), null, 2));
+  assert.ok(report.ok);
+  const signatures = vectors.keys.reduce((sum, key) => sum + key.signatures.length, 0);
+  assert.equal(report.verifiedSignatures, signatures);
+  assert.equal(report.freshSignatures, signatures);
+  assert.equal(report.fixedAuxSignatures, fixedAux ? signatures : 0);
+}

@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "IceRoot SDK proof of concept",
+  "version": "0.1.0",
+  "description": "Loads the IceRoot SDK in a wallet page, a sandbox page and the service worker.",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "sandbox": {
+    "pages": ["sandbox.html"]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; frame-src 'self'",
+    "sandbox": "sandbox allow-scripts; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; connect-src 'none'; default-src 'none'"
+  },
+  "minimum_chrome_version": "120"
+}
