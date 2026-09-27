@@ -18,6 +18,12 @@ export type ChainHandle = Glue.ChainHandle;
 export type DraftHandle = Glue.DraftHandle;
 /** A signed transaction of the Rust core. */
 export type SignedHandle = Glue.SignedHandle;
+/** A prepared call of the node API client. */
+export type ApiCall = Glue.ApiCall;
+/** A submission planned within the pool's limits. */
+export type SubmitPlanHandle = Glue.SubmitPlanHandle;
+/** The node's request allowance. */
+export type RequestBudgetHandle = Glue.RequestBudgetHandle;
 
 let current: Bindings | undefined;
 
