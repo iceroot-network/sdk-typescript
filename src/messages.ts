@@ -9,9 +9,9 @@
  */
 
 import { keyHandleOf, type Account } from "./keys.js";
-import { call } from "./internal/bindings.js";
-import { fromHex, messageBytes, toHex } from "./internal/hex.js";
-import { networkByteOf, profileOf, type NetworkProfile, type ProfileSource } from "./profiles.js";
+import { call, parse } from "./internal/bindings.js";
+import { messageBytes } from "./internal/hex.js";
+import { profileHandleOf, type ProfileSource } from "./profiles.js";
 import type { Hex, MessageAlgorithm } from "./types.js";
 
 /** A signed message, in the shape the wallets and the validator portal exchange. */
@@ -40,45 +40,43 @@ export interface SignedMessage {
   readonly network: string;
 }
 
-const S1_ALGORITHM: MessageAlgorithm = "secp256k1-bip340-sha256";
+/** The network name of message signatures on the network of `source`, such as `heartwood-devnet-v90`. */
+export function messageNetworkOf(source: ProfileSource): string {
+  return call(() => profileHandleOf(source).messageNetwork());
+}
 
-/** The network name of message signatures on `profile`, such as `heartwood-devnet-v90`. */
-export function messageNetworkOf(profile: NetworkProfile): string {
-  return `heartwood-${profile.id}-v${networkByteOf(profile, "message-signing")}`;
+/** The algorithm of message signatures on the network of `source`, such as `secp256k1-bip340-sha256`. */
+export function messageAlgorithmOf(source: ProfileSource): MessageAlgorithm {
+  return call(() => profileHandleOf(source).messageAlgorithm()) as MessageAlgorithm;
 }
 
 /** Signing and verifying messages. */
 export const Messages = {
   /** Signs `message` (text is signed as its UTF-8 bytes) with the key of `account`. */
   sign(account: Account, message: string | Uint8Array): MessageSignature {
-    const network = messageNetworkOf(account.profile);
     const handle = keyHandleOf(account);
-    const signature = call(() => handle.signMessage(messageBytes(message)));
-    return {
-      publicKey: account.publicKey,
-      signature: toHex(signature),
-      algorithm: S1_ALGORITHM,
-      network,
-    };
+    return Object.freeze(parse<MessageSignature>(call(() => handle.signMessage(messageBytes(message)))));
   },
 
   /**
    * Whether `signed` is a valid signature. Returns false, never throws, for a malformed key or
-   * signature or an unknown algorithm. With `source`, the signature must also name that
-   * profile's network.
+   * signature or an unknown algorithm; the public key must be a valid key. With `source`, the
+   * signature must also name that profile's network.
    */
   verify(signed: SignedMessage, source?: ProfileSource): boolean {
-    if (signed.algorithm !== S1_ALGORITHM) {
-      return false;
+    if (source !== undefined) {
+      let network: string;
+      try {
+        network = messageNetworkOf(source);
+      } catch {
+        return false;
+      }
+      if (signed.network !== network) {
+        return false;
+      }
     }
-    if (source !== undefined && signed.network !== messageNetworkOf(profileOf(source))) {
-      return false;
-    }
-    const publicKey = fromHex(signed.publicKey);
-    const signature = fromHex(signed.signature);
-    if (publicKey === undefined || signature === undefined) {
-      return false;
-    }
-    return call((module) => module.verifyMessage(messageBytes(signed.message), publicKey, signature));
+    return call((module) =>
+      module.verifyMessage(messageBytes(signed.message), signed.publicKey, signed.signature, signed.algorithm),
+    );
   },
 } as const;

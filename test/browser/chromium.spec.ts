@@ -4,6 +4,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { serve } from "./static-server.mjs";
 
+const vectors = (await import("../vectors/wasm-native.json", { with: { type: "json" } })).default;
+const transactions = vectors.transactions.cases.length;
+
 const ROOT = new URL("../..", import.meta.url).pathname;
 let server: { url: string; close: () => Promise<void> };
 
@@ -32,6 +35,9 @@ test("the published browser build matches native Rust", async ({ page }) => {
   expect(result["ok"]).toBe(true);
   expect(result["hasFixedAux"]).toBe(false);
   expect(result["verifiedSignatures"]).toBe(25);
+  expect(result["verifiedTransactions"]).toBe(transactions);
+  expect(result["freshTransactions"]).toBe(transactions);
+  expect(result["fixedAuxTransactions"]).toBe(0);
 });
 
 test("the test browser build signs byte for byte as native Rust", async ({ page }) => {
@@ -39,6 +45,7 @@ test("the test browser build signs byte for byte as native Rust", async ({ page 
   expect(result["failures"]).toEqual([]);
   expect(result["ok"]).toBe(true);
   expect(result["fixedAuxSignatures"]).toBe(25);
+  expect(result["fixedAuxTransactions"]).toBe(transactions);
 });
 
 test("without 'wasm-unsafe-eval' init() fails with WasmLoadFailed", async ({ page }) => {

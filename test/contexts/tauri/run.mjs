@@ -21,6 +21,7 @@ const image = "iceroot-sdk-tauri-check:1";
 const docker = (process.env.DOCKER ?? "docker").split(" ");
 const vectors = JSON.parse(readFileSync(join(root, "test", "vectors", "wasm-native.json"), "utf8"));
 const signatures = vectors.keys.reduce((sum, key) => sum + key.signatures.length, 0);
+const transactions = vectors.transactions.cases.length;
 
 function sh(args, options = {}) {
   const [command, ...rest] = [...docker, ...args];
@@ -116,7 +117,13 @@ for (const [name, fixedAux] of [["published", 0], ["test", signatures]]) {
   const report = documented[name];
   if (report?.ok !== true || report.failures.length !== 0) {
     problems.push(`${name}: ${JSON.stringify(report ?? documented)}`);
-  } else if (report.verifiedSignatures !== signatures || report.fixedAuxSignatures !== fixedAux) {
+  } else if (
+    report.verifiedSignatures !== signatures ||
+    report.fixedAuxSignatures !== fixedAux ||
+    report.verifiedTransactions !== transactions ||
+    report.freshTransactions !== transactions ||
+    report.fixedAuxTransactions !== (fixedAux === 0 ? 0 : transactions)
+  ) {
     problems.push(`${name}: unexpected counts ${JSON.stringify(report)}`);
   }
   if (withoutWasmEval[name]?.loadError !== "WasmLoadFailed") {
@@ -124,7 +131,10 @@ for (const [name, fixedAux] of [["published", 0], ["test", signatures]]) {
   }
 }
 console.log(`webview: ${documented.userAgent}`);
-console.log(`published build: ${documented.published?.checks} checks; test build: ${documented.test?.checks} checks, ${documented.test?.fixedAuxSignatures} signatures byte for byte`);
+console.log(
+  `published build: ${documented.published?.checks} checks; test build: ${documented.test?.checks} checks, ` +
+    `${documented.test?.fixedAuxSignatures} signatures and ${documented.test?.fixedAuxTransactions} transactions byte for byte`,
+);
 console.log(`without 'wasm-unsafe-eval': ${withoutWasmEval.published?.loadError}, ${withoutWasmEval.test?.loadError}`);
 if (problems.length > 0) {
   console.error(problems.join("\n"));

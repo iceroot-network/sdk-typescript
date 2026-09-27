@@ -11,7 +11,7 @@
 import { InvalidAddress, InvalidPublicKey, type AddressProblem } from "./errors.js";
 import { call } from "./internal/bindings.js";
 import { fromHex, toHex } from "./internal/hex.js";
-import { networkByteOf, profileOf, type ProfileSource } from "./profiles.js";
+import { profileHandleOf, type ProfileSource } from "./profiles.js";
 import type { Hex } from "./types.js";
 
 /** The result of {@link Address.check}, for feedback in a form. */
@@ -36,8 +36,8 @@ export class Address {
 
   /** The address in `text`, which must belong to the network of `source`. */
   static parse(text: string, source: ProfileSource): Address {
-    const networkByte = networkByteOf(profileOf(source), "addresses");
-    const bytes = call((module) => module.parseAddress(text, networkByte));
+    const profile = profileHandleOf(source);
+    const bytes = call((module) => module.parseAddress(text, profile));
     return new Address(text, bytes);
   }
 
@@ -58,13 +58,13 @@ export class Address {
 
   /** The address of a public key (33 or 65 bytes, or their hex) on the network of `source`. */
   static fromPublicKey(publicKey: Hex | Uint8Array, source: ProfileSource): Address {
-    const networkByte = networkByteOf(profileOf(source), "addresses");
+    const profile = profileHandleOf(source);
     const bytes = typeof publicKey === "string" ? fromHex(publicKey) : publicKey;
     if (bytes === undefined) {
       throw new InvalidPublicKey("the public key is not hex");
     }
-    const text = call((module) => module.addressFromPublicKey(bytes, networkByte));
-    return new Address(text, call((module) => module.parseAddress(text, networkByte)));
+    const text = call((module) => module.addressFromPublicKey(bytes, profile));
+    return new Address(text, call((module) => module.parseAddress(text, profile)));
   }
 
   /** The network byte. */

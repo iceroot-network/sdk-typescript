@@ -3,12 +3,15 @@
  *
  * A profile binds the SDK to one chain. Addresses are always parsed against a profile, keys are
  * derived with the profile's scheme, and a node that reports another chain identity is refused.
+ * A profile is a plain, frozen object, so it can be stored, compared and passed to another context
+ * with `postMessage`.
  *
  * @module
  */
 
-import { InvalidProfile, UnsupportedOnNetwork } from "./errors.js";
-import type { Backend, KeyScheme } from "./types.js";
+import { InvalidProfile } from "./errors.js";
+import { call, type ProfileHandle } from "./internal/bindings.js";
+import type { Backend, Capability, KeyScheme } from "./types.js";
 
 /** The relays and, from the ID stage, the indexer of a network. */
 export interface ApiEndpoints {
@@ -48,7 +51,7 @@ export interface NetworkProfile {
   readonly coinType?: number;
 }
 
-/** A profile, or an object that carries one (such as a connected network). */
+/** A profile, or an object that carries one (such as a loaded chain or a connected network). */
 export type ProfileSource = NetworkProfile | { readonly profile: NetworkProfile };
 
 /** Options of {@link profiles.devnet}. */
@@ -59,6 +62,14 @@ export interface DevnetOptions {
   readonly nethash?: string;
   /** The address network byte; 90 unless the devnet was generated with another. */
   readonly networkByte?: number;
+}
+
+/** The capabilities of a profile. */
+export interface Capabilities {
+  /** Whether the network offers `capability`. */
+  has(capability: Capability): boolean;
+  /** Every capability the network offers. */
+  list(): readonly Capability[];
 }
 
 /** The address network byte of the S1 devnets. */
@@ -99,6 +110,15 @@ function checkNethash(nethash: string): string {
   return nethash;
 }
 
+/** A deeply frozen copy of `profile`. */
+function freeze(profile: NetworkProfile): NetworkProfile {
+  return Object.freeze({
+    ...profile,
+    api: Object.freeze({ ...profile.api, relays: Object.freeze([...profile.api.relays]) }),
+    chain: Object.freeze({ ...profile.chain }),
+  });
+}
+
 /** The built-in profiles. */
 export const profiles = {
   /**
@@ -110,11 +130,11 @@ export const profiles = {
       networkByte: checkNetworkByte(options.networkByte ?? DEVNET_NETWORK_BYTE),
       ...(options.nethash === undefined ? {} : { nethash: checkNethash(options.nethash) }),
     };
-    return Object.freeze({
+    return freeze({
       id: "devnet",
       backend: "solar-compat",
-      api: Object.freeze({ relays: Object.freeze(checkRelays(options.relays)) }),
-      chain: Object.freeze(chain),
+      api: { relays: checkRelays(options.relays) },
+      chain,
       keyScheme: "bip32-secp256k1",
       coinType: 1,
     });
@@ -126,18 +146,45 @@ export function profileOf(source: ProfileSource): NetworkProfile {
   return "profile" in source ? source.profile : source;
 }
 
+// The Rust profile of each frozen profile object. A frozen object cannot change, so its profile is
+// read once; any other object is read again on every call.
+const handles = new WeakMap<NetworkProfile, ProfileHandle>();
+
 /**
- * The network byte of a profile with the Solar-compatible formats.
+ * The Rust core's profile for `source`.
  *
  * @internal
  */
-export function networkByteOf(profile: NetworkProfile, capability: string): number {
-  const networkByte = profile.chain.networkByte;
-  if (profile.backend !== "solar-compat" || networkByte === undefined) {
-    throw new UnsupportedOnNetwork(
-      capability,
-      `the ${profile.id} profile has no Solar-compatible address format`,
-    );
+export function profileHandleOf(source: ProfileSource): ProfileHandle {
+  const profile = profileOf(source);
+  const cached = handles.get(profile);
+  if (cached !== undefined) {
+    return cached;
   }
-  return networkByte;
+  const handle = call((module) => module.ProfileHandle.fromJson(JSON.stringify(profile)));
+  if (Object.isFrozen(profile) && Object.isFrozen(profile.chain) && Object.isFrozen(profile.api)) {
+    handles.set(profile, handle);
+  }
+  return handle;
+}
+
+/**
+ * The frozen profile object of a Rust profile, such as a chain's pinned profile.
+ *
+ * @internal
+ */
+export function profileFromHandle(handle: ProfileHandle): NetworkProfile {
+  const profile = freeze(JSON.parse(handle.toJson()) as NetworkProfile);
+  handles.set(profile, handle);
+  return profile;
+}
+
+/** The capabilities of the network of `source`. */
+export function capabilitiesOf(source: ProfileSource): Capabilities {
+  const list = Object.freeze(call(() => profileHandleOf(source).capabilities()) as Capability[]);
+  const set: ReadonlySet<string> = new Set(list);
+  return Object.freeze({
+    has: (capability: Capability) => set.has(capability),
+    list: () => list,
+  });
 }

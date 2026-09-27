@@ -3,7 +3,10 @@
  *
  * Every error the SDK throws is an {@link IceRootError} with a stable string `code`, a human
  * `message` and structured `details`. Each code has a subclass for `instanceof` checks. The codes
- * are part of the API: apps may branch on them, and they never change meaning.
+ * are part of the API: apps may branch on them, and they never change meaning. They are the codes
+ * of the SDK's Rust core, which the TypeScript, Rust and Go SDKs share, plus a few that only the
+ * TypeScript wrapper raises (`InvalidProfile`, `InvalidPublicKey`, `InvalidArgument`,
+ * `WasmLoadFailed`).
  *
  * @module
  */
@@ -16,23 +19,35 @@ export type ErrorCode =
   // Input
   | "InvalidPhrase"
   | "PhraseTooShort"
+  | "InvalidPath"
   | "InvalidAddress"
   | "InvalidPublicKey"
+  | "InvalidKey"
   | "InvalidAmount"
   | "MemoTooLong"
+  | "NoRecipients"
   | "TooManyRecipients"
   | "InvalidVote"
   | "InvalidName"
+  | "InvalidFee"
+  | "InvalidDraft"
+  | "InvalidTransaction"
+  | "InvalidSignIn"
+  | "InvalidRequest"
   | "InvalidProfile"
+  | "InvalidArgument"
   // Network
   | "NodeUnavailable"
   | "RateLimited"
   | "Timeout"
   | "BadResponse"
+  | "NotFound"
+  | "Refused"
   | "NetworkMismatch"
   // Submission
   | "TxRejected"
   | "StaleDraft"
+  | "FeeUnavailable"
   // Support
   | "UnsupportedOnNetwork"
   | "SdkNotInitialized"
@@ -40,6 +55,7 @@ export type ErrorCode =
   // Crypto
   | "RandomnessUnavailable"
   | "SigningFailed"
+  | "WrongKey"
   | "KeyReleased";
 
 /** Structured details of an error. */
@@ -60,17 +76,24 @@ export class IceRootError extends Error {
   }
 }
 
-/** A recovery phrase or passphrase was refused. */
+/** A recovery phrase or passphrase was refused. `details.reason` says why. */
 export class InvalidPhrase extends IceRootError {
   constructor(message = "the phrase was refused", details: ErrorDetails = {}) {
     super("InvalidPhrase", message, details);
   }
 }
 
-/** A recovery phrase has fewer words than new keys accept (18). */
+/** A recovery phrase has fewer words than keys accept (18). */
 export class PhraseTooShort extends IceRootError {
   constructor(message = "a recovery phrase needs at least 18 words", details: ErrorDetails = {}) {
     super("PhraseTooShort", message, details);
+  }
+}
+
+/** An account number or address index is out of range (below 2^31). */
+export class InvalidPath extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("InvalidPath", message, details);
   }
 }
 
@@ -81,17 +104,24 @@ export class InvalidAddress extends IceRootError {
   /** The index of the first bad character, when the problem is one. */
   readonly position: number | undefined;
 
-  constructor(reason: AddressProblem, message: string, position?: number) {
-    super("InvalidAddress", message, position === undefined ? { reason } : { reason, position });
+  constructor(reason: AddressProblem, message: string, position?: number, details: ErrorDetails = {}) {
+    super("InvalidAddress", message, { ...details, reason, ...(position === undefined ? {} : { position }) });
     this.reason = reason;
     this.position = position;
   }
 }
 
-/** A public key was refused. */
+/** Bytes or hex that are not a public key. */
 export class InvalidPublicKey extends IceRootError {
   constructor(message = "the bytes are not a public key", details: ErrorDetails = {}) {
     super("InvalidPublicKey", message, details);
+  }
+}
+
+/** A key given to a builder is not a valid key. */
+export class InvalidKey extends IceRootError {
+  constructor(message = "the key is not valid", details: ErrorDetails = {}) {
+    super("InvalidKey", message, details);
   }
 }
 
@@ -106,6 +136,13 @@ export class InvalidAmount extends IceRootError {
 export class MemoTooLong extends IceRootError {
   constructor(message: string, details: ErrorDetails = {}) {
     super("MemoTooLong", message, details);
+  }
+}
+
+/** A transfer has no recipient. */
+export class NoRecipients extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("NoRecipients", message, details);
   }
 }
 
@@ -130,10 +167,52 @@ export class InvalidName extends IceRootError {
   }
 }
 
+/** A fee choice is not valid. */
+export class InvalidFee extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("InvalidFee", message, details);
+  }
+}
+
+/** A serialized draft or signed transaction is malformed. */
+export class InvalidDraft extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("InvalidDraft", message, details);
+  }
+}
+
+/** A transaction's bytes or JSON are refused. */
+export class InvalidTransaction extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("InvalidTransaction", message, details);
+  }
+}
+
+/** A sign-in message fails a check. `details.reason` names the check. */
+export class InvalidSignIn extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("InvalidSignIn", message, details);
+  }
+}
+
+/** A request to a node could not be built from its arguments. */
+export class InvalidRequest extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("InvalidRequest", message, details);
+  }
+}
+
 /** A network profile is incomplete or malformed. */
 export class InvalidProfile extends IceRootError {
   constructor(message: string, details: ErrorDetails = {}) {
     super("InvalidProfile", message, details);
+  }
+}
+
+/** A function was called with arguments of the wrong shape, for example from JavaScript. */
+export class InvalidArgument extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("InvalidArgument", message, details);
   }
 }
 
@@ -165,7 +244,21 @@ export class BadResponse extends IceRootError {
   }
 }
 
-/** A node belongs to another chain than the profile's. */
+/** The node has no such resource, where the request needs one. */
+export class NotFound extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("NotFound", message, details);
+  }
+}
+
+/** The node refused the request with an error status. `details.status` is the HTTP status. */
+export class Refused extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("Refused", message, details);
+  }
+}
+
+/** A node or data belongs to another chain than the profile's. */
 export class NetworkMismatch extends IceRootError {
   constructor(message: string, details: ErrorDetails = {}) {
     super("NetworkMismatch", message, details);
@@ -191,8 +284,8 @@ export class TxRejected extends IceRootError {
   /** The node's own error code, such as `ERR_LOW_FEE`. */
   readonly nodeCode: string | undefined;
 
-  constructor(reason: RejectionReason, message: string, nodeCode?: string) {
-    super("TxRejected", message, nodeCode === undefined ? { reason } : { reason, nodeCode });
+  constructor(reason: RejectionReason, message: string, nodeCode?: string, details: ErrorDetails = {}) {
+    super("TxRejected", message, { ...details, reason, ...(nodeCode === undefined ? {} : { nodeCode }) });
     this.reason = reason;
     this.nodeCode = nodeCode;
   }
@@ -205,13 +298,20 @@ export class StaleDraft extends IceRootError {
   }
 }
 
+/** No fee can be resolved for the operation: give an exact fee, or the node's fee statistics. */
+export class FeeUnavailable extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("FeeUnavailable", message, details);
+  }
+}
+
 /** The network does not offer this operation. `capability` names what is missing. */
 export class UnsupportedOnNetwork extends IceRootError {
   /** The missing capability. */
   readonly capability: string;
 
-  constructor(capability: string, message: string) {
-    super("UnsupportedOnNetwork", message, { capability });
+  constructor(capability: string, message: string, details: ErrorDetails = {}) {
+    super("UnsupportedOnNetwork", message, { ...details, capability });
     this.capability = capability;
   }
 }
@@ -245,8 +345,15 @@ export class RandomnessUnavailable extends IceRootError {
 
 /** No signature could be made. */
 export class SigningFailed extends IceRootError {
-  constructor(message: string) {
-    super("SigningFailed", message);
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("SigningFailed", message, details);
+  }
+}
+
+/** A draft was signed with a key it does not name, or without a key it needs. */
+export class WrongKey extends IceRootError {
+  constructor(message: string, details: ErrorDetails = {}) {
+    super("WrongKey", message, details);
   }
 }
 

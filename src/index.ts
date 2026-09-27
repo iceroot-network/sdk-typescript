@@ -12,29 +12,59 @@ export type { WasmModuleBytes, WasmSource } from "./init.js";
 
 export {
   DEVNET_NETWORK_BYTE,
+  capabilitiesOf,
   profileOf,
   profiles,
   type ApiEndpoints,
+  type Capabilities,
   type ChainIdentity,
   type DevnetOptions,
   type NetworkProfile,
   type ProfileSource,
 } from "./profiles.js";
 
-export { Account, Keys } from "./keys.js";
+export { Account, Keys, Mnemonic, type AccountOptions, type PhraseCheck, type PhraseProblem } from "./keys.js";
 export { Address, type AddressCheck } from "./address.js";
 export {
+  Amount,
+  AssetId,
+  type AmountFormatOptions,
+  type AssetAmount,
+  type Decimals,
+  type TokenInfo,
+} from "./amount.js";
+export { Chain, type Economics, type Rules } from "./chain.js";
+export {
+  Draft,
+  SignedTransaction,
+  type DraftFee,
+  type DraftRequest,
+  type DraftSummary,
+  type FeeChoice,
+  type FeeSource,
+  type OnlineFacts,
+  type Operation,
+  type OperationKind,
+  type OperationSummary,
+  type Recipient,
+  type Resignation,
+  type SignOptions,
+  type SignedSummary,
+  type SubmitResult,
+  type VoteEntry,
+  type WaitUntil,
+} from "./build.js";
+export {
   Messages,
+  messageAlgorithmOf,
   messageNetworkOf,
   type MessageSignature,
   type SignedMessage,
 } from "./messages.js";
+export { SignIn, type SignInExpectations, type SignInFields, type SignInRequest } from "./signin.js";
 
 export * from "./errors.js";
 export type * from "./types.js";
-export type * from "./amount.js";
-export type * from "./build.js";
 export type * from "./client.js";
-export type * from "./signin.js";
 
 export { VERSION, bindingsVersion } from "./internal/version.js";

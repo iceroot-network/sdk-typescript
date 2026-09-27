@@ -1,69 +1,31 @@
-//! S1 addresses: network byte and RIPEMD-160 of the key, in Base58Check.
+//! Addresses, always checked against a network profile.
 
-use heartwood_crypto::errors::{AddressError, Base58Error};
-use heartwood_crypto::{Address, PublicKey};
+use iceroot_sdk::{Address, PublicKey};
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use crate::error::{AddressReason, BindingError, ErrorCode};
+use crate::error::{BindingError, Result};
+use crate::profile::ProfileHandle;
 
-/// The address of `public_key` (33 or 65 bytes) on the network with byte `network`.
+/// The bytes of the address in `text`, which must belong to the network of `profile`: 21 bytes,
+/// the network byte and the key hash, in today's format.
+///
+/// A refusal is `InvalidAddress` with the reason `format` (and the position of the first bad
+/// character, when one is to blame), `checksum`, `length` or `wrong-network`.
+#[wasm_bindgen(js_name = parseAddress)]
+pub fn parse_address(text: &str, profile: &ProfileHandle) -> Result<Vec<u8>> {
+    Ok(Address::parse(text, profile.profile())?.as_bytes().to_vec())
+}
+
+/// The address of `public_key` (33 or 65 bytes) on the network of `profile`.
 #[wasm_bindgen(js_name = addressFromPublicKey)]
-pub fn address_from_public_key(public_key: &[u8], network: u8) -> Result<String, BindingError> {
+pub fn address_from_public_key(public_key: &[u8], profile: &ProfileHandle) -> Result<String> {
     let key = PublicKey::from_bytes(public_key).map_err(|_| {
         BindingError::new(
-            ErrorCode::InvalidPublicKey,
+            "InvalidPublicKey",
             "the bytes are not a secp256k1 public key",
         )
     })?;
-    Ok(Address::from_public_key(&key, network).to_base58())
-}
-
-/// The 21 bytes of the address in `text`, which must belong to the network with byte `network`.
-///
-/// The checks run in this order: Base58 characters, checksum, payload length, network byte.
-#[wasm_bindgen(js_name = parseAddress)]
-pub fn parse_address(text: &str, network: u8) -> Result<Vec<u8>, BindingError> {
-    Address::from_base58_for(text, network)
-        .map(|address| address.as_bytes().to_vec())
-        .map_err(|error| address_error(text, error))
-}
-
-/// The binding error for `error`, with the reason the wrapper reports.
-fn address_error(text: &str, error: AddressError) -> BindingError {
-    match error {
-        AddressError::Base58(Base58Error::InvalidCharacter { index }) => {
-            // Every Base58 character is ASCII, so the index of the first bad character is the same
-            // in bytes and in UTF-16 code units.
-            let position = u32::try_from(index).ok();
-            let shown = text
-                .get(index..)
-                .and_then(|rest| rest.chars().next())
-                .map_or_else(String::new, |c| format!(" '{c}'"));
-            BindingError::address(
-                AddressReason::Format,
-                position,
-                format!("invalid character{shown} at position {index}"),
-            )
-        }
-        AddressError::Base58(Base58Error::InvalidChecksum) => {
-            BindingError::address(AddressReason::Checksum, None, "the checksum does not match")
-        }
-        AddressError::Base58(Base58Error::TooShort) => BindingError::address(
-            AddressReason::Length,
-            None,
-            "the text is too short to be an address",
-        ),
-        AddressError::InvalidLength { actual } => BindingError::address(
-            AddressReason::Length,
-            None,
-            format!("an address holds 21 bytes, this one holds {actual}"),
-        ),
-        AddressError::WrongNetwork { expected, actual } => BindingError::address(
-            AddressReason::WrongNetwork,
-            None,
-            format!("the address is for network byte {actual}, expected {expected}"),
-        ),
-    }
+    Ok(Address::from_public_key(&key, profile.profile())?.to_string())
 }
 
 #[cfg(test)]
@@ -74,40 +36,45 @@ mod tests {
     const PUBLIC_KEY: &str = "03f83f83227e28add5598d2c75c20f72b4bfb0328957ef27e2da2ff73779fa4bd2";
     const ADDRESS: &str = "dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNF";
 
+    fn profile(network_byte: u8) -> ProfileHandle {
+        ProfileHandle::from_json(&format!(
+            r#"{{"id":"devnet","backend":"solar-compat","api":{{"relays":[]}},"chain":{{"networkByte":{network_byte}}},"keyScheme":"bip32-secp256k1"}}"#
+        ))
+        .unwrap()
+    }
+
     #[test]
     fn from_public_key() {
         let key = hex::decode(PUBLIC_KEY).unwrap();
-        assert_eq!(address_from_public_key(&key, 90).unwrap(), ADDRESS);
-        let error = address_from_public_key(&key[..32], 90).unwrap_err();
-        assert_eq!(error.code(), ErrorCode::InvalidPublicKey);
+        assert_eq!(
+            address_from_public_key(&key, &profile(90)).unwrap(),
+            ADDRESS
+        );
+        let error = address_from_public_key(&key[..32], &profile(90)).unwrap_err();
+        assert_eq!(error.code(), "InvalidPublicKey");
     }
 
     #[test]
     fn parse() {
-        let bytes = parse_address(ADDRESS, 90).unwrap();
+        let bytes = parse_address(ADDRESS, &profile(90)).unwrap();
         assert_eq!(bytes.len(), 21);
         assert_eq!(bytes[0], 90);
 
-        let wrong = parse_address(ADDRESS, 30).unwrap_err();
-        assert_eq!(wrong.reason(), Some(AddressReason::WrongNetwork));
+        let wrong = parse_address(ADDRESS, &profile(30)).unwrap_err();
+        assert_eq!(wrong.code(), "InvalidAddress");
+        assert_eq!(wrong.details()["reason"], "wrong-network");
 
         let mut typo = ADDRESS.to_owned();
         typo.replace_range(5..6, "0");
-        let format = parse_address(&typo, 90).unwrap_err();
-        assert_eq!(format.reason(), Some(AddressReason::Format));
-        assert_eq!(format.position(), Some(5));
+        let format = parse_address(&typo, &profile(90)).unwrap_err();
+        assert_eq!(format.details()["reason"], "format");
+        assert_eq!(format.details()["position"], 5);
 
         let mut swapped = ADDRESS.to_owned();
         swapped.replace_range(33..34, "G");
-        let checksum = parse_address(&swapped, 90).unwrap_err();
-        assert_eq!(checksum.reason(), Some(AddressReason::Checksum));
-
-        // Three bytes hold no checksum; four zero bytes are an empty payload with a bad checksum.
-        let short = parse_address("111", 90).unwrap_err();
-        assert_eq!(short.reason(), Some(AddressReason::Length));
-        let zeros = parse_address("1111", 90).unwrap_err();
-        assert_eq!(zeros.reason(), Some(AddressReason::Checksum));
-        let empty = parse_address("", 90).unwrap_err();
-        assert_eq!(empty.reason(), Some(AddressReason::Length));
+        let checksum = parse_address(&swapped, &profile(90)).unwrap_err();
+        assert_eq!(checksum.details()["reason"], "checksum");
+        let empty = parse_address("", &profile(90)).unwrap_err();
+        assert_eq!(empty.code(), "InvalidAddress");
     }
 }

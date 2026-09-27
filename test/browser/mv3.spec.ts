@@ -12,6 +12,7 @@ import { ROOT } from "./install-package.mjs";
 
 const vectors = JSON.parse(readFileSync(join(ROOT, "test", "vectors", "wasm-native.json"), "utf8"));
 const signatures = vectors.keys.reduce((sum: number, key: { signatures: unknown[] }) => sum + key.signatures.length, 0);
+const transactions: number = vectors.transactions.cases.length;
 
 function assemble(build: string, policy: "documented" | "without-wasm-eval"): string {
   const dir = mkdtempSync(join(tmpdir(), "iceroot-sdk-mv3-"));
@@ -73,6 +74,9 @@ for (const [variant, build] of [
       expect(report.ok, name).toBe(true);
       expect(report.verifiedSignatures, name).toBe(signatures);
       expect(report.fixedAuxSignatures, name).toBe(variant === "test" ? signatures : 0);
+      expect(report.verifiedTransactions, name).toBe(transactions);
+      expect(report.freshTransactions, name).toBe(transactions);
+      expect(report.fixedAuxTransactions, name).toBe(variant === "test" ? transactions : 0);
     }
     // The sandbox keeps connect-src 'none': a request to the network is blocked by the policy.
     expect(result.sandbox.networkBlocked).toBe(true);

@@ -2,23 +2,22 @@
 
 import type * as Glue from "#glue/web";
 
-import {
-  IceRootError,
-  InvalidAddress,
-  InvalidPhrase,
-  InvalidPublicKey,
-  KeyReleased,
-  RandomnessUnavailable,
-  SdkNotInitialized,
-  SigningFailed,
-  type AddressProblem,
-} from "../errors.js";
+import { IceRootError, SdkNotInitialized } from "../errors.js";
+import { errorFromCode } from "./error-codes.js";
 
 /** The functions and classes of the module, without the loader functions. */
 export type Bindings = Omit<typeof Glue, "default" | "initSync">;
 
-/** A secret key held in WebAssembly memory. */
+/** A secret key held in WebAssembly memory, with its profile. */
 export type KeyHandle = Glue.KeyHandle;
+/** A network profile of the Rust core. */
+export type ProfileHandle = Glue.ProfileHandle;
+/** A loaded chain of the Rust core. */
+export type ChainHandle = Glue.ChainHandle;
+/** A draft of the Rust core. */
+export type DraftHandle = Glue.DraftHandle;
+/** A signed transaction of the Rust core. */
+export type SignedHandle = Glue.SignedHandle;
 
 let current: Bindings | undefined;
 
@@ -40,49 +39,22 @@ export function bindings(): Bindings {
   return current;
 }
 
-const ADDRESS_PROBLEMS: ReadonlySet<string> = new Set([
-  "checksum",
-  "length",
-  "wrong-network",
-  "format",
-]);
-
 /**
- * The SDK error for an error thrown by the module. The module names each error with a stable code
- * and puts structured fields in `details`; anything else is returned unchanged.
+ * The SDK error for an error thrown by the module. The module names each error with the Rust
+ * core's stable code and puts its structured fields in `details`; anything else is returned
+ * unchanged.
  */
 export function fromBindingError(error: unknown): unknown {
   if (!(error instanceof Error) || error instanceof IceRootError) {
     return error;
   }
   const raw: unknown = (error as Error & { details?: unknown }).details;
-  const details: Record<string, unknown> =
-    typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-  switch (error.name) {
-    case "InvalidPhrase":
-      return new InvalidPhrase(error.message);
-    case "InvalidAddress": {
-      const reason = details["reason"];
-      const position = details["position"];
-      return new InvalidAddress(
-        typeof reason === "string" && ADDRESS_PROBLEMS.has(reason)
-          ? (reason as AddressProblem)
-          : "format",
-        error.message,
-        typeof position === "number" ? position : undefined,
-      );
-    }
-    case "InvalidPublicKey":
-      return new InvalidPublicKey(error.message);
-    case "RandomnessUnavailable":
-      return new RandomnessUnavailable(error.message);
-    case "SigningFailed":
-      return new SigningFailed(error.message);
-    case "KeyReleased":
-      return new KeyReleased(error.message);
-    default:
-      return error;
+  if (raw === undefined) {
+    // Not an error the module made (for example a JavaScript TypeError).
+    return error;
   }
+  const details: Record<string, unknown> = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  return errorFromCode(error.name, error.message, details);
 }
 
 /** Calls `f` and turns module errors into SDK errors. */
@@ -93,4 +65,9 @@ export function call<T>(f: (bindings: Bindings) => T): T {
   } catch (error) {
     throw fromBindingError(error);
   }
+}
+
+/** Parses JSON the module wrote. */
+export function parse<T>(json: string): T {
+  return JSON.parse(json) as T;
 }

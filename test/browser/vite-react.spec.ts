@@ -28,6 +28,7 @@ async function exercise(page: Page, url: string) {
   const parsed = JSON.parse((await report.textContent()) ?? "{}");
   expect(parsed.failures).toEqual([]);
   expect(parsed.verifiedSignatures).toBe(25);
+  expect(parsed.verifiedTransactions).toBe(vectors.transactions.cases.length);
 
   await page.fill("#passphrase", probe.passphrase);
   await page.click("#import");

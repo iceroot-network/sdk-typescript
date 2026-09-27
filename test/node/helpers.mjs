@@ -20,4 +20,9 @@ export function assertReport(assert, report, { fixedAux }) {
   assert.equal(report.verifiedSignatures, signatures);
   assert.equal(report.freshSignatures, signatures);
   assert.equal(report.fixedAuxSignatures, fixedAux ? signatures : 0);
+  const transactions = vectors.transactions.cases.length;
+  assert.equal(report.verifiedTransactions, transactions);
+  assert.equal(report.freshTransactions, transactions);
+  assert.equal(report.fixedAuxTransactions, fixedAux ? transactions : 0);
+  assert.equal(report.phraseAccounts, vectors.phraseAccounts.length);
 }

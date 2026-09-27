@@ -4,14 +4,25 @@
 //! cargo run --example vectors --features fixed-aux > ../test/vectors/wasm-native.json
 //! ```
 //!
-//! Keys, addresses and signatures are computed with `heartwood-crypto` directly, not through the
-//! bindings, so the file is an independent native reference for the WebAssembly build. Address
-//! checks go through the bindings' own parser, compiled natively.
+//! Everything is computed natively with the SDK's Rust core (`iceroot-sdk`), not through the
+//! bindings, so the file is a native reference for the WebAssembly build: keys from legacy
+//! passphrases and from recovery phrases, addresses and their checks, message signatures, phrase
+//! checks, amounts, and drafts of every operation with their signed transactions. The transaction
+//! requests are written here from the core's own values, in the JSON the wrapper passes, so the
+//! bindings' reading of them is checked too.
 
-use heartwood_crypto::crypto::hash::sha256;
-use heartwood_crypto::crypto::sig::{self, SchemeId, SigningDomain};
-use heartwood_crypto::{Address, Aux, KeyPair, PublicKey};
+use iceroot_sdk::amount::FormatOptions;
+use iceroot_sdk::fee::FeeChoice;
+use iceroot_sdk::keys::{Account, AccountOptions, KeyOrigin};
+use iceroot_sdk::message;
+use iceroot_sdk::phrase::Mnemonic;
+use iceroot_sdk::profile::DevnetOptions;
+use iceroot_sdk::transaction::{DraftRequest, Operation, Recipient, Resignation, VoteEntry};
+use iceroot_sdk::{Address, Amount, Aux, Chain, Draft, Error, OnlineFacts, Profile, PublicKey};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+
+const RELAY: &str = "http://127.0.0.1:4003/api";
 
 const PASSPHRASES: &[&str] = &[
     "probe passphrase",
@@ -32,8 +43,82 @@ const MESSAGES: &[&str] = &[
     "Gr\u{fc}\u{df}e \u{2713}",
 ];
 
+/// A recovery phrase, the accounts and indexes derived from it, and the optional BIP39
+/// passphrase.
+type PhraseCase = (&'static str, &'static [(u32, u32)], &'static str);
+
+/// Recovery phrases of 24, 21 and 18 words.
+const PHRASES: &[PhraseCase] = &[
+    (
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art",
+        &[(0, 0), (0, 1), (1, 0), (2_147_483_647, 2_147_483_647)],
+        "",
+    ),
+    (
+        "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal will",
+        &[(0, 0)],
+        "",
+    ),
+    (
+        "letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter always",
+        &[(0, 0), (0, 5)],
+        "TREZOR",
+    ),
+];
+
+const PHRASE_CHECKS: &[&str] = &[
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art",
+    "  ABANDON abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon ART ",
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon",
+    "abandon abandon zebraa",
+    "abandon abandon",
+    "",
+];
+
+const AMOUNTS: &[(&str, u8)] = &[
+    ("1.5", 8),
+    ("0.00000001", 8),
+    ("92233720368.54775807", 8),
+    ("007", 0),
+    ("1.123456789", 8),
+    ("-1", 8),
+    ("1e8", 8),
+    ("", 8),
+    ("1.", 8),
+];
+
+const FORMATS: &[(u128, u8, Option<u8>, bool)] = &[
+    (150_000_000, 8, None, false),
+    (1, 8, None, false),
+    (123_456_789_012_345_678, 8, Some(2), true),
+    (123_456_789_012_345_678, 8, Some(0), false),
+    (0, 8, None, true),
+    (u128::MAX, 18, None, true),
+];
+
 /// The generator point in uncompressed form: the public key of the secret key 1.
 const GENERATOR_UNCOMPRESSED: &str = "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8";
+
+/// The network description and milestones of a local devnet of the reference implementation.
+const CONFIGURATION: &str = include_str!("devnet-configuration.json");
+
+/// The height the transaction vectors are built for.
+const HEIGHT: u32 = 2;
+
+type Failure = Box<dyn std::error::Error>;
+
+fn profile(network: u8) -> Profile {
+    Profile::devnet(DevnetOptions {
+        relays: vec![RELAY.to_owned()],
+        nethash: None,
+    })
+    .with_network_byte(network)
+}
+
+fn sha256(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
 
 fn aux_for(index: usize) -> [u8; 32] {
     match index % 4 {
@@ -50,93 +135,446 @@ fn aux_for(index: usize) -> [u8; 32] {
     }
 }
 
-fn key_case(passphrase: &str) -> Result<Value, Box<dyn std::error::Error>> {
-    let pair = KeyPair::from_passphrase(passphrase)?;
-    let public_key = pair.public_key();
-    let addresses: serde_json::Map<String, Value> = NETWORKS
-        .iter()
-        .map(|&network| {
-            (
-                network.to_string(),
-                Value::from(Address::from_public_key(public_key, network).to_base58()),
-            )
-        })
-        .collect();
+fn key_case(passphrase: &str) -> Result<Value, Failure> {
+    let mut addresses = serde_json::Map::new();
+    for &network in NETWORKS {
+        let account = Account::from_legacy_passphrase(&profile(network), passphrase)?;
+        addresses.insert(network.to_string(), json!(account.address().to_string()));
+    }
+    let devnet = profile(90);
+    let account = Account::from_legacy_passphrase(&devnet, passphrase)?;
     let mut signatures = Vec::new();
-    for (index, message) in MESSAGES.iter().enumerate() {
+    for (index, text) in MESSAGES.iter().enumerate() {
         let aux = aux_for(index);
-        let digest = sha256(message.as_bytes());
-        let signature = sig::sign(
-            SchemeId::Secp256k1Bip340,
-            SigningDomain::Transaction,
-            &digest,
-            pair.secret_key(),
-            Aux::fixed(aux),
-        )?;
+        let signed = message::sign_bytes_with(&devnet, &account, text.as_bytes(), Aux::fixed(aux))?;
         signatures.push(json!({
-            "message": hex::encode(message.as_bytes()),
+            "message": hex::encode(text.as_bytes()),
             "aux": hex::encode(aux),
-            "digest": hex::encode(digest),
-            "signature": signature.to_hex(),
+            "digest": hex::encode(sha256(text.as_bytes())),
+            "signature": signed.signature,
         }));
     }
     Ok(json!({
         "passphrase": passphrase,
-        "publicKey": public_key.to_hex(),
+        "publicKey": account.public_key().to_hex(),
         "addresses": addresses,
         "signatures": signatures,
     }))
 }
 
-fn address_check(text: &str, network: u8) -> Value {
-    match iceroot_sdk_wasm::parse_address(text, network) {
-        Ok(bytes) => {
-            json!({ "text": text, "network": network, "ok": true, "bytes": hex::encode(bytes) })
+fn phrase_accounts() -> Result<Vec<Value>, Failure> {
+    let devnet = profile(90);
+    let mut cases = Vec::new();
+    for (phrase, paths, passphrase) in PHRASES {
+        let mnemonic = Mnemonic::parse(phrase)?;
+        for &(account, index) in *paths {
+            let derived = Account::from_phrase(
+                &devnet,
+                &mnemonic,
+                &AccountOptions {
+                    account,
+                    index,
+                    passphrase,
+                },
+            )?;
+            let KeyOrigin::Phrase(path) = derived.origin() else {
+                return Err("a phrase account without a path".into());
+            };
+            cases.push(json!({
+                "phrase": phrase,
+                "passphrase": passphrase,
+                "account": account,
+                "index": index,
+                "path": path.to_string(),
+                "publicKey": derived.public_key().to_hex(),
+                "address": derived.address().to_string(),
+            }));
         }
-        Err(error) => json!({
+    }
+    Ok(cases)
+}
+
+fn error_json(error: &Error) -> Value {
+    json!({ "code": error.code().as_str(), "details": error.details() })
+}
+
+fn address_check(text: &str, network: u8) -> Value {
+    match Address::parse(text, &profile(network)) {
+        Ok(address) => json!({
             "text": text,
             "network": network,
-            "ok": false,
-            "reason": error.reason().map(|reason| reason.as_str()),
-            "position": error.position(),
+            "ok": true,
+            "bytes": hex::encode(address.as_bytes()),
         }),
+        Err(Error::InvalidAddress { problem }) => {
+            let details = Error::InvalidAddress { problem }.details();
+            json!({
+                "text": text,
+                "network": network,
+                "ok": false,
+                "reason": details["reason"],
+                "position": details.get("position").cloned().unwrap_or(Value::Null),
+            })
+        }
+        Err(other) => json!({ "text": text, "network": network, "error": error_json(&other) }),
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn phrase_check(text: &str) -> Value {
+    let check = Mnemonic::check(text);
+    let mut result = json!({ "text": text, "ok": check.is_ok(), "words": check.words });
+    if let Some(problem) = check.problem {
+        let details = Error::InvalidPhrase { problem }.details();
+        result["reason"] = details["reason"].clone();
+        if let Some(position) = details.get("position") {
+            result["position"] = position.clone();
+        }
+    }
+    result
+}
+
+fn amounts() -> (Vec<Value>, Vec<Value>) {
+    let parses = AMOUNTS
+        .iter()
+        .map(|&(text, decimals)| match Amount::parse(text, decimals) {
+            Ok(amount) => json!({ "text": text, "decimals": decimals, "units": amount.base_units().to_string() }),
+            Err(error) => json!({ "text": text, "decimals": decimals, "error": error.code().as_str() }),
+        })
+        .collect();
+    let formats = FORMATS
+        .iter()
+        .map(|&(units, decimals, max_fraction, grouping)| {
+            json!({
+                "units": units.to_string(),
+                "decimals": decimals,
+                "maxFraction": max_fraction,
+                "grouping": grouping,
+                "text": Amount::from_base_units(units).format(decimals, FormatOptions { max_fraction, grouping }),
+            })
+        })
+        .collect();
+    (parses, formats)
+}
+
+/// Who signs a transaction case: a legacy passphrase or a phrase account.
+enum Signer {
+    Legacy(&'static str),
+    Phrase(&'static str, u32, u32),
+}
+
+impl Signer {
+    fn account(&self, profile: &Profile) -> Result<Account, Failure> {
+        Ok(match self {
+            Signer::Legacy(passphrase) => Account::from_legacy_passphrase(profile, passphrase)?,
+            Signer::Phrase(phrase, account, index) => Account::from_phrase(
+                profile,
+                &Mnemonic::parse(phrase)?,
+                &AccountOptions {
+                    account: *account,
+                    index: *index,
+                    passphrase: "",
+                },
+            )?,
+        })
+    }
+
+    fn json(&self) -> Value {
+        match self {
+            Signer::Legacy(passphrase) => json!({ "legacyPassphrase": passphrase }),
+            Signer::Phrase(phrase, account, index) => {
+                json!({ "phrase": phrase, "account": account, "index": index })
+            }
+        }
+    }
+}
+
+/// The operation in the JSON the wrapper passes to the bindings.
+fn operation_json(operation: &Operation) -> Value {
+    match operation {
+        Operation::Transfer { recipients } => json!({
+            "kind": "transfer",
+            "to": recipients.iter().map(|r| json!({
+                "address": r.address.to_string(),
+                "amount": r.amount.base_units().to_string(),
+            })).collect::<Vec<_>>(),
+        }),
+        Operation::Vote { entries } => json!({
+            "kind": "vote",
+            "entries": entries.iter().map(|e| json!({
+                "validator": e.validator,
+                "basisPoints": e.basis_points,
+            })).collect::<Vec<_>>(),
+        }),
+        Operation::Burn { amount } => {
+            json!({ "kind": "burn", "amount": amount.base_units().to_string() })
+        }
+        Operation::RegisterSecondKey { public_key } => {
+            json!({ "kind": "register-second-key", "publicKey": public_key.to_hex() })
+        }
+        Operation::RegisterValidator { name } => {
+            json!({ "kind": "register-validator", "name": name })
+        }
+        Operation::ResignValidator { kind } => {
+            json!({ "kind": "resign-validator", "resignation": kind.as_str() })
+        }
+    }
+}
+
+struct TransactionCase {
+    name: &'static str,
+    signer: Signer,
+    second: Option<Signer>,
+    nonce: u64,
+    operation: Operation,
+    memo: Option<&'static str>,
+    fee: u128,
+    aux: [u8; 32],
+}
+
+fn transaction_cases(profile: &Profile) -> Result<Vec<TransactionCase>, Failure> {
+    let phrase = PHRASES.first().map(|case| case.0).unwrap_or_default();
+    let address =
+        |signer: Signer| -> Result<Address, Failure> { Ok(*signer.account(profile)?.address()) };
+    let second_key = Signer::Legacy("second passphrase")
+        .account(profile)?
+        .public_key()
+        .to_compressed();
+    Ok(vec![
+        TransactionCase {
+            name: "transfer to two recipients with a memo",
+            signer: Signer::Legacy("probe passphrase"),
+            second: None,
+            nonce: 1,
+            operation: Operation::Transfer {
+                recipients: vec![
+                    Recipient {
+                        address: address(Signer::Phrase(phrase, 0, 0))?,
+                        amount: Amount::from_base_units(150_000_000),
+                    },
+                    Recipient {
+                        address: address(Signer::Phrase(phrase, 0, 1))?,
+                        amount: Amount::from_base_units(1),
+                    },
+                ],
+            },
+            memo: Some("invoice 42 \u{2713}"),
+            fee: 1_000_000,
+            aux: [7; 32],
+        },
+        TransactionCase {
+            name: "vote for three validators, given out of order",
+            signer: Signer::Phrase(phrase, 0, 0),
+            second: None,
+            nonce: 3,
+            operation: Operation::Vote {
+                entries: vec![
+                    VoteEntry {
+                        validator: "genesis_2".to_owned(),
+                        basis_points: 2500,
+                    },
+                    VoteEntry {
+                        validator: "genesis_10".to_owned(),
+                        basis_points: 2500,
+                    },
+                    VoteEntry {
+                        validator: "genesis_1".to_owned(),
+                        basis_points: 5000,
+                    },
+                ],
+            },
+            memo: None,
+            fee: 1_500_000,
+            aux: [0x42; 32],
+        },
+        TransactionCase {
+            name: "vote withdrawal",
+            signer: Signer::Phrase(phrase, 0, 0),
+            second: None,
+            nonce: 4,
+            operation: Operation::Vote {
+                entries: Vec::new(),
+            },
+            memo: None,
+            fee: 1_000_000,
+            aux: [0x42; 32],
+        },
+        TransactionCase {
+            name: "transfer signed with a second key",
+            signer: Signer::Legacy("probe passphrase"),
+            second: Some(Signer::Legacy("second passphrase")),
+            nonce: 7,
+            operation: Operation::Transfer {
+                recipients: vec![Recipient {
+                    address: address(Signer::Legacy("IceRoot"))?,
+                    amount: Amount::from_base_units(25_000_000_000),
+                }],
+            },
+            memo: None,
+            fee: 2_000_000,
+            aux: [1; 32],
+        },
+        TransactionCase {
+            name: "burn",
+            signer: Signer::Phrase(phrase, 1, 0),
+            second: None,
+            nonce: 1,
+            operation: Operation::Burn {
+                amount: Amount::from_base_units(2_000_000),
+            },
+            memo: None,
+            fee: 0,
+            aux: [2; 32],
+        },
+        TransactionCase {
+            name: "second key registration",
+            signer: Signer::Legacy("probe passphrase"),
+            second: None,
+            nonce: 2,
+            operation: Operation::RegisterSecondKey {
+                public_key: second_key,
+            },
+            memo: None,
+            fee: 5_000_000,
+            aux: [3; 32],
+        },
+        TransactionCase {
+            name: "validator registration",
+            signer: Signer::Phrase(phrase, 2, 0),
+            second: None,
+            nonce: 1,
+            operation: Operation::RegisterValidator {
+                name: "bergschrund".to_owned(),
+            },
+            memo: None,
+            fee: 7_500_000_000,
+            aux: [4; 32],
+        },
+        TransactionCase {
+            name: "temporary resignation",
+            signer: Signer::Phrase(phrase, 2, 0),
+            second: None,
+            nonce: 2,
+            operation: Operation::ResignValidator {
+                kind: Resignation::Temporary,
+            },
+            memo: None,
+            fee: 0,
+            aux: [5; 32],
+        },
+    ])
+}
+
+fn transactions() -> Result<Value, Failure> {
+    let chain = Chain::load(&profile(90), CONFIGURATION)?;
+    let profile = chain.profile().clone();
+    let mut cases = Vec::new();
+    for case in transaction_cases(&profile)? {
+        let account = case.signer.account(&profile)?;
+        let second = case
+            .second
+            .as_ref()
+            .map(|signer| signer.account(&profile))
+            .transpose()?;
+        let facts = OnlineFacts {
+            sender: account.public_key().clone(),
+            nonce: case.nonce,
+            height: HEIGHT,
+            second_key: second.as_ref().map(|second| second.public_key().clone()),
+        };
+        let request = DraftRequest {
+            operation: case.operation.clone(),
+            memo: case.memo.map(str::to_owned),
+            fee: FeeChoice::Exact(Amount::from_base_units(case.fee)),
+        };
+        let draft = Draft::build(&chain, &request, &facts, None)?;
+        let signed = draft.sign_with(&account, second.as_ref(), Aux::fixed(case.aux))?;
+        if !signed.is_verified() {
+            return Err(format!("{}: the signed transaction does not verify", case.name).into());
+        }
+        let summary = draft.summary();
+        cases.push(json!({
+            "name": case.name,
+            "signer": case.signer.json(),
+            "secondSigner": case.second.as_ref().map(Signer::json),
+            "request": {
+                "operation": operation_json(&case.operation),
+                "memo": case.memo,
+                "fee": { "kind": "exact", "amount": case.fee.to_string() },
+            },
+            "facts": {
+                "sender": account.public_key().to_hex(),
+                "nonce": case.nonce.to_string(),
+                "height": HEIGHT,
+                "secondKey": second.as_ref().map(|second| second.public_key().to_hex()),
+            },
+            "aux": hex::encode(case.aux),
+            "summary": {
+                "kind": summary.operation.kind().as_str(),
+                "operation": operation_json(&summary.operation),
+                "from": summary.sender.to_string(),
+                "nonce": summary.nonce.to_string(),
+                "fee": summary.fee.amount.base_units().to_string(),
+                "feeSource": summary.fee.source.as_str(),
+                "amount": summary.total_amount.base_units().to_string(),
+                "size": summary.size,
+                "secondSignature": summary.second_signature,
+            },
+            "unsigned": hex::encode(draft.unsigned_bytes()),
+            "draftSha256": hex::encode(sha256(&draft.serialize())),
+            "id": signed.id(),
+            "bytes": hex::encode(signed.bytes()),
+            "json": signed.json(),
+            "signedSha256": hex::encode(sha256(&signed.serialize())),
+        }));
+    }
+    Ok(json!({
+        "configuration": serde_json::from_str::<Value>(CONFIGURATION)?,
+        "nethash": chain.nethash(),
+        "height": HEIGHT,
+        "cases": cases,
+    }))
+}
+
+fn main() -> Result<(), Failure> {
     let keys = PASSPHRASES
         .iter()
         .map(|passphrase| key_case(passphrase))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let valid = Address::from_public_key(
-        KeyPair::from_passphrase("probe passphrase")?.public_key(),
-        90,
-    )
-    .to_base58();
+    let devnet = profile(90);
+    let valid = Account::from_legacy_passphrase(&devnet, "probe passphrase")?
+        .address()
+        .to_string();
     let mut typo = valid.clone();
     typo.replace_range(5..6, "0");
     let mut checksum = valid.clone();
     checksum.replace_range(33..34, if valid.ends_with('G') { "H" } else { "G" });
-    let short_payload = heartwood_crypto::utils::base58::encode_check(&[90; 20]);
-    let long_payload = heartwood_crypto::utils::base58::encode_check(&[90; 22]);
+    let other_network = Account::from_legacy_passphrase(&profile(30), "probe passphrase")?
+        .address()
+        .to_string();
     let address_checks = vec![
         address_check(&valid, 90),
         address_check(&valid, 30),
+        address_check(&other_network, 90),
         address_check(&typo, 90),
         address_check(&checksum, 90),
-        address_check(&short_payload, 90),
-        address_check(&long_payload, 90),
+        // Base58Check of 20 and of 22 bytes of 90: a payload that is not 21 bytes long.
+        address_check("9Ek46doqep1srpD1W4QaovLWwgPmsQ6Rf", 90),
+        address_check("3mUArNZj1eJNqp1Hhw7NE4nuZ2EgxjeMoREF", 90),
         address_check("111", 90),
         address_check("", 90),
         address_check("d\u{e9}", 90),
+        address_check(
+            "dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNFdDSccdbPRhfrcbUeFLMbGC1",
+            90,
+        ),
     ];
 
     let uncompressed = PublicKey::from_hex(GENERATOR_UNCOMPRESSED)?;
     let public_key_addresses = vec![json!({
         "publicKey": GENERATOR_UNCOMPRESSED,
         "network": 90,
-        "address": Address::from_public_key(&uncompressed, 90).to_base58(),
+        "address": Address::from_public_key(&uncompressed, &devnet)?.to_string(),
     })];
 
     let digests: Vec<Value> = MESSAGES
@@ -149,13 +587,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
 
+    let (amount_parses, amount_formats) = amounts();
     let vectors = json!({
-        "format": "iceroot-sdk-wasm-vectors/1",
-        "description": "Native Rust results of heartwood-crypto that the WebAssembly build must reproduce byte for byte. Generated by wasm/examples/vectors.rs.",
+        "format": "iceroot-sdk-wasm-vectors/2",
+        "description": "Native Rust results of the SDK's core that the WebAssembly build must reproduce byte for byte. Generated by wasm/examples/vectors.rs.",
         "keys": keys,
+        "phraseAccounts": phrase_accounts()?,
+        "phraseChecks": PHRASE_CHECKS.iter().map(|text| phrase_check(text)).collect::<Vec<_>>(),
         "digests": digests,
         "addressChecks": address_checks,
         "publicKeyAddresses": public_key_addresses,
+        "amounts": { "parse": amount_parses, "format": amount_formats },
+        "transactions": transactions()?,
     });
     println!("{}", serde_json::to_string_pretty(&vectors)?);
     Ok(())

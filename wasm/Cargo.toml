@@ -18,12 +18,16 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # Test seam: reproducible signatures for the cross-checks against native Rust. Only the test build
 # of the package enables it; the published build never does.
-fixed-aux = ["heartwood-crypto/fixed-aux"]
+fixed-aux = ["iceroot-sdk/fixed-aux"]
 
 [dependencies]
-# The byte-exact layer: keys, addresses and signatures come from here and nowhere else.
-heartwood-crypto = { git = "ssh://git@github-iceroot/iceroot-network/heartwood-core.git", rev = "c01da1e" }
+# The SDK's Rust core. Every key, address, signature and transaction comes from it, and through it
+# from heartwood-crypto. Until sdk-rust has a tagged release, the bindings build against a checkout
+# of sdk-rust next to this repository.
+iceroot-sdk = { path = "../../sdk-rust/crates/iceroot-sdk" }
 js-sys = "0.3"
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.11"
 wasm-bindgen = "=0.2.129"
 zeroize = "1.9"
 
@@ -35,7 +39,6 @@ secp256k1 = { version = "=0.33.1", default-features = false, features = ["std", 
 
 [dev-dependencies]
 hex = "0.4"
-serde_json = "1"
 
 # Prints the native Rust results that every JavaScript context must reproduce.
 [[example]]
@@ -52,3 +55,5 @@ lto = true
 codegen-units = 1
 debug = false
 strip = true
+# As in sdk-rust: arithmetic that overflows stops instead of wrapping.
+overflow-checks = true

@@ -1,0 +1,213 @@
+/**
+ * A network's loaded configuration: the chain a profile is bound to.
+ *
+ * {@link Chain.load} reads the crypto configuration a node reports (the `data` object of the relay
+ * API's `/node/configuration/crypto`: the network description, the milestones and the genesis
+ * block) and checks it against the profile: the network byte always, the network hash when the
+ * profile has one pinned. A devnet profile without a pinned hash is pinned by the first load;
+ * keep {@link Chain.profile}, and a later load of another chain is refused with `NetworkMismatch`.
+ *
+ * A chain answers what depends on the milestone in force: the rules and the economics at a
+ * height, and the format stage. Drafts are built against a chain.
+ *
+ * @module
+ */
+
+import type { AssetId, TokenInfo } from "./amount.js";
+import { InvalidArgument } from "./errors.js";
+import { call, parse, type ChainHandle } from "./internal/bindings.js";
+import {
+  capabilitiesOf,
+  profileFromHandle,
+  profileHandleOf,
+  type Capabilities,
+  type NetworkProfile,
+  type ProfileSource,
+} from "./profiles.js";
+import type { BaseUnits, FormatStage } from "./types.js";
+
+/** An operation kind of today's formats. */
+export type OperationKind =
+  | "transfer"
+  | "vote"
+  | "burn"
+  | "register-second-key"
+  | "register-validator"
+  | "resign-validator";
+
+/** The rules in force at one height. */
+export interface Rules {
+  /** The height the rules are for. */
+  readonly height: number;
+  /** The format stage at that height. */
+  readonly stage: FormatStage;
+  /** Transfers: recipients per transfer and the smallest amount per recipient. */
+  readonly transfer: {
+    readonly minRecipients: number;
+    readonly maxRecipients: number;
+    readonly minAmount: BaseUnits;
+  };
+  /** Memos: the longest memo in UTF-8 bytes. */
+  readonly memo: { readonly maxBytes: number };
+  /** Votes. A vote with no entries withdraws the account's vote. */
+  readonly vote: {
+    readonly minEntries: number;
+    readonly maxEntries: number;
+    readonly totalBasisPoints: number;
+    readonly maxBasisPointsPerEntry: number;
+    readonly maxBytes: number;
+  };
+  /** Validator names. */
+  readonly name: { readonly minLength: number; readonly maxLength: number; readonly characters: string };
+  /** Burns: the smallest amount. */
+  readonly burn: { readonly minAmount: BaseUnits };
+  /** Fees: the milestone's dynamic fee table, and whether this build computes the exact floor. */
+  readonly fees: {
+    readonly dynamic: {
+      readonly enabled: boolean;
+      readonly minFee: number;
+      readonly addonBytes: Readonly<Partial<Record<OperationKind, number>>>;
+    } | null;
+    readonly floorAvailable: boolean;
+  };
+  /** Resignations: blocks a temporary resignation lasts before it may be revoked. */
+  readonly resignation: { readonly blocksBeforeRevoke: number | null };
+  /** The largest transaction in bytes. */
+  readonly maxTransactionBytes: number;
+  /** The largest amount any amount field carries. */
+  readonly maxAmount: BaseUnits;
+}
+
+/** The economics in force at one height. Display and estimates only; nothing here is signed. */
+export interface Economics {
+  /** The height. */
+  readonly height: number;
+  /** Validator seats per round. */
+  readonly seats: number;
+  /** Seconds per block. */
+  readonly blockTimeSeconds: number;
+  /** The block reward of each seated rank; `null` where the milestone gives none. */
+  readonly rewardsByRank: readonly { readonly rank: number; readonly reward: BaseUnits | null }[];
+  /** The reward of ranks outside the reward table, if any. */
+  readonly secondaryReward: BaseUnits | null;
+  /** Donations: shares of every block reward. */
+  readonly donations: readonly {
+    readonly address: string;
+    readonly basisPoints: number;
+    readonly purpose: string | null;
+  }[];
+  /** The share of each fee that is burned, in basis points. */
+  readonly feeBurnBasisPoints: number;
+  /** The smallest amount a burn may burn. */
+  readonly minBurn: BaseUnits;
+}
+
+interface RulesJson extends Omit<Rules, "transfer" | "burn" | "maxAmount"> {
+  readonly transfer: Omit<Rules["transfer"], "minAmount"> & { readonly minAmount: string };
+  readonly burn: { readonly minAmount: string };
+  readonly maxAmount: string;
+}
+
+interface EconomicsJson extends Omit<Economics, "rewardsByRank" | "secondaryReward" | "minBurn"> {
+  readonly rewardsByRank: readonly { readonly rank: number; readonly reward: string | null }[];
+  readonly secondaryReward: string | null;
+  readonly minBurn: string;
+}
+
+const chains = new WeakMap<Chain, ChainHandle>();
+
+/** A network's loaded configuration, bound to a profile. */
+export class Chain {
+  /** The profile, with the network hash pinned. Keep it for the next contact. */
+  readonly profile: NetworkProfile;
+  /** The network hash (64 lowercase hex digits). */
+  readonly nethash: string;
+  /** The address network byte. */
+  readonly networkByte: number;
+  /** The network's own asset. */
+  readonly token: TokenInfo;
+
+  private constructor(handle: ChainHandle) {
+    chains.set(this, handle);
+    this.profile = profileFromHandle(handle.profile());
+    this.nethash = handle.nethash();
+    this.networkByte = handle.networkByte();
+    const token = parse<{ assetId: string; name: string; symbol: string; decimals: number }>(handle.token());
+    this.token = Object.freeze({ ...token, assetId: token.assetId as AssetId });
+  }
+
+  /**
+   * The chain of the crypto configuration a node reports, for the profile of `source`:
+   * `/node/configuration/crypto`'s `data` object, as JSON text or as the parsed object.
+   */
+  static load(source: ProfileSource, configuration: string | object): Chain {
+    const profile = profileHandleOf(source);
+    const text = typeof configuration === "string" ? configuration : JSON.stringify(configuration);
+    return new Chain(call((module) => module.ChainHandle.load(profile, text)));
+  }
+
+  /** @internal */
+  static fromHandle(handle: ChainHandle): Chain {
+    return new Chain(handle);
+  }
+
+  /** The capabilities of the chain's profile. */
+  get capabilities(): Capabilities {
+    return capabilitiesOf(this.profile);
+  }
+
+  /** The format stage of blocks at `height`. */
+  stageAt(height: number): FormatStage {
+    return call(() => handleOf(this).stageAt(checkHeight(height))) as FormatStage;
+  }
+
+  /** The rules in force at `height`: pass the next block's height. */
+  rules(height: number): Rules {
+    const json = parse<RulesJson>(call(() => handleOf(this).rules(checkHeight(height))));
+    return {
+      ...json,
+      transfer: { ...json.transfer, minAmount: BigInt(json.transfer.minAmount) },
+      burn: { minAmount: BigInt(json.burn.minAmount) },
+      maxAmount: BigInt(json.maxAmount),
+    };
+  }
+
+  /** The economics in force at `height`. */
+  economics(height: number): Economics {
+    const json = parse<EconomicsJson>(call(() => handleOf(this).economics(checkHeight(height))));
+    return {
+      ...json,
+      rewardsByRank: json.rewardsByRank.map(({ rank, reward }) => ({
+        rank,
+        reward: reward === null ? null : BigInt(reward),
+      })),
+      secondaryReward: json.secondaryReward === null ? null : BigInt(json.secondaryReward),
+      minBurn: BigInt(json.minBurn),
+    };
+  }
+}
+
+/**
+ * The Rust chain of `chain`.
+ *
+ * @internal
+ */
+export function handleOf(chain: Chain): ChainHandle {
+  const handle = chains.get(chain);
+  if (handle === undefined) {
+    throw new InvalidArgument("not a chain made by Chain.load");
+  }
+  return handle;
+}
+
+/**
+ * `height` if it is a block height the SDK accepts.
+ *
+ * @internal
+ */
+export function checkHeight(height: number): number {
+  if (!Number.isInteger(height) || height < 1 || height > 0xffffffff) {
+    throw new InvalidArgument("a height is an integer from 1 to 4294967295", { height });
+  }
+  return height;
+}

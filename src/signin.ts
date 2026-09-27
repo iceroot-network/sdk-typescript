@@ -1,42 +1,109 @@
 /**
- * Sign-in challenges.
+ * Sign-in challenges, version 1.
  *
  * A website asks a wallet to sign a challenge message; the wallet checks it with `SignIn.parse`
- * before it asks the holder, and the website's server builds it with `SignIn.build`. Both sides
- * call the same code, so they cannot disagree. The functions arrive with the Rust core; this
- * module defines their types.
+ * before it asks the holder, and the website's server builds it with `SignIn.build` and checks it
+ * again before it verifies the signature. Both sides call the same code in the SDK's Rust core,
+ * so they cannot disagree.
  *
  * @module
  */
 
+import { InvalidArgument } from "./errors.js";
+import { call, parse } from "./internal/bindings.js";
+import { profileHandleOf, type ProfileSource } from "./profiles.js";
 import type { Hex } from "./types.js";
 
-/** The fields of a sign-in challenge. */
-export interface SignInFields {
-  /** The website's origin, such as `https://example.com`. */
+/** What a server puts in a new sign-in message. */
+export interface SignInRequest {
+  /** The website's origin, such as `https://validators.example`. */
   readonly origin: string;
-  /** The network name, such as `heartwood-devnet-v90`. */
-  readonly network: string;
   /** The signer's public key, as hex. */
   readonly publicKey: Hex;
-  /** The signer's address. */
-  readonly address: string;
-  /** 64 hex digits chosen by the website. */
+  /** 64 lowercase hex digits from 32 random bytes, used once. */
   readonly nonce: Hex;
-  /** When the challenge was issued. */
+  /** When the challenge is issued (whole seconds are used). */
   readonly issuedAt: Date;
-  /** When the challenge lapses; at most five minutes after `issuedAt`. */
+  /** When it lapses: at most five minutes after `issuedAt`. */
   readonly expiresAt: Date;
 }
 
-/** What `SignIn.parse` checks the challenge against. */
+/** The fields of a checked sign-in challenge. */
+export interface SignInFields {
+  /** The website's origin. */
+  readonly origin: string;
+  /** The origin's `/login`. */
+  readonly uri: string;
+  /** The network name, such as `heartwood-devnet-v90`. */
+  readonly network: string;
+  /** The signer's public key, as lowercase hex. */
+  readonly publicKey: Hex;
+  /** The signer's address. */
+  readonly address: string;
+  /** The nonce. */
+  readonly nonce: Hex;
+  /** When the challenge was issued. */
+  readonly issuedAt: Date;
+  /** When the challenge lapses. */
+  readonly expiresAt: Date;
+}
+
+/** What `SignIn.parse` checks the challenge against. Unset fields are not compared. */
 export interface SignInExpectations {
   /** The origin of the page that asks. */
-  readonly origin: string;
+  readonly origin?: string;
   /** The selected account's address. */
-  readonly address: string;
+  readonly address?: string;
   /** The selected account's public key, as hex. */
-  readonly publicKey: Hex;
+  readonly publicKey?: Hex;
   /** The current time. */
   readonly now: Date;
 }
+
+function seconds(date: Date, name: string): number {
+  const time = date instanceof Date ? date.getTime() : Number.NaN;
+  if (!Number.isFinite(time)) {
+    throw new InvalidArgument(`${name} is not a valid date`);
+  }
+  return Math.floor(time / 1000);
+}
+
+/** Building and checking sign-in challenges. */
+export const SignIn = {
+  /** The twelve-line sign-in message of `request` on the network of `source`, for a server. */
+  build(request: SignInRequest, source: ProfileSource): string {
+    const profile = profileHandleOf(source);
+    const json = JSON.stringify({
+      origin: request.origin,
+      publicKey: request.publicKey,
+      nonce: request.nonce,
+      issuedAt: seconds(request.issuedAt, "issuedAt"),
+      expiresAt: seconds(request.expiresAt, "expiresAt"),
+    });
+    return call((module) => module.buildSignIn(profile, json));
+  },
+
+  /**
+   * The fields of the sign-in `message` on the network of `source`, after every check: the fixed
+   * lines, a secure origin with `URI` its `/login`, the network, the forms of the key, address and
+   * nonce, that the address is the key's, the expected fields and the times. A message that fails
+   * a check throws `InvalidSignIn` with the reason in `details.reason`.
+   */
+  parse(message: string, source: ProfileSource, expected: SignInExpectations): SignInFields {
+    const profile = profileHandleOf(source);
+    const now = expected.now instanceof Date ? expected.now.getTime() : Number.NaN;
+    if (!Number.isFinite(now)) {
+      throw new InvalidArgument("now is not a valid date");
+    }
+    const json = JSON.stringify({
+      origin: expected.origin ?? null,
+      publicKey: expected.publicKey ?? null,
+      address: expected.address ?? null,
+    });
+    const fields = parse<Omit<SignInFields, "issuedAt" | "expiresAt"> & { issuedAtMs: number; expiresAtMs: number }>(
+      call((module) => module.parseSignIn(profile, message, json, now)),
+    );
+    const { issuedAtMs, expiresAtMs, ...rest } = fields;
+    return Object.freeze({ ...rest, issuedAt: new Date(issuedAtMs), expiresAt: new Date(expiresAtMs) });
+  },
+} as const;

@@ -24,10 +24,13 @@ export type MessageAlgorithm = "secp256k1-bip340-sha256" | "ml-dsa-65";
  * lacks throws `UnsupportedOnNetwork` with the capability's name.
  */
 export type Capability =
+  | "connect"
+  | "phrase-accounts"
   | "transfer"
   | "burn"
   | "vote"
   | "validator-registration"
+  | "validator-resignation"
   | "second-key"
   | "key-rotation"
   | "multisig"

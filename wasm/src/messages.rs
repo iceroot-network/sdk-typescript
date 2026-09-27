@@ -1,41 +1,43 @@
-//! S1 message signatures: BIP340 over the SHA-256 of the message's bytes.
+//! Message signatures in today's format: BIP340 over the SHA-256 of the message's bytes.
 
-use heartwood_crypto::PublicKey;
-use heartwood_crypto::crypto::hash;
-use heartwood_crypto::crypto::sig::{self, SchemeId, Signature, SigningDomain};
+use iceroot_sdk::PublicKey;
+use iceroot_sdk::message::{self, MessageSignature};
+use sha2::{Digest, Sha256};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// The SHA-256 of `data` (32 bytes).
 #[wasm_bindgen]
 pub fn sha256(data: &[u8]) -> Vec<u8> {
-    hash::sha256(data).to_vec()
+    Sha256::digest(data).to_vec()
 }
 
-/// Whether `signature` is an S1 message signature of `message` by `public_key`.
+/// Whether `signature` (hex) is a message signature of `message` by `public_key` (hex) with the
+/// algorithm `algorithm`.
 ///
 /// The public key must be a valid secp256k1 key (33 or 65 bytes) and the signature 64 bytes;
 /// anything else fails the check and is never an error.
 #[wasm_bindgen(js_name = verifyMessage)]
-pub fn verify_message(message: &[u8], public_key: &[u8], signature: &[u8]) -> bool {
-    if !PublicKey::is_valid(public_key) {
+pub fn verify_message(message: &[u8], public_key: &str, signature: &str, algorithm: &str) -> bool {
+    if PublicKey::from_hex(public_key).is_err() {
         return false;
     }
-    let Ok(signature) = Signature::from_bytes(signature) else {
-        return false;
-    };
-    // See KeyHandle::sign_message: the domain changes no bytes in the S1 format.
-    sig::verify(
-        SchemeId::Secp256k1Bip340,
-        SigningDomain::Transaction,
-        &hash::sha256(message),
-        &signature,
-        public_key,
+    message::verify_bytes(
+        message,
+        &MessageSignature {
+            public_key: public_key.to_ascii_lowercase(),
+            signature: signature.to_ascii_lowercase(),
+            algorithm: algorithm.to_owned(),
+            network: String::new(),
+        },
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const KEY: &str = "03f83f83227e28add5598d2c75c20f72b4bfb0328957ef27e2da2ff73779fa4bd2";
+    const ALGORITHM: &str = "secp256k1-bip340-sha256";
 
     #[test]
     fn digest() {
@@ -47,13 +49,18 @@ mod tests {
 
     #[test]
     fn malformed_inputs_fail_the_check() {
-        let key = hex::decode("03f83f83227e28add5598d2c75c20f72b4bfb0328957ef27e2da2ff73779fa4bd2")
-            .unwrap();
-        assert!(!verify_message(b"m", &key, &[0; 63]));
-        assert!(!verify_message(b"m", &key, &[0; 64]));
-        assert!(!verify_message(b"m", &key[..32], &[0; 64]));
-        let mut bad_prefix = key.clone();
-        bad_prefix[0] = 5;
-        assert!(!verify_message(b"m", &bad_prefix, &[0; 64]));
+        let zeros = "00".repeat(64);
+        assert!(!verify_message(b"m", KEY, &"00".repeat(63), ALGORITHM));
+        assert!(!verify_message(b"m", KEY, &zeros, ALGORITHM));
+        assert!(!verify_message(b"m", &KEY[..64], &zeros, ALGORITHM));
+        assert!(!verify_message(
+            b"m",
+            &format!("05{}", &KEY[2..]),
+            &zeros,
+            ALGORITHM
+        ));
+        assert!(!verify_message(b"m", "", &zeros, ALGORITHM));
+        assert!(!verify_message(b"m", KEY, "zz", ALGORITHM));
+        assert!(!verify_message(b"m", KEY, &zeros, "ml-dsa-65"));
     }
 }
