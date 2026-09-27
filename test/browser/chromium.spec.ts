@@ -1,5 +1,7 @@
 // The browser build in Chromium under the page policy script-src 'self' 'wasm-unsafe-eval'.
 
+import { readFileSync } from "node:fs";
+
 import { expect, test, type Page } from "@playwright/test";
 
 import { serve } from "./static-server.mjs";
@@ -52,6 +54,17 @@ test("the test browser build signs byte for byte as native Rust", async ({ page 
   expect(result["keystoresOpened"]).toBe(1);
   expect(result["fixedAuxSignatures"]).toBe(25);
   expect(result["fixedAuxTransactions"]).toBe(transactions);
+});
+
+test("every ownership proof vector runs in Chromium", async ({ page }) => {
+  // sdk-rust's vectors, from the checkout next to this repository.
+  const vectors = readFileSync(new URL("../../../sdk-rust/vectors/sdk/S08-ownership-proofs.jsonl", import.meta.url), "utf8");
+  await page.route("**/vectors/S08-ownership-proofs.jsonl", (route) => route.fulfill({ body: vectors, contentType: "text/plain" }));
+  const result = await report(page, "/test/contexts/chromium/ownership.html");
+  expect(result["failures"]).toEqual([]);
+  expect(result["records"]).toBe(119);
+  // 112 records match; 7 are the documented cases where the SDK is stricter than the Legacy Signer.
+  expect(result["tally"]).toEqual({ matched: 112, divergent: 7 });
 });
 
 test("without 'wasm-unsafe-eval' init() fails with WasmLoadFailed", async ({ page }) => {

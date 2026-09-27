@@ -2,8 +2,8 @@
 // vectors/sdk/S08-ownership-proofs.jsonl, whose verdicts come from the IceRoot Legacy Signer's own
 // format checks and whose keys, addresses and signatures come from the reference implementation)
 // through the published functions, and the signing records through the test build's seam for
-// fixed auxiliary randomness; the round trips of a proof; the wiping of a passphrase given as bytes;
-// and the error codes.
+// fixed auxiliary randomness, with the checks Chromium runs too; the round trips of a proof; the
+// wiping of a passphrase given as bytes; and the error codes.
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -14,26 +14,13 @@ import * as sdk from "../../dist/node/index.js";
 import * as ownership from "../../dist/node/ownership.js";
 import * as testSdk from "../../build/test/dist/node/index.js";
 import { root } from "./helpers.mjs";
+import "../shared/ownership-checks.js";
 
 const VECTORS = join(root, "..", "sdk-rust", "vectors", "sdk", "S08-ownership-proofs.jsonl");
 if (!existsSync(VECTORS)) {
   throw new Error(`the ownership proof vectors are missing: check out sdk-rust next to this repository (${VECTORS})`);
 }
 const { testing } = testSdk;
-
-// The records the Legacy Signer accepts and the SDK refuses on purpose, as sdk-rust's runner lists
-// them: the signer reads the source address by its pattern only, the issue time with JavaScript's
-// Date.parse (which rolls impossible dates over), and a typed account with Unicode toLowerCase.
-const STRICTER = new Set([
-  "an S address of network byte 62",
-  "address with a bad checksum",
-  "issued on 30 February",
-  "issued on 29 February of a common year",
-  "issued at 24:00:00",
-  "in capitals with a Kelvin sign for K",
-]);
-
-const fromHex = (text) => new Uint8Array(Buffer.from(text, "hex"));
 
 function records() {
   const lines = readFileSync(VECTORS, "utf8").trim().split("\n").map((line) => JSON.parse(line));
@@ -49,98 +36,20 @@ function outcome(fn) {
   try {
     return { output: fn() };
   } catch (error) {
-    assert.ok(error instanceof ownership.InvalidProof || error instanceof testSdk.ownership.InvalidProof, String(error));
+    assert.ok(error instanceof ownership.InvalidProof, String(error));
     assert.equal(error.code, "InvalidProof");
     assert.equal(error.reason, error.details.reason);
     return { refused: error.reason };
   }
 }
 
-/** Compares a record with an outcome: `matched`, `divergent` (a documented stricter refusal) or a failure message. */
-function judge(record, result) {
-  if (record.error === undefined) {
-    if (result.output !== undefined) {
-      assert.deepEqual(result.output, record.output, record.name);
-      return "matched";
-    }
-    assert.ok(STRICTER.has(record.name), `${record.name}: refused (${result.refused}) where the vectors accept`);
-    return "divergent";
-  }
-  assert.equal(result.output, undefined, `${record.name}: accepted where the vectors refuse`);
-  return "matched";
-}
-
 test("every ownership proof vector runs in WebAssembly", () => {
   assert.ok(testing.hasFixedAux());
-  const tally = { matched: 0, divergent: 0 };
-  const count = (verdict) => (tally[verdict] += 1);
-  for (const record of records()) {
-    const input = record.input;
-    switch (record.op) {
-      case "proof.account":
-        count(judge(record, outcome(() => ({ ...ownership.IceRootAccount.parse(input.text) }))));
-        break;
-      case "proof.build":
-        count(
-          judge(
-            record,
-            outcome(() => ({
-              message: ownership.OwnershipProof.build({
-                address: input.address,
-                account: input.account,
-                nonce: input.nonce,
-                issuedAt: input.issuedAtMs,
-              }),
-            })),
-          ),
-        );
-        break;
-      case "proof.parse":
-        count(
-          judge(
-            record,
-            outcome(() => ({
-              network: ownership.SOURCE_NETWORK,
-              ...ownership.OwnershipProof.parse(input.message, input.expected, input.now),
-            })),
-          ),
-        );
-        break;
-      case "proof.sign": {
-        const key = testSdk.ownership.SolarKey.fromPassphrase(input.passphrase);
-        try {
-          const result = outcome(() => testing.signProofWithAux(key, input.message, input.now, fromHex(input.aux)));
-          if (result.output !== undefined) {
-            const proof = result.output;
-            const json = testSdk.ownership.OwnershipProof.toJson(proof);
-            // The JSON reads back as the same proof, which verifies; the signature alone makes the
-            // same proof, as a Ledger's signature is checked; and the published build agrees.
-            assert.deepEqual(ownership.OwnershipProof.fromJson(json), proof);
-            assert.deepEqual(
-              ownership.OwnershipProof.fromSignature(proof.message, proof.publicKey, proof.signature, input.now),
-              proof,
-            );
-            assert.equal(ownership.OwnershipProof.verify(json, input.now).address, key.address);
-            assert.equal(ownership.sourceAddress(key.publicKey), key.address);
-            result.output = { proof: JSON.parse(json), json };
-          }
-          count(judge(record, result));
-        } finally {
-          key.release();
-        }
-        break;
-      }
-      case "proof.verify": {
-        const verdict = outcome(() => ownership.OwnershipProof.verify(JSON.stringify(input.proof), input.now));
-        assert.deepEqual({ valid: verdict.output !== undefined }, record.output, record.name);
-        count("matched");
-        break;
-      }
-      default:
-        assert.fail(`unknown operation ${record.op}`);
-    }
-  }
-  assert.deepEqual(tally, { matched: 112, divergent: 7 });
+  // The same checks as in Chromium (test/shared/ownership-checks.js).
+  const report = globalThis.IceRootOwnershipChecks.run(ownership, { ...testing, ownership: testSdk.ownership }, records());
+  assert.deepEqual(report.failures, []);
+  // 112 records match; 7 are the documented cases where the SDK is stricter than the Legacy Signer.
+  assert.deepEqual(report.tally, { matched: 112, divergent: 7 });
 });
 
 test("a proof is built, signed with fresh randomness, verified and read back", () => {
