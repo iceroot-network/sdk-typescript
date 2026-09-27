@@ -4,9 +4,12 @@
  * The client is sans-IO: the Rust core (`iceroot-sdk-api`) builds each request and decodes each
  * answer, and the host performs the HTTP call through a transport with the signature of `fetch`.
  * Tauri apps pass the HTTP plugin's `fetch`, so requests leave from Rust. The types below are the
- * client's IceRoot-shaped values, the same in every language the SDK is built for: a validator is
- * never a "delegate", a validator's name is never a "username", shares are whole basis points and
- * amounts are `bigint` base units.
+ * client's IceRoot-shaped values, the same in every language the SDK is built for (the Rust types
+ * of `iceroot-sdk-api` are the contract): a validator is never a "delegate", a validator's name is
+ * never a "username", shares are whole basis points and amounts are `bigint` base units. Integers
+ * that can exceed 2^53 (amounts, nonces, heights, times, lifetime counters) are `bigint`; smaller
+ * ones (ranks, basis points, page numbers, sizes) are numbers. An absent value is a missing
+ * property.
  *
  * Addresses and public keys are the text the node reported; parse them against a profile with
  * `Address.parse` before trusting them.
@@ -17,12 +20,20 @@
 import type { AssetId } from "./amount.js";
 import type { VoteEntry } from "./build.js";
 import type { RejectionReason } from "./errors.js";
-import type { BaseUnits, FormatStage, Hex } from "./types.js";
+import type { BaseUnits, Hex } from "./types.js";
 
 export type { Capabilities } from "./profiles.js";
 
 /** A function with the signature of `fetch` that performs the SDK's HTTP requests. */
 export type Transport = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+/** A request allowance: at most `requests` per `windowMs` milliseconds. */
+export interface RateLimit {
+  /** Requests allowed per window. */
+  readonly requests: number;
+  /** The window in milliseconds. */
+  readonly windowMs: number;
+}
 
 /** Options of `connect`. */
 export interface ConnectOptions {
@@ -30,6 +41,14 @@ export interface ConnectOptions {
   readonly transport?: Transport;
   /** Extra headers for every request, for a relay behind a proxy that needs a token. */
   readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * The request allowance to keep to. The default is the reference implementation's: 100 requests
+   * per 60 seconds per client address. `false` sends requests without a budget, for a node that
+   * allows more; HTTP 429 is still retried with backoff.
+   */
+  readonly rateLimit?: RateLimit | false;
+  /** Time allowed for one request, in milliseconds; 15,000 by default. */
+  readonly timeoutMs?: number;
 }
 
 /** A point in chain time. */
@@ -66,8 +85,6 @@ export interface NodeStatus {
   readonly blocksBehind: bigint;
   /** The node's chain time: seconds since the chain's epoch by the node's clock. */
   readonly chainTime: bigint;
-  /** The format stage of the next block. */
-  readonly stage?: FormatStage;
 }
 
 /** The chain identity a node reports. */
@@ -114,16 +131,29 @@ export type TxKind =
   | "resign-validator"
   | "other";
 
+/**
+ * A transaction kind with, for `other`, the wire type it stands for. Records that name a kind
+ * carry these fields among their own.
+ */
+export interface KindFields {
+  /** The kind. */
+  readonly kind: TxKind;
+  /** For `other`: the wire type group. */
+  readonly typeGroup?: number;
+  /** For `other`: the wire type within the group. */
+  readonly typeId?: number;
+}
+
 /** The pool's dynamic fee settings. */
 export interface PoolFees {
   /** Whether dynamic fees are enabled. */
   readonly dynamic: boolean;
-  /** Fee per byte-unit the pool requires to admit a transaction. */
+  /** Fee per byte-unit the pool requires to admit a transaction (0 when dynamic fees are off). */
   readonly minFeePool: bigint;
-  /** Fee per byte-unit the node requires to broadcast a transaction. */
+  /** Fee per byte-unit the node requires to broadcast a transaction (0 when dynamic fees are off). */
   readonly minFeeBroadcast: bigint;
-  /** Extra byte-units per transaction kind. */
-  readonly addonBytes: readonly { readonly kind: TxKind; readonly bytes: bigint }[];
+  /** Extra byte-units per transaction kind, in wire type order. */
+  readonly addonBytes: readonly (KindFields & { readonly bytes: bigint })[];
 }
 
 /** A node's configuration: chain identity, token labels, the milestone in force and pool limits. */
@@ -187,9 +217,7 @@ export interface Supply {
 }
 
 /** Fee figures of one transaction kind over the requested window. */
-export interface FeeStatistic {
-  /** The transaction kind. */
-  readonly kind: TxKind;
+export interface FeeStatistic extends KindFields {
   /** Average fee, rounded by the node. */
   readonly avg: BaseUnits;
   /** Smallest fee. */
@@ -388,8 +416,8 @@ export interface BlockInfo {
   readonly producerPublicKey: Hex;
   /** Block reward. */
   readonly reward: BaseUnits;
-  /** Donations paid out of the reward. */
-  readonly donations: readonly Payment[];
+  /** Donations paid out of the reward, sorted by address. */
+  readonly donations: readonly Donation[];
   /** Sum of fees. */
   readonly totalFee: BaseUnits;
   /** Burned share of the fees. */
@@ -412,6 +440,14 @@ export interface BlockInfo {
   readonly time: Timestamp;
 }
 
+/** One donation paid out of a block reward. */
+export interface Donation {
+  /** The receiving address. */
+  readonly address: string;
+  /** The amount in base units. */
+  readonly amount: BaseUnits;
+}
+
 /** A slot a validator missed. */
 export interface MissedSlot {
   /** The height the block would have had. */
@@ -432,24 +468,58 @@ export interface RoundValidator {
 
 /** The result of submitting one transaction. */
 export type SubmitStatus =
-  | { readonly status: "accepted"; readonly broadcast: boolean }
+  | {
+      readonly status: "accepted";
+      /** Whether the node also relays it to its peers. */
+      readonly broadcast: boolean;
+    }
   | {
       readonly status: "rejected";
+      /** The normalized reason. */
       readonly reason: RejectionReason;
+      /** The node's own code (for example `ERR_LOW_FEE`); `ERR_TOO_LARGE` when the SDK refused it. */
       readonly nodeCode: string;
+      /** The node's message. */
       readonly message: string;
     };
 
-/** One transaction's outcome within a submission. */
-export interface SubmitOutcome {
-  /** The transaction id. */
-  readonly id: Hex;
-  /** Accepted or rejected. */
-  readonly outcome: SubmitStatus;
-}
+/** One transaction's outcome within a submission: its id, and accepted or rejected. */
+export type SubmitOutcome = { readonly id: Hex } & SubmitStatus;
 
 /** The outcomes of a submission, one per transaction, in submission order. */
 export interface SubmitReport {
   /** The outcomes. */
   readonly outcomes: readonly SubmitOutcome[];
+}
+
+/** Which page of a listing to read: page 1 of 100 items when absent. */
+export interface PageOptions {
+  /** The page, from 1. */
+  readonly page?: number;
+  /** Items per page, 1 to 100. */
+  readonly limit?: number;
+}
+
+/** A block by height or by id. */
+export type BlockRef = bigint | number | Hex;
+
+/** Which way to list an account's history. */
+export type HistoryDirection = "all" | "sent" | "received";
+
+/** Filters of a transaction listing. Every field narrows it. */
+export interface TxFilter {
+  /** Only transactions from this address. */
+  readonly sender?: string;
+  /** Only transactions whose primary recipient is this address. */
+  readonly recipient?: string;
+  /** Only this kind (`other` needs `typeGroup` and `typeId`). */
+  readonly kind?: TxKind;
+  /** For `kind: "other"`: the wire type group. */
+  readonly typeGroup?: number;
+  /** For `kind: "other"`: the wire type within the group. */
+  readonly typeId?: number;
+  /** Only transactions of this block. */
+  readonly blockId?: Hex;
+  /** Oldest first instead of newest first. */
+  readonly oldestFirst?: boolean;
 }

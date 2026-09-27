@@ -83,7 +83,7 @@ Allow exactly the devnet URLs the app uses, in a capability file (`src-tauri/cap
 
 Pass the plugin's `fetch` as the transport:
 
-<!-- sample: pending; needs: init, connect, profiles.devnet, transport-option, tauri-http-transport -->
+<!-- sample: pending; needs: tauri-http-transport -->
 ```ts
 // src/network.ts
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";

@@ -18,9 +18,9 @@ npm install https://github.com/iceroot-network/sdk-typescript/releases/download/
 
 Save as `transfer.mjs`:
 
-<!-- sample: pending; needs: init, connect, profiles.devnet, net.token, net.keys.fromLegacyPassphrase, Mnemonic.generate, net.keys.fromPhrase, net.accounts.get, net.build.transfer, draft.summary, draft.sign, net.submit, net.transactions.wait, Amount.parse, Amount.format, account.release -->
+<!-- sample: pending; needs: fee-floor -->
 ```js
-import { init, connect, profiles, Mnemonic, Amount, IceRootError } from "@iceroot-network/sdk";
+import { init, connect, profiles, Mnemonic, Amount, IceRootError, balanceOf } from "@iceroot-network/sdk";
 
 const relay = process.env.ICEROOT_RELAY ?? "http://127.0.0.1:6003/api";
 const fundingPassphrase = process.env.DEVNET_FUNDING_PASSPHRASE;
@@ -40,7 +40,7 @@ console.log(`New account ${alice.address}. Devnet only: keep the phrase out of l
 
 async function send(from, to, amountText, memo) {
   const draft = await net.build.transfer({
-    from: from.address,
+    from,                                   // the sender's Account: a new account has no public key on chain yet
     to: [{ address: to, amount: Amount.parse(amountText, decimals) }],
     memo,
     fee: "minimum",
@@ -49,15 +49,16 @@ async function send(from, to, amountText, memo) {
   const signed = draft.sign(from);
   const result = await net.submit(signed);
   if (result.status !== "accepted") throw new Error(`Refused: ${result.reason} (${result.nodeCode})`);
-  const status = await net.transactions.wait(signed.id, { until: "confirmed", timeoutMs: 120_000 });
-  console.log(`${signed.id} ${status.state} with ${status.confirmations} confirmation(s)`);
+  const outcome = await net.transactions.wait(signed.id, { until: "confirmed", timeoutMs: 120_000 });
+  if (outcome.state === "dropped") throw new Error(`${signed.id} was dropped from the pool`);
+  console.log(`${signed.id} ${outcome.state} with ${outcome.confirmations} confirmation(s)`);
 }
 
 try {
   await send(funder, alice.address, "100", "quickstart funding");
   await send(alice, funder.address, "1.5", "hello from the SDK");
   const info = await net.accounts.get(alice.address);
-  console.log(`Balance of the new account: ${show(info.balances.get(net.token.assetId))}`);
+  console.log(`Balance of the new account: ${show(balanceOf(info))}`);
 } catch (error) {
   if (error instanceof IceRootError) console.error(`${error.code}: ${error.message}`, error.details);
   throw error;
@@ -79,6 +80,7 @@ The output ends with two transaction ids, each `confirmed`, and the new account'
 ## What to notice
 
 - `connect` pinned the devnet's identity. A real app stores `net.profile.chain.nethash` and passes it back as `nethash` next time.
+- `net.build.transfer` read the sender's nonce from the node and the next block's height, and checked the transfer against that block's rules before anything was signed.
 - Amounts are `bigint` base units from `Amount.parse`, and the fee comes from the draft. Nothing in the script knows the decimals or the fee.
 - `draft.summary` is what a review screen shows. A script prints it; an app renders it.
 - The status is `confirmed`, not `final`: today's devnet has no finality.

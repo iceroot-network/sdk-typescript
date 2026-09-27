@@ -118,8 +118,8 @@ async fn network(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         "blockTimeSeconds": economics.block_time_seconds,
         "rewardsByRank": economics.rewards_by_rank.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
         "donations": economics.donations.iter().map(|d| json!({ "address": d.address.to_string(), "basisPoints": d.basis_points })).collect::<Vec<_>>(),
-        "supply": supply.current.to_string(),
-        "maxShareBasisPoints": state.net.rules().vote.max_share_basis_points,       // null on today's devnet
+        "supply": supply.supply.to_string(),                                         // base units, from the node's /blockchain
+        "maxBasisPointsPerEntry": state.net.rules().vote.max_basis_points_per_entry, // 10000 on today's devnet: no cap
         "voteWeightThresholdBasisPoints": economics.vote_weight_threshold_basis_points, // null on today's devnet
     })))
 }
@@ -131,7 +131,7 @@ async fn network(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 | `blockSeconds`, `roundSeconds` | `blockTimeSeconds`; a round is `seats` blocks |
 | `donationPercent` | The sum of `donations[].basisPoints` |
 | `supply` | `supply` (the current supply, not the genesis figure) |
-| `maxVotePercent` | `maxShareBasisPoints` when set |
+| `maxVotePercent` | `maxBasisPointsPerEntry` when below 10,000 |
 | `weightlessAbovePercent` | `voteWeightThresholdBasisPoints` when set |
 | `rewardForRank` tiers | `rewardsByRank` |
 

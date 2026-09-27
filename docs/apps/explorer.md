@@ -38,26 +38,26 @@ In Rust the call groups are methods: `net.blocks().latest().await`, `net.validat
 | `explorer.firstHeight` | The oldest block the API keeps in its window | A live explorer pages through history instead of holding all of it |
 | `explorer.producersPerRound` | `economics.seats` | 53 |
 | `explorer.validators.round` | The round of the latest height, from the SDK's round arithmetic | Round = the height's position in blocks of `seats` |
-| `explorer.validators.list[]`: `rank`, `name`, `account`, `status`, `weightBp`, `voters` | `validators.list()`: `rank`, `name`, `address`, `status`, `voteWeightBasisPoints`, `voters` | Map `resigned-temporary` and `resigned-permanent` to the frontend's `resigned`. `voteWeight` is also available in base units |
+| `explorer.validators.list[]`: `rank`, `name`, `account`, `status`, `weightBp`, `voters` | `validators.list()` (a page): `rank`, `name`, `address`, `status`, `voteShareBasisPoints`, `voters` | Map `resigned-temporary` and `resigned-permanent` to the frontend's `resigned`. `voteWeight` is also available in base units |
 | `explorer.validators.order` | Not available from the node API | See [Forging order](#forging-order) |
 | `explorer.validators.missed[]` | `blocks.missed()` (the reference API's `/blocks/missed`), or per validator `validators.missed(name)` | Read the list once per round, not per validator |
-| `explorer.assets[]` | `net.token` plus `economics.supply()` | One asset, ROOT, on today's devnet: id `AssetId.ROOT`, symbol, decimals, issued, burned, current supply |
+| `explorer.assets[]` | `net.token` plus `economics.supply()` | One asset, ROOT, on today's devnet: id `AssetId.ROOT`, symbol, decimals, the circulating `supply` and `burned` (`fees`, `transactions`, `total`) |
 | `explorer.txs[]` | `blocks.transactions(id)`, `transactions.get(id)`, `transactions.list(filter)` | `TxRecord`; see the kinds below |
 | `explorer.labels` | App configuration | Keep the explorer's own labels until the verified label list exists |
 | `explorer.migrations`, `migrations.routes`, `migrations.states` | None today | Hide the migration views while `net.capabilities.has("migration-exit")` is false |
 | `asset.scenarios`, `asset.lookalike` | None | Explanatory content, not ledger data. Keep it as static page content, clearly illustrative, or drop it |
 | `seedbed` | None | The Seedbed preview is a local tool; leave it as it is |
-| Account balances and recorded vote | `accounts.get(address)`: `balances`, `nonce`, `vote`, `validator` | |
+| Account balances and recorded vote | `accounts.get(address)`: `balances`, `nonce`, `vote`, `validatorName` | `balances` is a list of `{ asset, amount }`; today it holds ROOT only |
 | Amount conversion (`minor_units`, `decimal_amount`) | `Amount::parse`, `Amount::format` with the asset's decimals | Decimal strings in the JSON the frontend reads |
 
 Transaction kinds:
 
 | Sample `type` | `TxRecord` | Frontend change |
 |---|---|---|
-| `transfer` (one recipient), `multi` (several) | `kind: "transfer"` with 1 to 256 `transfers` and one `memo` | Keep both displays; choose by the number of transfers. The sample's `ref` is the memo |
-| `vote` with `votes: [{ validator, shareBp }]` | `kind: "vote"` with `vote: [{ validator, basisPoints }]`; empty withdraws | Rename `shareBp` to `basisPoints` or map it in the API |
+| `transfer` (one recipient), `multi` (several) | `details.kind: "transfer"` with 1 to 256 `details.recipients` and one `memo` | Keep both displays; choose by the number of recipients. The sample's `ref` is the memo |
+| `vote` with `votes: [{ validator, shareBp }]` | `details.kind: "vote"` with `details.entries: [{ validator, basisPoints }]`; empty withdraws | Rename `shareBp` to `basisPoints` or map it in the API |
 | `create`, `migrate-in`, `migrate-out` | Not on today's devnet | Keep the renderers for later; they receive no data now |
-| (none) | `burn`, `second-key`, `validator-registration`, `validator-resignation` | Add labels and detail rows for these four kinds |
+| (none) | `details.kind`: `burn`, `register-second-key`, `register-validator`, `resign-validator` | Add labels and detail rows for these four kinds |
 
 ## Wiring steps
 

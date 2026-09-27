@@ -11,7 +11,8 @@
 //!   signatures only, and [`KeyHandle::release`] wipes a key.
 //! - Untrusted input never causes a panic: every failure is a [`BindingError`] with the core's
 //!   stable code and details, which the wrapper turns into its typed errors.
-//! - No I/O. Requests to a node are made by the host language.
+//! - No I/O. Requests to a node are made by the host language: the bindings build each request
+//!   and decode each answer with the SDK's node API client, and the host sends them.
 //! - Structured values cross the boundary as JSON text. Amounts and nonces are decimal strings,
 //!   because JavaScript numbers cannot hold every `u64` or `u128`; the wrapper makes them `bigint`.
 
@@ -28,6 +29,7 @@
 
 mod address;
 mod amount;
+mod api;
 mod chain;
 mod draft;
 mod error;
@@ -42,8 +44,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 pub use crate::address::{address_from_public_key, parse_address};
 pub use crate::amount::{format_amount, parse_amount};
+pub use crate::api::{ApiCall, RequestBudgetHandle, SubmitPlanHandle, backoff_delay, check_relay};
 pub use crate::chain::ChainHandle;
-pub use crate::draft::{DraftHandle, SignedHandle};
+pub use crate::draft::{DraftHandle, SignedHandle, online_facts};
 pub use crate::error::BindingError;
 pub use crate::keys::KeyHandle;
 pub use crate::messages::{sha256, verify_message};

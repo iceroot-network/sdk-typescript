@@ -55,14 +55,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn validators(State(net): State<Arc<Network>>) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     match net.validators().list().await {
-        Ok(list) => Ok(Json(json!({
-            "data": list.iter().map(|v| json!({
-                "rank": v.rank,
+        Ok(page) => Ok(Json(json!({
+            "data": page.items.iter().map(|v| json!({
+                "rank": v.rank,                            // None when not ranked
                 "name": v.name,
-                "address": v.address.to_string(),
-                "status": v.status,
+                "address": v.address,
+                "status": v.status.as_str(),               // "active", "standby", "resigned-temporary" or "resigned-permanent"
                 "voteWeight": v.vote_weight.to_string(),   // base units as a decimal string
-                "voters": v.voters,
+                "voters": v.voters.to_string(),
             })).collect::<Vec<_>>(),
         }))),
         // Never answer with an empty list or sample data when the node is unavailable.

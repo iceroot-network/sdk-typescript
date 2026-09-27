@@ -17,7 +17,7 @@
 import type { Address } from "./address.js";
 import { Amount } from "./amount.js";
 import { Chain, checkHeight, handleOf as chainHandleOf, type OperationKind } from "./chain.js";
-import type { FeeStatistics } from "./client.js";
+import type { FeeStatistics, SubmitOutcome } from "./client.js";
 import { InvalidArgument } from "./errors.js";
 import { call, parse, type DraftHandle, type SignedHandle } from "./internal/bindings.js";
 import { fromHex } from "./internal/hex.js";
@@ -612,10 +612,8 @@ export function signedHandleOf(signed: SignedTransaction): SignedHandle {
   return handle;
 }
 
-/** A node's answer to a submission. */
-export type SubmitResult =
-  | { readonly status: "accepted" }
-  | { readonly status: "rejected"; readonly reason: string; readonly nodeCode?: string };
+/** A node's answer to the submission of one transaction: `Network.submit` returns it. */
+export type SubmitResult = SubmitOutcome;
 
 /** How far to wait for a transaction. */
 export type WaitUntil = "confirmed" | "final";

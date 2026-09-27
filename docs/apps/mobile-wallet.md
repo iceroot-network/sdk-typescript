@@ -43,7 +43,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 | `Wallet.votes` (`validatorId`) | `net.accounts.get(address).vote` (`validator`) | `validator` is the validator's name |
 | `Asset` with `id: "root"`, 18 decimals | `net.token` | 8 decimals on today's devnet |
 | `Transaction` list | `net.history.forAccount(address, { page, limit })` | Status `pending` or `confirmed`; `simulated` goes away |
-| `Validator`: `name`, `rank`, `status`, `votingBalance`, `validatedBlocks` | `net.validators.list()`: `name`, `rank`, `status`, `voteWeight`, `production.forged` | `uptime` from `production` (lifetime counters today); `tagline` is not chain data |
+| `Validator`: `name`, `rank`, `status`, `votingBalance`, `validatedBlocks` | `(await net.validators.list()).items`: `name`, `rank`, `status`, `voteWeight`, `production.produced` | `uptime` from `production` (lifetime counters today); `tagline` is not chain data |
 | `formatAmount(decimalString)` | `Amount.format(units, decimals, { maxFraction, grouping: true })` | |
 | `prepareTransfer` returning `TransferQuote` | `net.build.transfer(...)` returning a draft: `draft.fee`, `draft.summary` | Works without a key: a draft needs only the sender's address |
 | `submitTransfer` | `draft.sign(account)`, `net.submit`, `net.transactions.wait` | After the native plugin |
@@ -65,12 +65,12 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 
 Keep the domain layer's role (validated data for the UI, exact amounts), and back it with the SDK:
 
-<!-- sample: pending; needs: init, connect, profiles.devnet, connect-headers, transport-option, tauri-http-transport, net.accounts.get, net.history.forAccount, net.validators.list, Address.parse, Network -->
+<!-- sample: pending; needs: tauri-http-transport -->
 ```ts
 // src/domain/network.ts
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { isTauri } from "@tauri-apps/api/core";
-import { init, connect, profiles, Address, type Network } from "@iceroot-network/sdk";
+import { init, connect, profiles, Address, balanceOf, type Network } from "@iceroot-network/sdk";
 
 export type Endpoint = { relay: string; token?: string; nethash?: string };
 
@@ -90,9 +90,9 @@ export async function loadWallet(net: Network, addressText: string) {
   ]);
   return {
     address,
-    balance: info.balances.get(net.token.assetId) ?? 0n,
+    balance: balanceOf(info),
     votes: info.vote,
-    isValidator: info.validator !== null,
+    isValidator: info.validatorName !== undefined,
     activity: activity.items,
   };
 }
@@ -104,7 +104,7 @@ export const loadValidators = (net: Network) => net.validators.list();
 
 The send and vote flows show a quote before submission. Build the draft for the quote now; it gives the exact fee and the summary, and needs only the sender's address:
 
-<!-- sample: pending; needs: net.build.transfer, net.build.vote, draft.fee, draft.summary, Address.parse, Amount.parse, VoteEntry -->
+<!-- sample: pending; needs: fee-floor -->
 ```ts
 // src/domain/quotes.ts
 import { Address, Amount, type Network, type VoteEntry } from "@iceroot-network/sdk";

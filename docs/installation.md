@@ -35,7 +35,7 @@ npm records the dependency in `package.json` under the package's name, with the 
 
 Imports use the package name, exactly as they will after the package reaches the npm registry, so moving to the registry later changes only this one line:
 
-<!-- sample: pending; needs: init, connect, profiles.devnet -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { init, connect, profiles } from "@iceroot-network/sdk";
 ```
@@ -103,6 +103,6 @@ git-fetch-with-cli = true
 
 - **The SSH address.** sdk-rust's `Cargo.toml` states the address it fetches `heartwood-core` from. If it names an SSH host alias rather than `github.com`, map the alias once on each machine with git's URL rewriting, for example `git config --global url."ssh://git@github.com/".insteadOf "ssh://git@<alias>/"`, and use a key with read access.
 - **Docker builds.** Fetch the git dependencies with BuildKit's SSH forwarding, `RUN --mount=type=ssh cargo build --release --locked`, and build with `docker build --ssh default ...`. Never copy a key into an image.
-- **Features.** `http` adds an async HTTP client (reqwest). Without it the crate is sans-IO: it builds requests and parses responses, and your code performs the HTTP calls.
+- **Features.** `http` adds an async HTTP client (reqwest). Without it the crate is sans-IO: it builds requests and parses responses, and your code performs the HTTP calls. `serde` adds `Serialize` and `Deserialize` to the client's request values and answers, in the same JSON form the TypeScript package reads (camel-case fields, 64-bit and wider integers as decimal strings), for a backend that passes the records on to a web page.
 
 The TypeScript package needs none of this: it ships the compiled module.

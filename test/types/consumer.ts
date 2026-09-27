@@ -16,13 +16,18 @@ import {
   SignIn,
   SignedTransaction,
   TxRejected,
+  balanceOf,
   capabilitiesOf,
+  connect,
   init,
   initSync,
   messageAlgorithmOf,
   profiles,
   type AccountInfo,
   type AddressCheck,
+  type Network,
+  type Page,
+  type TxWaitResult,
   type DraftSummary,
   type ErrorCode,
   type FeeStatistics,
@@ -122,9 +127,35 @@ export function records(
   const first = history[0];
   const amount = first?.details.kind === "transfer" ? first.details.recipients[0]?.amount : undefined;
   const weight: bigint | undefined = validators[0]?.voteWeight;
-  const rejected = report.outcomes.filter((outcome) => outcome.outcome.status === "rejected").length;
+  const rejected = report.outcomes.filter((outcome) => outcome.status === "rejected").length;
   const reason = error instanceof TxRejected ? error.reason : undefined;
   return `${limit} ${amount} ${weight} ${rejected} ${reason}`;
+}
+
+export async function client(transport: Transport, account: Account): Promise<string> {
+  const net: Network = await connect(profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] }), {
+    transport,
+    headers: { authorization: "Bearer token" },
+    rateLimit: { requests: 100, windowMs: 60_000 },
+    timeoutMs: 10_000,
+  });
+  const pinned: string | undefined = net.profile.chain.nethash;
+  const maxEntries: number = net.rules.vote.maxEntries;
+  const seats: number = net.economics.seats;
+  const burned: bigint = (await net.economics.supply()).burned.total;
+  const info: AccountInfo = await net.accounts.get(account.address);
+  const balance: bigint = balanceOf(info);
+  const page: Page<TxRecord> = await net.history.forAccount(account.address, { direction: "sent", limit: 25 });
+  const more: boolean = page.hasNext;
+  const validators: Page<ValidatorInfo> = await net.validators.list({ page: 1, limit: 100 });
+  const validator: ValidatorInfo | null = await net.validators.get("genesis_1");
+  const draft = await net.build.transfer({ from: account, to: [{ address: account.address, amount: 1n }], memo: "x" });
+  const signed = draft.sign(account);
+  const outcome = await net.submit(signed);
+  const reason = outcome.status === "rejected" ? outcome.reason : outcome.broadcast;
+  const result: TxWaitResult = await net.transactions.wait(signed.id, { until: "confirmed", timeoutMs: 60_000 });
+  const confirmations = result.state === "dropped" ? 0n : result.confirmations;
+  return `${pinned} ${maxEntries} ${seats} ${burned} ${balance} ${more} ${validators.total} ${validator?.name} ${reason} ${confirmations}`;
 }
 
 export type Uses = [Draft, Mode, Selection, VoteSnapshot];

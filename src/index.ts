@@ -1,8 +1,9 @@
 /**
  * The IceRoot SDK.
  *
- * Call `await init()` once before anything else (the Node build needs no call), then use the
- * functions of each module. Every error is an `IceRootError` with a stable code.
+ * Call `await init()` once before anything else (the Node build needs no call), then `connect` to a
+ * network, or use the functions of each module offline. Every error is an `IceRootError` with a
+ * stable code.
  *
  * @module
  */
@@ -62,6 +63,18 @@ export {
   type SignedMessage,
 } from "./messages.js";
 export { SignIn, type SignInExpectations, type SignInFields, type SignInRequest } from "./signin.js";
+export {
+  Network,
+  balanceOf,
+  connect,
+  type BuildOptions,
+  type Builders,
+  type HistoryOptions,
+  type NetworkEconomics,
+  type TxProgress,
+  type TxWaitResult,
+  type WaitOptions,
+} from "./network.js";
 
 export * from "./errors.js";
 export type * from "./types.js";
