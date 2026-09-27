@@ -15,8 +15,8 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Manifest V3 quick
 | Existing 12-word devnet identities, through the legacy passphrase import | Wire now | Retired with the devnet formats |
 | New identities: 24 words, hardened derivation | Wire now | |
 | Live devnet wallet: balances, history, validators, transfers (1 to 256 recipients, one memo), votes, signed in the sandbox | Wire now | |
-| The encrypted vault | Keep the current one (PBKDF2 and AES-GCM) | The keystore format, adopted once |
-| Vote modes | Keep the manual basket | The vote library release |
+| The encrypted vault | Move to the [keystore](../keystore.md) format once (web preset, in the sandbox page or the service worker); keep the current vault until that move | |
+| Vote modes with reasons, and `check` of the holder's vote | Wire now with the [vote library](../vote.md) (`IceRootSdk.vote` in the classic script) | Indexer figures for Reliability, Maximum Rewards and Support Newcomers |
 | Legacy signer | No change | The SDK's ownership-proof functions (a later release); switching is optional |
 | Names, assets other than ROOT, finality | Hide | The capabilities of later networks |
 

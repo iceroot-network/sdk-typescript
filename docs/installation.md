@@ -62,10 +62,11 @@ Replace the version in both places of the URL and run `npm install` again. Read 
 | Import | Use it for |
 |---|---|
 | `@iceroot-network/sdk` | Everything. Node picks the Node build through the `node` export condition; browsers and bundlers get the web build |
-| `@iceroot-network/sdk/iife` | A classic script for pages without a bundler. It defines the global `IceRootSdk` |
+| `@iceroot-network/sdk/vote` | The vote selection library: the four vote modes, `check`, `split` and `validateVote` ([Vote selection](vote.md)) |
+| `@iceroot-network/sdk/keystore` | The keystore: a recovery phrase encrypted under a password ([Keystore](keystore.md)) |
+| `@iceroot-network/sdk/iife` | A classic script for pages without a bundler. It defines the global `IceRootSdk`, with the vote library and the keystore as its namespaces `vote` and `keystore` |
 | `@iceroot-network/sdk/iife/bytes` | The WebAssembly module as an embedded byte array (global `IceRootSdkWasmBytes`), for contexts that cannot fetch a file: a Manifest V3 sandbox page or service worker |
 | `@iceroot-network/sdk/wasm` | The `.wasm` file of the web build, for hosts that serve it from their own location and pass its URL to `init` |
-| `@iceroot-network/sdk/vote` | The vote selection library (a later release) |
 | `@iceroot-network/sdk/tauri` | The same interface backed by the native Tauri plugin (a later release) |
 
 Files in the tarball, for tools that copy them into an app (the browser wallet does):
@@ -74,6 +75,7 @@ Files in the tarball, for tools that copy them into an app (the browser wallet d
 ```text
 package/dist/web/index.js              ES module for browsers and bundlers
 package/dist/web/iceroot_sdk_bg.wasm   its WebAssembly module
+package/dist/web/vote.js               the vote library's entry (keystore.js likewise); they share chunks/ with index.js
 package/dist/node/index.js             Node build
 package/dist/iife/iceroot-sdk.js       classic script (global IceRootSdk)
 package/dist/iife/iceroot-sdk_bg.wasm  its WebAssembly module (the same module)

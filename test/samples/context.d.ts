@@ -42,3 +42,12 @@ declare function savePinnedNethash(nethash: string): void;
 declare function showRefusal(reason: string): void;
 declare function showForApproval(summary: import("@iceroot-network/sdk").DraftSummary): void;
 declare function showRetry(message: string): void;
+
+// The vote library's values an earlier sample made.
+declare const snapshot: import("@iceroot-network/sdk/vote").VoteSnapshot;
+declare const selection: import("@iceroot-network/sdk/vote").Selection;
+
+// A keystore the app stored, and passwords the holder typed.
+declare const stored: Uint8Array;
+declare const password: Uint8Array;
+declare const newPassword: Uint8Array;

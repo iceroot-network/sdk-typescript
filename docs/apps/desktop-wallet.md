@@ -11,10 +11,10 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 | Network connection through Rust (HTTP plugin transport), pinned devnet identity | Wire now | |
 | Watch-only wallets with real address checks | Wire now | |
 | Create (24 words) and import (18, 21 or 24 words); keys held for the session only | Wire now | |
-| Keys kept across restarts (encrypted keystore) | Do not build a vault | The native plugin and keystore release |
+| Keys kept across restarts (encrypted [keystore](../keystore.md)) | Do not build a vault | The native plugin, which runs the keystore natively with the desktop preset |
 | Balances, history, validator directory | Wire now | |
 | Transfers (1 to 256 recipients, one memo), manual votes and vote withdrawal | Wire now | |
-| Vote modes (Diversity, Reliability, Maximum Rewards, Support Newcomers) with reasons | Keep the manual editor | The vote library release |
+| Vote modes (Diversity, Reliability, Maximum Rewards, Support Newcomers) with reasons | Wire now with the [vote library](../vote.md); keep the manual editor as the fifth choice | Indexer figures for Reliability, Maximum Rewards and Support Newcomers |
 | Validator registration, temporary and permanent resignation, revoke | Wire now (they are previews today) | |
 | Second key | Wire now if the product wants it | |
 | Names, swaps, time locks, key rotation, multisig, burn of other assets, asset details, finality, migrations | Hide | The capabilities of later networks |
@@ -95,7 +95,7 @@ export function isNetworkChanged(error: unknown): boolean {
 - **Watch.** `WalletFlows.tsx` saves an address. Check it with `Address.check(text, net)` and store `Address.parse(text, net).toString()`. Drop "Address formats are not verified in this preview."
 - **Create.** Generate `Mnemonic.generate()` (24 words), show it for backup, confirm a few words, then derive `net.keys.fromPhrase(phrase, { account: 0, index: 0 })` and store the address in the `WalletReference`. Further addresses of the same phrase use `index: 1, 2, ...`.
 - **Import.** Replace "Import is coming soon." with phrase entry: `Mnemonic.check(text)` for feedback (18, 21 or 24 words; fewer give `PhraseTooShort`).
-- **Where the key lives.** Release 0.1.0 has no keystore format, and `storage.ts` writes unencrypted JSON. Never put a phrase or key into it. Hold the key handle in memory for the session: when the holder signs, ask for the phrase if no handle is open, and `release()` handles on lock, on window close and after a period of inactivity. Do not design a desktop key vault now; the keystore arrives with the native plugin, and the wallet adopts it then.
+- **Where the key lives.** `storage.ts` writes unencrypted JSON. Never put a phrase or key into it. Until the native plugin, hold the key handle in memory for the session: when the holder signs, ask for the phrase if no handle is open, and `release()` handles on lock, on window close and after a period of inactivity. Do not design a desktop key vault: the [keystore](../keystore.md) format exists, and the wallet adopts it with the native plugin, which runs it natively with the desktop preset.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -213,7 +213,7 @@ export function prepareVote(net: Network, from: string, entries: VoteEntry[]) {
 - `validatorId` becomes the validator's `name` everywhere (`VoteEntry`, the fixture types, `sameVote`).
 - The wallet may keep proposing 20 validators at 500 basis points each as its default, which is valid on today's devnet and from the IceRoot genesis; the limits it enforces come from `net.rules.vote`.
 - A validator account cannot vote from the IceRoot genesis. Check `net.accounts.get(address).validatorName` and hide the vote editor for validator accounts, and let the builder enforce the rule.
-- When the vote library is released, `evenVote` is replaced by its `split`, and the modes are added. Keep the manual editor until then; do not implement the modes in the app.
+- `evenVote` is replaced by the [vote library](../vote.md)'s `split`, and the modes come from its `select` over `VoteSnapshot.fromNode(net)`, with each pick's reasons on the review screen and `check` of the saved selection when the wallet opens. Do not implement the modes in the app.
 
 ### 6. Validator registration and resignation
 
@@ -229,7 +229,7 @@ Gate each later screen on `net.capabilities.has(...)`: names (`names`), swaps an
 - Amounts are `bigint` base units; the demo's `number` amounts go away ([rule 2](../rules.md)).
 - Addresses are checked against the connected network ([rule 4](../rules.md)).
 - "Confirmed", never "final", on today's devnet ([rule 5](../rules.md)).
-- No phrase or key in the profile state file, `localStorage` or any unencrypted file; keys for the session only until the keystore ([rule 12](../rules.md)).
+- No phrase or key in the profile state file, `localStorage` or any unencrypted file; keys for the session only until the native plugin and its keystore ([rule 12](../rules.md)).
 - The review screen shows the draft ([rule 15](../rules.md)); votes are never recast automatically ([rule 7](../rules.md)).
 
 ## Tests to add

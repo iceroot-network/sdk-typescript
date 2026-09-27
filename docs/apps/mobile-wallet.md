@@ -5,7 +5,7 @@ The mobile wallet (`iceroot-network/mobile-wallet`) is one Vite, React 19 and Ta
 The app's architecture document requires a reviewed native key vault before any create or import control exists. That decides the order of wiring:
 
 - **With release 0.1.0:** the read side (balances, history, validators, receive addresses of watch-only wallets) and real fee quotes from drafts, over HTTPS with requests made from Rust.
-- **With the native plugin and keystore release:** create, import, signing, transfers and votes. The plugin implements the same interface, so the code written for 0.1.0 stays.
+- **With the native plugin:** create, import, keys kept in the [keystore](../keystore.md) format, signing, transfers and votes. The plugin implements the same interface, so the code written for 0.1.0 stays. Vote selections (the [vote library](../vote.md)) need no key and can be wired now.
 
 Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart](../quickstart/tauri.md), [Devnet](../devnet.md).
 
@@ -17,8 +17,8 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 | Watch-only wallets: balances, activity, receive address with QR code | Wire now | |
 | Validator directory | Wire now | |
 | Transfer and vote quotes (fee, total) from drafts | Wire now | |
-| Create and import, keys, signing, submitting transfers and votes | No create or import controls | The native plugin and keystore release |
-| Vote modes | Keep the even split | The vote library release |
+| Create and import, keys, signing, submitting transfers and votes | No create or import controls | The native plugin, which runs the [keystore](../keystore.md) natively with the mobile preset |
+| Vote modes with reasons | Wire now with the [vote library](../vote.md) (no key needed to select); signing after the native plugin | Indexer figures for Reliability, Maximum Rewards and Support Newcomers |
 | Names, assets other than ROOT, swaps, time locks, finality, migrations | Hide | The capabilities of later networks |
 
 ## The current sample-data layer
@@ -48,7 +48,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 | `prepareTransfer` returning `TransferQuote` | `net.build.transfer(...)` returning a draft: `draft.fee`, `draft.summary` | Works without a key: a draft needs the sender's address once the account has sent a transaction, and its public key before that |
 | `submitTransfer` | `draft.sign(account)`, `net.submit`, `net.transactions.wait` | After the native plugin |
 | `prepareVote`, `submitVote` | `net.build.vote`, then sign and submit | Signing after the native plugin |
-| `splitVote` | Keep (with `validator` names and `net.rules.vote.totalBasisPoints`) | Replaced by the vote library's `split` later |
+| `splitVote` | The [vote library](../vote.md)'s `split` | |
 | `TRANSFER_FEE`, `VOTE_FEE`, `ROOT_DECIMALS`, vote limits | `draft.fee`, `net.token.decimals`, `net.rules.vote` | |
 | `snapshotAt` | The latest block's time | |
 

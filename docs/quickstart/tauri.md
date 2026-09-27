@@ -102,7 +102,7 @@ The browser preview (`npm run dev` in a normal browser) has no Tauri plugin. It 
 
 ## 4. Desktop
 
-- Store the pinned network identity and the app's settings with the app's existing storage. Never store a phrase or key there: release 0.1.0 has no keystore, so a desktop wallet holds keys for the session only (the holder enters the phrase each time) until the native plugin and keystore arrive.
+- Store the pinned network identity and the app's settings with the app's existing storage. Never store a phrase or key there: a desktop wallet holds keys for the session only (the holder enters the phrase each time) until the native plugin, which runs the [keystore](../keystore.md) natively.
 - Everything else is the Vite and React pattern: build drafts, render `draft.summary` on the review screen, sign, submit, follow.
 
 ## 5. Mobile

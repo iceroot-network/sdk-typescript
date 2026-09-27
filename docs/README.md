@@ -12,16 +12,17 @@ Every code sample carries a status marker (see [Sample status](#sample-status)).
 
 1. [Installation](installation.md): get the package from a GitHub release.
 2. [Concepts](concepts.md): the API in one page, from loading the module to errors.
-3. [Rules apps must never get wrong](rules.md): the checklist every app follows.
-4. [Devnet](devnet.md): the network to develop against, and its profile.
-5. The quickstart for your app type:
+3. [Vote selection](vote.md) and the [keystore](keystore.md), for wallets.
+4. [Rules apps must never get wrong](rules.md): the checklist every app follows.
+5. [Devnet](devnet.md): the network to develop against, and its profile.
+6. The quickstart for your app type:
    - [Node script](quickstart/node.md)
    - [Vite and React wallet](quickstart/vite-react.md)
    - [Next.js explorer or portal](quickstart/nextjs.md)
    - [Manifest V3 extension](quickstart/mv3-extension.md)
    - [Tauri 2 desktop and mobile](quickstart/tauri.md)
    - [Rust backend (Axum)](quickstart/rust-backend.md)
-6. The integration guide for your app:
+7. The integration guide for your app:
    - [Explorer](apps/explorer.md)
    - [Validators portal](apps/validators.md)
    - [Desktop wallet](apps/desktop-wallet.md)
@@ -43,8 +44,9 @@ Each integration guide lists what can be wired with release 0.1.0 and what waits
 | Fees resolved from the network, drafts, draft serialization, submission and status | Yes | Finality (`until: "final"`) |
 | Node reads: status, accounts, history, blocks, transactions, validators, rounds, fees, supply; watching blocks and accounts by polling, watch-only accounts | Yes | Indexer history and pushed live events |
 | Message signing, sign-in challenge format | Yes | Post-quantum message signatures |
-| Vote selection library (Diversity, Reliability, Maximum Rewards, Support Newcomers) | | Next release |
-| Native Tauri plugin (keys and signing in Rust) and keystore format | | Release after the vote library |
+| Vote selection library (Diversity, Reliability, Maximum Rewards, Support Newcomers), `check`, manual votes | Yes, on the node's validator list | Windowed figures, declarations and payouts from an indexer |
+| Keystore format: a recovery phrase encrypted under a password | Yes, in WebAssembly | Run natively by the Tauri plugin; the post-quantum key seed as a payload |
+| Native Tauri plugin (keys and signing in Rust) | | A later release |
 
 ## Sample status
 

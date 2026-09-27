@@ -400,6 +400,8 @@ Every SDK error is an `IceRootError` with a stable `code`, a readable `message` 
 | Submission | `TxRejected` (with `reason` and `nodeCode`), `StaleDraft`, `FeeUnavailable` (no fee floor in force: pass an exact fee) |
 | Support | `UnsupportedOnNetwork` (with `capability`), `SdkNotInitialized`, `WasmLoadFailed` |
 | Crypto | `RandomnessUnavailable`, `SigningFailed`, `WrongKey`, `KeyReleased` |
+| Vote selection | `InvalidPickCount`, `ValidatorCannotVote`, `InvalidSnapshot`, `NotEnoughValidators`, `DoesNotFit`, `BreaksRules`; classes in `@iceroot-network/sdk/vote` ([Vote selection](vote.md#errors)) |
+| Keystore | `WrongPasswordOrCorrupt`, `Malformed`, `UnsupportedVersion`, `UnsupportedKdf`, `UnsupportedPayload`, `ParamsOutOfRange`, `InvalidPayload`, `InvalidPassword`, `OutOfMemory`; classes in `@iceroot-network/sdk/keystore` ([Keystore](keystore.md#errors)) |
 
 <!-- sample: verified 0.1.0 -->
 ```ts
