@@ -64,6 +64,7 @@ const net = await connect(
 );
 ```
 
+- A Rust backend passes the header in `HttpOptions::headers` and builds its client with `HttpClient::with_options` (see the documentation of `iceroot_sdk::api::HttpOptions`).
 - Never commit the token. Read it from the environment in scripts, and from the app's settings in apps.
 - The endpoint answers CORS preflight requests without the token, so browser pages and webviews can call it directly when their CSP allows the origin.
 
