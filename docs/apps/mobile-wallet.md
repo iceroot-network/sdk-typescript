@@ -45,7 +45,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 | `Transaction` list | `net.history.forAccount(address, { page, limit })` | Status `pending` or `confirmed`; `simulated` goes away |
 | `Validator`: `name`, `rank`, `status`, `votingBalance`, `validatedBlocks` | `(await net.validators.list()).items`: `name`, `rank`, `status`, `voteWeight`, `production.produced` | `uptime` from `production` (lifetime counters today); `tagline` is not chain data |
 | `formatAmount(decimalString)` | `Amount.format(units, decimals, { maxFraction, grouping: true })` | |
-| `prepareTransfer` returning `TransferQuote` | `net.build.transfer(...)` returning a draft: `draft.fee`, `draft.summary` | Works without a key: a draft needs only the sender's address |
+| `prepareTransfer` returning `TransferQuote` | `net.build.transfer(...)` returning a draft: `draft.fee`, `draft.summary` | Works without a key: a draft needs the sender's address once the account has sent a transaction, and its public key before that |
 | `submitTransfer` | `draft.sign(account)`, `net.submit`, `net.transactions.wait` | After the native plugin |
 | `prepareVote`, `submitVote` | `net.build.vote`, then sign and submit | Signing after the native plugin |
 | `splitVote` | Keep (with `validator` names and `net.rules.vote.totalBasisPoints`) | Replaced by the vote library's `split` later |
@@ -102,7 +102,7 @@ export const loadValidators = (net: Network) => net.validators.list();
 
 ### 3. Quotes without keys
 
-The send and vote flows show a quote before submission. Build the draft for the quote now; it gives the exact fee and the summary, and needs only the sender's address:
+The send and vote flows show a quote before submission. Build the draft for the quote now; it gives the exact fee and the summary, and needs no key. `from` may be the sender's address once the account has sent a transaction, since the node then knows its public key; for an account that has never sent one, pass its public key (hex) instead, or the builder throws `InvalidArgument`:
 
 <!-- sample: verified 0.1.0 -->
 ```ts

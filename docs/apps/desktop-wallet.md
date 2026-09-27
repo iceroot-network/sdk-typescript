@@ -170,6 +170,7 @@ export async function sendTransfer(net: Network, draft: Draft, account: Account)
 }
 ```
 
+- `from` may be the account's address once the account has sent a transaction, since the node then knows its public key. A new account has not, and the builder refuses its address with `InvalidArgument`: pass its `Account` or its public key instead.
 - The Review step renders `draft.summary` and `draft.fee`. The demo's "one receipt per recipient" goes away: a transfer to 12 recipients is one transaction with one id and one fee.
 - The form's limits come from `net.rules.transfer.maxRecipients` and `net.rules.memo.maxBytes`; keep counting memo bytes with `TextEncoder`, as `memoBytes` does.
 - The amount field accepts at most `net.token.decimals` fraction digits; `Amount.parse` refuses more.
@@ -211,12 +212,12 @@ export function prepareVote(net: Network, from: string, entries: VoteEntry[]) {
 
 - `validatorId` becomes the validator's `name` everywhere (`VoteEntry`, the fixture types, `sameVote`).
 - The wallet may keep proposing 20 validators at 500 basis points each as its default, which is valid on today's devnet and from the IceRoot genesis; the limits it enforces come from `net.rules.vote`.
-- A validator account cannot vote from the IceRoot genesis. Check `net.accounts.get(address).validator` and hide the vote editor for validator accounts, and let the builder enforce the rule.
+- A validator account cannot vote from the IceRoot genesis. Check `net.accounts.get(address).validatorName` and hide the vote editor for validator accounts, and let the builder enforce the rule.
 - When the vote library is released, `evenVote` is replaced by its `split`, and the modes are added. Keep the manual editor until then; do not implement the modes in the app.
 
 ### 6. Validator registration and resignation
 
-Replace the previews with `net.build.registerValidator({ from, name })` and `net.build.resignValidator({ from, kind })` (`"temporary"`, `"permanent"` or `"revoke"`). The registration surcharge is part of `draft.fee`: 75 ROOT on today's devnet, 250 ROOT from the IceRoot genesis. Show `draft.fee`, never either number. Check the name with the builder's `InvalidName` error, not with a local regular expression.
+Replace the previews with `net.build.registerValidator({ from, name })` and `net.build.resignValidator({ from, resignation })` (`"temporary"`, `"permanent"` or `"revoke"`). The registration surcharge is part of `draft.fee`: 75 ROOT on today's devnet, 250 ROOT from the IceRoot genesis. Show `draft.fee`, never either number. Check the name with the builder's `InvalidName` error, not with a local regular expression.
 
 ### 7. Capabilities
 

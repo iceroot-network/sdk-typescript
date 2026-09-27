@@ -406,6 +406,11 @@ export class Draft {
    * `NetworkMismatch`, and the summary is computed again from the transaction's own fields: the
    * signing context shows what it signs, not what it was told. The fee floor is computed again
    * too, and the fee's source reads `"floor"` only when the fee equals it.
+   *
+   * The floor, the rules and the token's symbol come from the network configuration the bytes
+   * carry, which the draft was built under. The pinned network hash identifies the chain but does
+   * not cover that configuration's milestones or labels, so a signing context that does not trust
+   * the context that built the draft judges the fee by its amount, not by its source.
    */
   static deserialize(bytes: Uint8Array, source: ProfileSource): Draft {
     const profile = profileHandleOf(source);
