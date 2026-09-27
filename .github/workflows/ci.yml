@@ -111,6 +111,8 @@ jobs:
         run: npm run test:node
       - name: Browser tests (Chromium, Vite and React, Manifest V3)
         run: npm run test:browser
+      - name: Type-check and build the example wallet
+        run: npm run example:build
       - name: Pack the release tarball
         run: npm run pack
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

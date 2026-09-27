@@ -63,7 +63,9 @@
     "test:node": "node --test \"test/node/*.test.mjs\"",
     "test:browser": "playwright test",
     "test:tauri": "node test/contexts/tauri/run.mjs",
-    "test:e2e": "node test/e2e/run.mjs"
+    "test:e2e": "node test/e2e/run.mjs",
+    "example:build": "node scripts/example.mjs build",
+    "example:dev": "node scripts/example.mjs dev"
   },
   "devDependencies": {
     "@noble/curves": "2.4.0",
