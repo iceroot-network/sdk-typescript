@@ -134,6 +134,7 @@ npm run check:size     # the module at most 300 KB gzipped
 npm run test:node      # Node: the Node, browser and classic-script builds; drafts across instances; @noble cross-check
 npm run test:browser   # Chromium: a page, a Vite and React app, a Manifest V3 extension
 npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a container
+npm run test:e2e       # Node, Chromium and the Rust SDK against a local devnet (see below)
 ```
 
 | Environment | What runs |
@@ -144,6 +145,9 @@ npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a 
 | Manifest V3 extension | Playwright's persistent context: the wallet page (fetch), the sandbox page (`connect-src 'none'` kept, embedded bytes) and the service worker (embedded bytes); the same extension without `'wasm-unsafe-eval'` fails in all three |
 | Tauri 2 on Linux | A Tauri application driven by `tauri-driver` and WebKitWebDriver; the same application without `'wasm-unsafe-eval'` fails |
 | Native and WebAssembly | `check:differential`: 10,000 random phrases, passphrase keys and message signatures, amounts, addresses, transfers and votes through the bindings compiled natively and through the WebAssembly build behind the wrapper; results and errors must be identical |
+| A local devnet | `test:e2e`, in Node and in Chromium at the same time: a new account from a recovery phrase, funded from a genesis wallet; a validator registration and a resignation, and a revoke that the node refuses because the new validator operates no node; transfers with a memo and to 256 recipients; a burn; a second key; votes; a transfer built in one WebAssembly instance and signed in another that cannot reach the network; the fee floor and one base unit below it. Every transaction is read back from the node and compared with what was signed. Then the Rust SDK's own devnet test, which also verifies the messages the TypeScript runs signed |
+
+The devnet test needs a local devnet of the reference implementation. `npm run test:e2e` starts one through sdk-rust's `tools/e2e/devnet.sh` (from the sdk-rust checkout next to this repository, or `SDK_RUST_DIR`), with `ICEROOT_DEVNET_TOOLS` pointing at the devnet tooling, and stops and removes it when the tests end; the chain never runs more than five rounds. Until the package has its node client, the test reaches the node through a small client of its own over `fetch` (`test/e2e/node-api.js`), whose methods have the client's names and result shapes.
 
 ## License
 

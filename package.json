@@ -48,7 +48,8 @@
     "test:rust": "cargo test --manifest-path wasm/Cargo.toml --all-features",
     "test:node": "node --test \"test/node/*.test.mjs\"",
     "test:browser": "playwright test",
-    "test:tauri": "node test/contexts/tauri/run.mjs"
+    "test:tauri": "node test/contexts/tauri/run.mjs",
+    "test:e2e": "node test/e2e/run.mjs"
   },
   "devDependencies": {
     "@noble/curves": "2.4.0",
