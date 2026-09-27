@@ -132,6 +132,7 @@ npm run test:rust      # the bindings' unit tests in native Rust
 npm run check:vectors  # the vector file equals what native Rust produces now
 npm run check:types    # sources and an app's use of the declarations, TypeScript 7.0 and 5.7
 npm run check:size     # the module at most 300 KB gzipped
+npm run check:notice   # NOTICE matches wasm/Cargo.lock and package-lock.json
 npm run test:node      # Node: the Node, browser and classic-script builds; drafts across instances; @noble cross-check
 npm run test:browser   # Chromium: a page, a Vite and React app, a Manifest V3 extension
 npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a container
@@ -148,3 +149,5 @@ npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a 
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE). The WebAssembly module contains compiled code of Heartwood Core; see [NOTICE](NOTICE).
+
+`NOTICE` lists what the package contains from others: Heartwood Core's notice, the Rust crates compiled into the module with their licences, copyright lines and licence texts, and the JavaScript side from `package-lock.json`. It is generated: after changing a dependency here or in sdk-rust, run `npm run notice` and commit the result.
