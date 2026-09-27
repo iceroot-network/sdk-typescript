@@ -278,7 +278,7 @@ pub fn online_facts(
     status: &str,
 ) -> Result<String> {
     let sender = PublicKey::from_hex(sender)
-        .map_err(|_| BindingError::new("InvalidPublicKey", "the sender is not a public key"))?;
+        .map_err(|_| BindingError::new("InvalidKey", "the sender is not a public key"))?;
     let account = account.map(|text| read_account(&text)).transpose()?;
     let status = json::parse_object(status, "the node status")?;
     let status = NodeStatus {
@@ -552,7 +552,7 @@ mod tests {
             online_facts(&chain, "02zz", None, status)
                 .unwrap_err()
                 .code(),
-            "InvalidPublicKey"
+            "InvalidKey"
         );
         for bad in ["{}", r#"{"height":80}"#, "["] {
             assert_eq!(
