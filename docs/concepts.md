@@ -249,7 +249,7 @@ The reference implementation's API allows about 100 requests per minute per clie
 
 A build call resolves everything online (nonce, fee, the rules in force) and returns a draft. Signing is a separate step, so the review screen shows exactly what will be signed.
 
-<!-- sample: pending; needs: net.build.transfer, fee-floor, draft.summary, draft.sign, net.submit, net.transactions.wait, Address.parse, Amount.parse -->
+<!-- sample: pending; needs: net.build.transfer, draft.summary, draft.sign, net.submit, net.transactions.wait, Address.parse, Amount.parse -->
 ```ts
 import { Address, Amount } from "@iceroot-network/sdk";
 
@@ -276,7 +276,7 @@ const status = await net.transactions.wait(signed.id, { until: "confirmed", time
 
 Other builders:
 
-<!-- sample: pending; needs: net.build.vote, net.build.burn, net.build.registerSecondKey, net.build.registerValidator, net.build.resignValidator, fee-floor -->
+<!-- sample: pending; needs: net.build.vote, net.build.burn, net.build.registerSecondKey, net.build.registerValidator, net.build.resignValidator -->
 ```ts
 await net.build.vote({ from, entries: [{ validator: "bergschrund", basisPoints: 500 }, /* ... */] });
 await net.build.vote({ from, entries: [] });                           // withdraws the current vote

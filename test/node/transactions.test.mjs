@@ -21,6 +21,7 @@ const byName = (fragment) => {
   return found;
 };
 const TRANSFER = byName("transfer to two recipients");
+const AT_FLOOR = byName("transfer at the fee floor");
 const VOTE = byName("vote for three validators");
 const SECOND = byName("transfer signed with a second key");
 
@@ -39,7 +40,7 @@ function transfer(txCase) {
       to: txCase.request.operation.to.map(({ address, amount }) => ({ address, amount: BigInt(amount) })),
     },
     ...(txCase.request.memo === null ? {} : { memo: txCase.request.memo }),
-    fee: BigInt(txCase.request.fee.amount),
+    fee: txCase.request.fee.kind === "minimum" ? "minimum" : BigInt(txCase.request.fee.amount),
   };
 }
 
@@ -62,6 +63,7 @@ function build(module, txCase, request) {
 test("a transfer and a vote built and signed in WebAssembly are the native transactions", () => {
   for (const [txCase, request] of [
     [TRANSFER, transfer(TRANSFER)],
+    [AT_FLOOR, transfer(AT_FLOOR)],
     [VOTE, vote(VOTE)],
   ]) {
     const { chain, sender, draft } = build(testSdk, txCase, request);
@@ -86,7 +88,7 @@ test("the review summary is computed from the transaction's own fields", () => {
   assert.equal(summary.nonce, 1n);
   assert.equal(summary.fee.amount, 1_000_000n);
   assert.equal(summary.fee.source, "explicit");
-  assert.equal(summary.fee.floor, undefined);
+  assert.equal(summary.fee.floor, BigInt(TRANSFER.summary.feeFloor));
   assert.equal(summary.amount, 150_000_001n);
   assert.equal(summary.total, 151_000_001n);
   assert.equal(summary.memo, TRANSFER.request.memo);
@@ -181,21 +183,48 @@ test("drafts apply the network's rules before anything is signed", () => {
   assert.equal(code({ operation: { kind: "transfer", to: [{ address: "dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNX", amount: 1n }] }, fee: 1n }), "InvalidAddress");
   assert.equal(code({ operation: { kind: "vote", entries: [{ validator: "a", basisPoints: 5000 }] }, fee: 1n }), "InvalidVote");
   assert.equal(code({ operation: { kind: "register-validator", name: "Not A Name" }, fee: 1n }), "InvalidName");
-  assert.equal(code({ operation: { kind: "transfer", to } }), "FeeUnavailable");
   assert.equal(code({ operation: { kind: "transfer", to }, fee: -1n }), "InvalidArgument");
   assert.equal(code({ operation: { kind: "swap" }, fee: 1n }), "InvalidArgument");
 
-  // "minimum" takes the node's fee statistics until the exact floor is available.
+  // "minimum" is the exact floor of the milestone in force, whatever the node's statistics say.
   const statistics = {
     entries: [
       { kind: "transfer", avg: 2n, min: 1n, max: 3_000_000n, sum: 0n, burned: 0n },
       { kind: "other", avg: 9n, min: 9n, max: 9n, sum: 9n, burned: 0n },
     ],
   };
-  const draft = sdk.Draft.build(chain, { operation: { kind: "transfer", to } }, facts, statistics);
-  assert.equal(draft.fee, 3_000_000n);
-  assert.equal(draft.summary.fee.source, "node-statistics");
-  assert.equal(chain.rules(2).fees.floorAvailable, false);
+  const minimum = sdk.Draft.build(chain, { operation: { kind: "transfer", to } }, facts);
+  const floor = (85n + BigInt(Math.ceil(minimum.size / 2))) * 6173n;
+  assert.equal(minimum.fee, floor);
+  assert.deepEqual({ ...minimum.summary.fee }, { amount: floor, source: "floor", floor });
+  const withStatistics = sdk.Draft.build(chain, { operation: { kind: "transfer", to } }, facts, statistics);
+  assert.equal(withStatistics.fee, floor);
+  assert.equal(withStatistics.summary.fee.source, "floor");
+  const scaled = sdk.Draft.build(chain, { operation: { kind: "transfer", to }, fee: { multiplierBasisPoints: 15_000 } }, facts);
+  assert.equal(scaled.fee, (floor * 15_000n + 9_999n) / 10_000n);
+  assert.equal(scaled.summary.fee.source, "explicit");
+  assert.equal(scaled.summary.fee.floor, floor);
+  assert.equal(chain.rules(2).fees.floorAvailable, true);
+  sender.release();
+});
+
+test("a serialized draft's fee is called the floor only when it is", () => {
+  const chain = sdk.Chain.load(sdk.profiles.devnet({ relays: [RELAY] }), data.configuration);
+  const sender = sdk.Keys.fromLegacyPassphrase("probe passphrase", chain);
+  const facts = { sender, nonce: 1n, height: 2 };
+  const to = [{ address: TRANSFER.request.operation.to[0].address, amount: 1n }];
+  const text = (draft) => new TextDecoder().decode(draft.serialize());
+  const read = (form) => sdk.Draft.deserialize(new TextEncoder().encode(form), chain.profile).summary.fee;
+
+  const minimum = sdk.Draft.build(chain, { operation: { kind: "transfer", to } }, facts);
+  assert.deepEqual(read(text(minimum)), minimum.summary.fee);
+
+  // A fee above the floor that the form calls the floor reads as explicit, beside the floor.
+  const above = sdk.Draft.build(chain, { operation: { kind: "transfer", to }, fee: 2_000_000n }, facts);
+  const form = text(above);
+  assert.ok(form.includes('"source":"explicit"'));
+  const claimed = read(form.replace('"source":"explicit"', '"source":"floor"'));
+  assert.deepEqual({ ...claimed }, { amount: 2_000_000n, source: "explicit", floor: minimum.fee });
   sender.release();
 });
 

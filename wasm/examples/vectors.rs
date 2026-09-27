@@ -7,9 +7,9 @@
 //! Everything is computed natively with the SDK's Rust core (`iceroot-sdk`), not through the
 //! bindings, so the file is a native reference for the WebAssembly build: keys from legacy
 //! passphrases and from recovery phrases, addresses and their checks, message signatures, phrase
-//! checks, amounts, and drafts of every operation with their signed transactions. The transaction
-//! requests are written here from the core's own values, in the JSON the wrapper passes, so the
-//! bindings' reading of them is checked too.
+//! checks, amounts, and drafts of every operation with their signed transactions, one of them at
+//! the exact fee floor. The transaction requests are written here from the core's own values, in
+//! the JSON the wrapper passes, so the bindings' reading of them is checked too.
 
 use iceroot_sdk::amount::FormatOptions;
 use iceroot_sdk::fee::FeeChoice;
@@ -327,7 +327,8 @@ struct TransactionCase {
     nonce: u64,
     operation: Operation,
     memo: Option<&'static str>,
-    fee: u128,
+    /// The exact fee, or `None` for the minimum: the exact fee floor.
+    fee: Option<u128>,
     aux: [u8; 32],
 }
 
@@ -358,8 +359,23 @@ fn transaction_cases(profile: &Profile) -> Result<Vec<TransactionCase>, Failure>
                 ],
             },
             memo: Some("invoice 42 \u{2713}"),
-            fee: 1_000_000,
+            fee: Some(1_000_000),
             aux: [7; 32],
+        },
+        TransactionCase {
+            name: "transfer at the fee floor",
+            signer: Signer::Phrase(phrase, 0, 1),
+            second: None,
+            nonce: 5,
+            operation: Operation::Transfer {
+                recipients: vec![Recipient {
+                    address: address(Signer::Legacy("probe passphrase"))?,
+                    amount: Amount::from_base_units(42),
+                }],
+            },
+            memo: Some("at the floor"),
+            fee: None,
+            aux: [6; 32],
         },
         TransactionCase {
             name: "vote for three validators, given out of order",
@@ -383,7 +399,7 @@ fn transaction_cases(profile: &Profile) -> Result<Vec<TransactionCase>, Failure>
                 ],
             },
             memo: None,
-            fee: 1_500_000,
+            fee: Some(1_500_000),
             aux: [0x42; 32],
         },
         TransactionCase {
@@ -395,7 +411,7 @@ fn transaction_cases(profile: &Profile) -> Result<Vec<TransactionCase>, Failure>
                 entries: Vec::new(),
             },
             memo: None,
-            fee: 1_000_000,
+            fee: Some(1_000_000),
             aux: [0x42; 32],
         },
         TransactionCase {
@@ -410,7 +426,7 @@ fn transaction_cases(profile: &Profile) -> Result<Vec<TransactionCase>, Failure>
                 }],
             },
             memo: None,
-            fee: 2_000_000,
+            fee: Some(2_000_000),
             aux: [1; 32],
         },
         TransactionCase {
@@ -422,7 +438,7 @@ fn transaction_cases(profile: &Profile) -> Result<Vec<TransactionCase>, Failure>
                 amount: Amount::from_base_units(2_000_000),
             },
             memo: None,
-            fee: 0,
+            fee: Some(0),
             aux: [2; 32],
         },
         TransactionCase {
@@ -434,7 +450,7 @@ fn transaction_cases(profile: &Profile) -> Result<Vec<TransactionCase>, Failure>
                 public_key: second_key,
             },
             memo: None,
-            fee: 5_000_000,
+            fee: Some(5_000_000),
             aux: [3; 32],
         },
         TransactionCase {
@@ -446,7 +462,7 @@ fn transaction_cases(profile: &Profile) -> Result<Vec<TransactionCase>, Failure>
                 name: "bergschrund".to_owned(),
             },
             memo: None,
-            fee: 7_500_000_000,
+            fee: Some(7_500_000_000),
             aux: [4; 32],
         },
         TransactionCase {
@@ -458,7 +474,7 @@ fn transaction_cases(profile: &Profile) -> Result<Vec<TransactionCase>, Failure>
                 kind: Resignation::Temporary,
             },
             memo: None,
-            fee: 0,
+            fee: Some(0),
             aux: [5; 32],
         },
     ])
@@ -484,7 +500,9 @@ fn transactions() -> Result<Value, Failure> {
         let request = DraftRequest {
             operation: case.operation.clone(),
             memo: case.memo.map(str::to_owned),
-            fee: FeeChoice::Exact(Amount::from_base_units(case.fee)),
+            fee: case.fee.map_or(FeeChoice::Minimum, |fee| {
+                FeeChoice::Exact(Amount::from_base_units(fee))
+            }),
         };
         let draft = Draft::build(&chain, &request, &facts, None)?;
         let signed = draft.sign_with(&account, second.as_ref(), Aux::fixed(case.aux))?;
@@ -499,7 +517,10 @@ fn transactions() -> Result<Value, Failure> {
             "request": {
                 "operation": operation_json(&case.operation),
                 "memo": case.memo,
-                "fee": { "kind": "exact", "amount": case.fee.to_string() },
+                "fee": match case.fee {
+                    Some(fee) => json!({ "kind": "exact", "amount": fee.to_string() }),
+                    None => json!({ "kind": "minimum" }),
+                },
             },
             "facts": {
                 "sender": account.public_key().to_hex(),
@@ -515,6 +536,7 @@ fn transactions() -> Result<Value, Failure> {
                 "nonce": summary.nonce.to_string(),
                 "fee": summary.fee.amount.base_units().to_string(),
                 "feeSource": summary.fee.source.as_str(),
+                "feeFloor": summary.fee.floor.map(|floor| floor.base_units().to_string()),
                 "amount": summary.total_amount.base_units().to_string(),
                 "size": summary.size,
                 "secondSignature": summary.second_signature,

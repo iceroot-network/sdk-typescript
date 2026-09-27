@@ -104,7 +104,7 @@ export const loadValidators = (net: Network) => net.validators.list();
 
 The send and vote flows show a quote before submission. Build the draft for the quote now; it gives the exact fee and the summary, and needs only the sender's address:
 
-<!-- sample: pending; needs: net.build.transfer, net.build.vote, fee-floor, draft.fee, draft.summary, Address.parse, Amount.parse, VoteEntry -->
+<!-- sample: pending; needs: net.build.transfer, net.build.vote, draft.fee, draft.summary, Address.parse, Amount.parse, VoteEntry -->
 ```ts
 // src/domain/quotes.ts
 import { Address, Amount, type Network, type VoteEntry } from "@iceroot-network/sdk";

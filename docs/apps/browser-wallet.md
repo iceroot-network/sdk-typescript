@@ -253,7 +253,7 @@ The wallet page builds the draft; the identity page reviews and signs it through
 3. The identity page unlocks the vault if needed, calls the sandbox's `reviewDraft`, and shows the recomputed summary and fee. On approval it calls `signDraft` with the phrase and scheme, and returns the signed bytes.
 4. `wallet.js` restores them with `SignedTransaction.deserialize(bytes, net.profile)`, calls `net.submit`, and follows `net.transactions.wait(id, { until: "confirmed" })`.
 
-<!-- sample: pending; needs: net.build.transfer, net.build.vote, fee-floor, draft.serialize, SignedTransaction.deserialize, net.submit, net.transactions.wait, Address.parse, Amount.parse -->
+<!-- sample: pending; needs: net.build.transfer, net.build.vote, draft.serialize, SignedTransaction.deserialize, net.submit, net.transactions.wait, Address.parse, Amount.parse -->
 ```js
 // wallet.js: build and submit; `approveInIdentityPage` is the request round trip of step 2
 async function sendTransfer(from, recipients, memo) {
