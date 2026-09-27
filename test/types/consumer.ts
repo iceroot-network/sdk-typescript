@@ -40,6 +40,8 @@ import {
   type Transport,
   type TxRecord,
   type ValidatorInfo,
+  type WatchedAccount,
+  type WatchEvent,
 } from "@iceroot-network/sdk";
 import type { Mode, Selection, VoteSnapshot } from "@iceroot-network/sdk/vote";
 
@@ -155,7 +157,17 @@ export async function client(transport: Transport, account: Account): Promise<st
   const reason = outcome.status === "rejected" ? outcome.reason : outcome.broadcast;
   const result: TxWaitResult = await net.transactions.wait(signed.id, { until: "confirmed", timeoutMs: 60_000 });
   const confirmations = result.state === "dropped" ? 0n : result.confirmations;
-  return `${pinned} ${maxEntries} ${seats} ${burned} ${balance} ${more} ${validators.total} ${validator?.name} ${reason} ${confirmations}`;
+  const watched: WatchedAccount = net.keys.watch(account.address);
+  const heights: bigint[] = [];
+  const stop: () => void = net.watch({ address: watched }, (event: WatchEvent) => {
+    if (event.type === "block") {
+      heights.push(event.block.height);
+    } else if (event.type === "transaction") {
+      heights.push(event.transaction.nonce);
+    }
+  }, { intervalMs: 8_000, signal: new AbortController().signal });
+  stop();
+  return `${pinned} ${maxEntries} ${seats} ${burned} ${balance} ${more} ${validators.total} ${validator?.name} ${reason} ${confirmations} ${watched.address} ${heights.length}`;
 }
 
 export type Uses = [Draft, Mode, Selection, VoteSnapshot];

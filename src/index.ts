@@ -74,6 +74,10 @@ export {
   type TxProgress,
   type TxWaitResult,
   type WaitOptions,
+  type WatchedAccount,
+  type WatchEvent,
+  type WatchFilter,
+  type WatchOptions,
 } from "./network.js";
 
 export * from "./errors.js";

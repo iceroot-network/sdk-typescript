@@ -571,3 +571,85 @@ test("builders read the sender's nonce, the height and the second key from the n
   assert.equal(sdk.Messages.verify({ ...signature, message: "hello" }, net), true);
   legacy.release();
 });
+
+test("watch-only accounts, and watching blocks and an account's transactions", async () => {
+  const history = JSON.parse(fixture("wallet-transactions").body);
+  assert.ok(history.data.length >= 3);
+  let height = 80;
+  let failing = false;
+  let historyReads = 0;
+  const { net, node } = await connected({
+    "GET /node/status": () =>
+      failing
+        ? json(503, { statusCode: 503, error: "Service Unavailable", message: "down" })
+        : json(200, { data: { synced: true, now: height, blocksCount: 0, timestamp: 634 } }),
+    [`GET /wallets/${TEAM}/transactions`]: () => {
+      historyReads += 1;
+      // Before the height moves, the two newest transactions are not in a block yet.
+      return json(200, height === 80 ? { ...history, data: history.data.slice(2) } : history);
+    },
+  });
+
+  const watched = net.keys.watch(TEAM);
+  assert.deepEqual(watched, { address: TEAM, watchOnly: true });
+  assert.ok(Object.isFrozen(watched));
+  assert.equal(net.keys.watch(sdk.Address.parse(GENESIS_1, net)).address, GENESIS_1);
+  assert.throws(() => net.keys.watch("dAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), sdk.InvalidAddress);
+  assert.throws(() => net.watch({ address: "not an address" }, () => {}), sdk.InvalidAddress);
+
+  const events = [];
+  const until = async (condition) => {
+    for (let i = 0; i < 500 && !condition(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.ok(condition(), JSON.stringify(events.map((event) => event.type)));
+  };
+  const stop = net.watch({ address: watched }, (event) => events.push(event), { intervalMs: 10 });
+
+  // The first poll only notes where the chain and the account stand.
+  await until(() => historyReads === 1);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(events, []);
+
+  // The height moves: the latest block, then the account's two new transactions, oldest first.
+  height = 81;
+  await until(() => events.length === 3);
+  const [block, older, newer] = events;
+  assert.equal(block.type, "block");
+  assert.equal(block.block.id, JSON.parse(fixture("blocks-last").body).data.id);
+  assert.deepEqual(
+    [older.type, older.transaction.id, newer.type, newer.transaction.id],
+    ["transaction", history.data[1].id, "transaction", history.data[0].id],
+  );
+  assert.equal(typeof older.transaction.nonce, "bigint");
+
+  // A failing poll is an event, and the watch goes on.
+  failing = true;
+  await until(() => events.length >= 4);
+  assert.equal(events[3].type, "error");
+  assert.ok(events[3].error instanceof sdk.IceRootError, String(events[3].error));
+  failing = false;
+  height = 82;
+  await until(() => events.some((event, index) => index > 3 && event.type === "block"));
+  assert.equal(events.filter((event) => event.type === "transaction").length, 2, "no transaction is reported twice");
+
+  // Stopped: no more requests.
+  stop();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const count = node.requests.length;
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(node.requests.length, count);
+
+  // A signal stops a watch of blocks only, which never reads a history.
+  const controller = new AbortController();
+  const blocks = [];
+  const reads = historyReads;
+  net.watch({}, (event) => blocks.push(event), { intervalMs: 10, signal: controller.signal });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  height = 83;
+  await until(() => blocks.length === 1);
+  controller.abort();
+  assert.equal(blocks[0].type, "block");
+  assert.equal(historyReads, reads);
+  assert.throws(() => net.watch({}, () => {}, { intervalMs: 0 }), sdk.InvalidArgument);
+});

@@ -139,6 +139,52 @@ export interface HistoryOptions extends PageOptions {
   readonly direction?: HistoryDirection;
 }
 
+/** A watch-only account: an address on the network, with no key. */
+export interface WatchedAccount {
+  /** The address, in its canonical form. */
+  readonly address: string;
+  /** Always `true`: there is no key, so nothing can be signed with it. */
+  readonly watchOnly: true;
+}
+
+/** What {@link Network.watch} follows. */
+export interface WatchFilter {
+  /**
+   * An account whose new transactions, sent and received, are reported once they are in a block.
+   * Without it, only new blocks are reported.
+   */
+  readonly address?: Address | WatchedAccount | string;
+}
+
+/** An update of {@link Network.watch}. */
+export type WatchEvent =
+  | {
+      /** The node's height moved: its latest block. Blocks in between are not listed; read them with `blocks.list`. */
+      readonly type: "block";
+      readonly block: BlockInfo;
+    }
+  | {
+      /** A transaction of the watched account that is new in a block, oldest first. */
+      readonly type: "transaction";
+      readonly transaction: TxRecord;
+    }
+  | {
+      /** A poll failed (for example `NodeUnavailable` or `RateLimited`); the watch goes on. */
+      readonly type: "error";
+      readonly error: unknown;
+    };
+
+/** Options of {@link Network.watch}. */
+export interface WatchOptions {
+  /** Milliseconds between polls; one block time by default (at least 1,000). */
+  readonly intervalMs?: number;
+  /** Stops the watch when aborted, as the function `watch` returns does. */
+  readonly signal?: AbortSignal;
+}
+
+/** Transactions of the watched account read at each poll, newest first. */
+const WATCH_HISTORY_LIMIT = 50;
+
 /** What every builder takes. */
 export interface BuildOptions {
   /**
@@ -381,6 +427,11 @@ export class Network {
     fromPhrase(phrase: string | Uint8Array, options?: AccountOptions): Account;
     /** As `Keys.fromLegacyPassphrase`, on this network. */
     fromLegacyPassphrase(passphrase: string | Uint8Array): Account;
+    /**
+     * A watch-only account for an address of this network: no key, so it can be read and watched
+     * but never sign. Throws `InvalidAddress` for text that is not an address of this network.
+     */
+    watch(address: Address | string): WatchedAccount;
   };
   /** Message signatures. */
   readonly messages: {
@@ -508,6 +559,8 @@ export class Network {
     this.keys = {
       fromPhrase: (phrase, options) => Keys.fromPhrase(phrase, this.profile, options),
       fromLegacyPassphrase: (passphrase) => Keys.fromLegacyPassphrase(passphrase, this.profile),
+      watch: (address) =>
+        Object.freeze({ address: Address.parse(String(address), this.profile).toString(), watchOnly: true as const }),
     };
     this.messages = {
       sign: (account, message) => Messages.sign(account, message),
@@ -565,6 +618,82 @@ export class Network {
       this.#height = status.height;
     }
     return status;
+  }
+
+  /**
+   * Follows the network by polling the node, as the network has no pushed events yet: after each
+   * block, `handler` gets the latest block and, with `filter.address`, each transaction of that
+   * account that is new in a block since the watch began (sent or received, oldest first). A poll
+   * that fails is reported as an `error` event and the watch goes on. Returns a function that
+   * stops the watch.
+   *
+   * Each poll reads the node's status; when the height moved it also reads the latest block and,
+   * with an address, the first page of the account's history, within the request allowance.
+   */
+  watch(filter: WatchFilter, handler: (event: WatchEvent) => void, options: WatchOptions = {}): () => void {
+    const blockMs = this.configuration.blockTime * 1000;
+    const intervalMs = positive(options.intervalMs, "intervalMs", Math.max(1_000, blockMs));
+    const watched = filter.address;
+    const text =
+      watched === undefined ? undefined : typeof watched === "object" && "watchOnly" in watched ? watched.address : String(watched);
+    const address = text === undefined ? undefined : Address.parse(text, this.profile).toString();
+    const stopper = new AbortController();
+    const stop = () => stopper.abort();
+    options.signal?.addEventListener("abort", stop, { once: true });
+    if (options.signal?.aborted) {
+      stop();
+    }
+    const signal = stopper.signal;
+    let height: bigint | undefined;
+    let seen: Set<Hex> | undefined;
+    const poll = async (): Promise<void> => {
+      const status = await this.refresh();
+      if (signal.aborted || (height !== undefined && status.height <= height)) {
+        return;
+      }
+      const first = height === undefined;
+      height = status.height;
+      const [block, history] = await Promise.all([
+        first ? Promise.resolve(undefined) : this.blocks.latest(),
+        address === undefined
+          ? Promise.resolve(undefined)
+          : this.history.forAccount(address, { page: 1, limit: WATCH_HISTORY_LIMIT }),
+      ]);
+      if (signal.aborted) {
+        return;
+      }
+      if (block !== undefined) {
+        handler({ type: "block", block });
+      }
+      if (history !== undefined) {
+        const confirmed = history.items.filter((record) => record.block !== undefined);
+        if (seen !== undefined) {
+          for (const transaction of [...confirmed].reverse()) {
+            if (!seen.has(transaction.id) && !signal.aborted) {
+              handler({ type: "transaction", transaction });
+            }
+          }
+        }
+        seen = new Set(confirmed.map((record) => record.id));
+      }
+    };
+    void (async () => {
+      while (!signal.aborted) {
+        try {
+          await poll();
+        } catch (error) {
+          if (!signal.aborted) {
+            handler({ type: "error", error });
+          }
+        }
+        try {
+          await sleep(intervalMs, signal);
+        } catch {
+          return;
+        }
+      }
+    })();
+    return stop;
   }
 
   /** Submits one signed transaction. A refusal is an outcome with its reason, not an error. */
