@@ -110,7 +110,7 @@ export function newPhrase(): string {
 
 export function unlock(net: Network, walletId: string, phrase: string, index = 0): Account {
   const check = Mnemonic.check(phrase);
-  if (!check.ok) throw new Error(check.error === "too-short" ? "Use your 18, 21 or 24 word recovery phrase." : "This recovery phrase is not valid.");
+  if (!check.ok) throw new Error(check.reason === "too-short" ? "Use your 18, 21 or 24 word recovery phrase." : "This recovery phrase is not valid.");
   open.get(walletId)?.release();
   const account = net.keys.fromPhrase(phrase.trim(), { account: 0, index });
   open.set(walletId, account);

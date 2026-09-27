@@ -135,10 +135,10 @@ export async function issueChallenge(publicKey: string) {
   const address = Address.fromPublicKey(publicKey, net).toString();   // refuses a key that is not a valid point
   const issuedAt = new Date();
   const expiresAt = new Date(issuedAt.getTime() + 5 * 60_000);
-  const message = SignIn.build({
-    origin: ORIGIN, network: messageNetworkOf(net), publicKey, address,
-    nonce: randomBytes(32).toString("hex"), issuedAt, expiresAt,
-  });
+  const message = SignIn.build(
+    { origin: ORIGIN, publicKey, nonce: randomBytes(32).toString("hex"), issuedAt, expiresAt },
+    net,
+  );
   // Store { message, publicKey, expiresAt } under a random challenge id, bound to this browser, usable once.
   return { message, address, network: messageNetworkOf(net), expiresAt: expiresAt.toISOString() };
 }
@@ -166,7 +166,7 @@ export async function POST(request: Request) {
   try {
     return Response.json(await issueChallenge(publicKey), { headers: { "cache-control": "no-store" } });
   } catch (error) {
-    if (error instanceof IceRootError && error.code === "InvalidAddress") {
+    if (error instanceof IceRootError && error.code === "InvalidPublicKey") {
       return Response.json({ error: "This public key is not valid on this network." }, { status: 400 });
     }
     return Response.json({ error: "The network is unavailable. Please try again." }, { status: 503 });

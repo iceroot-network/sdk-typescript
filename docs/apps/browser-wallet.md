@@ -38,7 +38,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Manifest V3 quick
 
 | Today | SDK |
 |---|---|
-| `IceRootSigning.challenge(message, expected)` | `SignIn.parse(message, { origin, address, publicKey, now })` |
+| `IceRootSigning.challenge(message, expected)` | `SignIn.parse(message, profile, { origin, address, publicKey, now })`, with every expected field |
 | `IceRootSigning.NETWORK`, `ALGORITHM` | `messageNetworkOf(profile)` and `messageAlgorithmOf(profile)` (`heartwood-devnet-v90` and `secp256k1-bip340-sha256` today), which every message signature also carries |
 | `IceRootSigning.publicAccount(account)` | The identity's `{ publicKey, address, network, algorithm }` from the sandbox, built by the SDK |
 | `IceRootSigning.allowedOrigin` | Inside `SignIn.parse` for the message's origin; the check of the requesting page stays in the wallet (`site-policy.js`) |
@@ -104,7 +104,7 @@ const devnet = IceRootSdk.profiles.devnet({ relays: ["http://127.0.0.1:6003/api"
 // The sandbox checks every field again, against the selected identity, before it signs.
 function checkSignIn(message, origin, publicKey) {
   const address = IceRootSdk.Address.fromPublicKey(publicKey, devnet).toString();
-  return IceRootSdk.SignIn.parse(message, { origin, address, publicKey, now: new Date() });
+  return IceRootSdk.SignIn.parse(message, devnet, { origin, address, publicKey, now: new Date() });
 }
 
 // Replaces IceRootSigning.publicAccount: the identity the identity page returns must be consistent.
@@ -160,9 +160,10 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
     ping: () => ({ ready: true }),
     generatePhrase: () => Sdk.Mnemonic.generate(),
     identity: (args) => withAccount(args, publicIdentity),
-    parseSignIn: (args) => toJson(Sdk.SignIn.parse(args.message, { ...args.expected, now: new Date() })),
-    signSignIn: (args) => withAccount(args, (account) => {
-      Sdk.SignIn.parse(args.message, { origin: args.origin, address: account.address, publicKey: account.publicKey, now: new Date() });
+    // `args.expected` is { origin, address, publicKey }: the requesting origin and the selected identity.
+    parseSignIn: (args) => toJson(Sdk.SignIn.parse(args.message, profileFor(args.devnet), { ...args.expected, now: new Date() })),
+    signSignIn: (args) => withAccount(args, (account, profile) => {
+      Sdk.SignIn.parse(args.message, profile, { origin: args.origin, address: account.address, publicKey: account.publicKey, now: new Date() });
       const signed = Sdk.Messages.sign(account, args.message);   // { publicKey, signature, network, algorithm }
       return { publicKey: signed.publicKey, signature: signed.signature, network: signed.network, algorithm: signed.algorithm };
     }),

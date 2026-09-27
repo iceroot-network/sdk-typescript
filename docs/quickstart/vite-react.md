@@ -110,7 +110,7 @@ export function Restore({ onAccount }: { onAccount: (account: Account) => void }
   const [problem, setProblem] = useState("");
   function restore() {
     const check = Mnemonic.check(text);
-    if (!check.ok) return setProblem(`This phrase is not valid (${check.error}).`);
+    if (!check.ok) return setProblem(`This phrase is not valid (${check.reason}).`);
     onAccount(net.keys.fromPhrase(text.trim(), { account: 0, index: 0 }));
     setText("");
   }

@@ -90,7 +90,9 @@ Every network declares what it supports. An operation the network lacks throws `
 
 | Capability | Today's devnet | Later |
 |---|---|---|
-| `transfer`, `burn`, `vote`, `validator-registration`, `second-key`, `message-signing` | yes | yes |
+| `connect`, `phrase-accounts` | yes | yes |
+| `transfer`, `burn`, `vote`, `validator-registration`, `validator-resignation`, `second-key`, `message-signing` | yes | yes |
+| `legacy-passphrase-import` | yes | no: it disappears with today's devnet formats |
 | `validator-names` (resolve a validator by its name) | yes | yes |
 | `key-rotation`, `multisig` | no | from the post-quantum formats |
 | `names` (register, resolve and send to account names) | no | from the IceRoot genesis |
@@ -99,7 +101,7 @@ Every network declares what it supports. An operation the network lacks throws `
 | `finality` | no | when finality is enabled |
 | `migration-exit` (leaving IceRoot, and the migration records apps show) | no | when migration is enabled |
 | `history-search` | limited to the reference API's routes | with the indexer |
-| `live-events` | no (the SDK polls) | with the indexer |
+| `live-events` (updates the network pushes) | no: watching polls the node | with the indexer |
 | `transaction-id-before-signing` | no (ids hash the signed bytes) | from the post-quantum formats |
 
 ## Keys and recovery phrases
@@ -109,7 +111,7 @@ Every network declares what it supports. An operation the network lacks throws `
 import { Mnemonic } from "@iceroot-network/sdk";
 
 const phrase = Mnemonic.generate();          // 24 English words from 256 bits of secure randomness
-const check = Mnemonic.check(userInput);     // { ok, words, error?: "checksum" | "unknown-word" | "too-short" | ... }
+const check = Mnemonic.check(userInput);     // { ok, words, reason?, position? }: reason "empty" | "not-text" | "unknown-word" | "word-count" | "too-short" | "checksum"
 
 const account = net.keys.fromPhrase(phrase, { account: 0, index: 0 });   // optional BIP39 passphrase: { passphrase }
 account.address;     // the address on this network
@@ -125,7 +127,7 @@ const legacy = net.keys.fromLegacyPassphrase(text);       // devnet profiles onl
 - **Derivation** is hardened only. On today's devnet the key is secp256k1 at `m/44'/1'/account'/0'/index'`. From the post-quantum formats the same phrase derives ML-DSA-65 keys through a different master key, so the same phrase gives unrelated classical and post-quantum keys. Apps keep one shape on every network: an account number and an address index.
 - **Coin type** `1'` is used on devnets and the public testnet. Mainnet will use IceRoot's registered coin type, so one phrase never gives the same keys on a test network and on mainnet.
 - **Legacy passphrase keys.** The devnet's funded test accounts and the browser wallet's existing devnet identities use the reference implementation's passphrase key (the SHA-256 of the text). `net.keys.fromLegacyPassphrase(text)` imports them, on devnet profiles only; the result has `legacy: true`. Offer it as an import, never as a way to create an account. It disappears with the devnet formats.
-- **Secrets stay in WebAssembly memory.** JavaScript sees public keys, addresses and signatures only. A phrase is a string when it is typed, but the SDK also accepts it as a `Uint8Array`, which you can overwrite after use. Call `release()` as soon as signing is done; handles also support `using` (`Symbol.dispose`).
+- **Secrets stay in WebAssembly memory.** JavaScript sees public keys, addresses and signatures only. A phrase is a string when it is typed, but the SDK also accepts it as a `Uint8Array`, which you can overwrite after use. Call `release()` as soon as signing is done.
 
 ### Contexts without network access
 
@@ -255,7 +257,7 @@ const draft = await net.build.transfer({
   from: account.address,
   to: [{ address: Address.parse(recipient, net), amount: Amount.parse("2.5", net.token.decimals) }],   // 1 to 256
   memo: "invoice 42",                 // at most net.rules.memo.maxBytes UTF-8 bytes
-  fee: "minimum",                     // the default: the exact floor; or a bigint, or { multiplier }
+  fee: "minimum",                     // the default: the exact floor; or a bigint, or { multiplierBasisPoints }
 });
 
 draft.fee;        // bigint: show this, never a constant
@@ -326,15 +328,15 @@ messageNetworkOf(net);     // "heartwood-devnet-v90" today: the network name eve
 messageAlgorithmOf(net);   // "secp256k1-bip340-sha256" today
 
 // A wallet, before it asks the holder to sign a website's sign-in message:
-const fields = SignIn.parse(message, { origin: senderOrigin, address, publicKey, now: new Date() });
+const fields = SignIn.parse(message, net, { origin: senderOrigin, address, publicKey, now: new Date() });
 // throws with the reason unless: the format is version 1, the origin is secure and equals the sender,
 // the URI is origin + "/login", the network, public key and address are the selected identity's,
 // the nonce is 64 hex characters and the times are valid and at most five minutes apart.
-// Every expected field is required; a context that knows only the public key derives the address
-// with Address.fromPublicKey(publicKey, profile).
+// Every expected field is required (a missing one throws InvalidArgument); a context that knows only
+// the public key derives the address with Address.fromPublicKey(publicKey, profile).
 
 // A server that issues sign-in challenges:
-const challenge = SignIn.build({ origin, network, publicKey, address, nonce, issuedAt, expiresAt });
+const challenge = SignIn.build({ origin, publicKey, nonce, issuedAt, expiresAt }, net);   // the network and address come from the profile and the key
 ```
 
 - On today's devnet a message signature is BIP340 over the SHA-256 of the exact UTF-8 message, which is the format the browser wallet and the validators portal already use. The SDK always hashes first, so a message of exactly 32 bytes is handled like any other.
@@ -347,8 +349,8 @@ Every SDK error is an `IceRootError` with a stable `code`, a readable `message` 
 
 | Group | Codes |
 |---|---|
-| Input | `InvalidPhrase`, `PhraseTooShort`, `InvalidPath`, `InvalidAddress`, `InvalidKey`, `InvalidAmount`, `MemoTooLong`, `NoRecipients`, `TooManyRecipients`, `InvalidVote`, `InvalidName`, `InvalidFee`, `InvalidDraft`, `InvalidTransaction`, `InvalidSignIn` |
-| Network | `NodeUnavailable`, `RateLimited`, `Timeout`, `BadResponse`, `NetworkMismatch` |
+| Input | `InvalidPhrase`, `PhraseTooShort`, `InvalidPath`, `InvalidAddress`, `InvalidKey`, `InvalidPublicKey`, `InvalidAmount`, `MemoTooLong`, `NoRecipients`, `TooManyRecipients`, `InvalidVote`, `InvalidName`, `InvalidFee`, `InvalidDraft`, `InvalidTransaction`, `InvalidSignIn`, `InvalidRequest`, `InvalidProfile`, `InvalidArgument` |
+| Network | `NodeUnavailable`, `RateLimited`, `Timeout`, `BadResponse`, `NotFound`, `Refused`, `NetworkMismatch` |
 | Submission | `TxRejected` (with `reason` and `nodeCode`), `StaleDraft`, `FeeUnavailable` |
 | Support | `UnsupportedOnNetwork` (with `capability`), `SdkNotInitialized`, `WasmLoadFailed` |
 | Crypto | `RandomnessUnavailable`, `SigningFailed`, `WrongKey`, `KeyReleased` |

@@ -246,11 +246,13 @@ In a real wallet the phrase comes from an encrypted vault that the trusted page 
 
 ## 6. Service worker: the sign-in check
 
-<!-- sample: pending; needs: initSync, embedded-bytes, iife-build, SignIn.parse -->
+<!-- sample: pending; needs: initSync, embedded-bytes, iife-build, profiles.devnet, offline-profile, SignIn.parse -->
 ```js
 // extension/background.js
 importScripts("vendor/iceroot-sdk/iceroot-sdk.js", "vendor/iceroot-sdk/iceroot-sdk-bytes.js");
 IceRootSdk.initSync(IceRootSdkWasmBytes);
+// Never contacted: the worker uses the profile only for the devnet's network name and address format.
+const devnet = IceRootSdk.profiles.devnet({ relays: ["http://127.0.0.1:6003/api"] });
 
 chrome.action.onClicked.addListener(() => chrome.tabs.create({ url: chrome.runtime.getURL("wallet.html") }));
 
@@ -259,7 +261,7 @@ chrome.action.onClicked.addListener(() => chrome.tabs.create({ url: chrome.runti
 chrome.runtime.onMessage.addListener((request, sender, reply) => {
   if (request?.type !== "check-sign-in" || !sender.origin) return false;
   try {
-    const fields = IceRootSdk.SignIn.parse(request.message, {
+    const fields = IceRootSdk.SignIn.parse(request.message, devnet, {
       origin: sender.origin,   // the real requesting origin, never one the page claims
       publicKey: request.publicKey,
       address: request.address,
