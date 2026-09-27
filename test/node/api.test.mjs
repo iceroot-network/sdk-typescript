@@ -194,10 +194,17 @@ test("sign-in messages are built and checked by the same code", () => {
   const signature = sdk.Messages.sign(account, message);
   assert.equal(sdk.Messages.verify({ ...signature, message }, devnet), true);
 
+  const selected = {
+    origin: "https://validators.example",
+    address: account.address,
+    publicKey: account.publicKey,
+    now,
+  };
   for (const expected of [
-    { origin: "https://other.example", now },
-    { address: "dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNX", now },
-    { now: new Date("2026-09-27T10:10:00Z") },
+    { ...selected, origin: "https://other.example" },
+    { ...selected, address: "dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNX" },
+    { ...selected, publicKey: "02" + "11".repeat(32) },
+    { ...selected, now: new Date("2026-09-27T10:10:00Z") },
   ]) {
     assert.throws(() => sdk.SignIn.parse(message, devnet, expected), (error) => {
       assert.ok(error instanceof sdk.InvalidSignIn);
@@ -205,7 +212,17 @@ test("sign-in messages are built and checked by the same code", () => {
       return true;
     });
   }
-  assert.throws(() => sdk.SignIn.parse(message.replace("Version: 1", "Version: 2"), devnet, { now }), sdk.InvalidSignIn);
-  assert.throws(() => sdk.SignIn.parse(message, devnet, { now: new Date(Number.NaN) }), sdk.InvalidArgument);
+  assert.throws(() => sdk.SignIn.parse(message.replace("Version: 1", "Version: 2"), devnet, selected), sdk.InvalidSignIn);
+  assert.throws(() => sdk.SignIn.parse(message, devnet, { ...selected, now: new Date(Number.NaN) }), sdk.InvalidArgument);
+  // The origin and the identity are always compared: leaving one out is refused, never skipped.
+  for (const field of ["origin", "address", "publicKey"]) {
+    const { [field]: _left, ...partial } = selected;
+    assert.throws(() => sdk.SignIn.parse(message, devnet, partial), (error) => {
+      assert.ok(error instanceof sdk.InvalidArgument);
+      assert.equal(error.details.field, field);
+      return true;
+    });
+    assert.throws(() => sdk.SignIn.parse(message, devnet, { ...selected, [field]: "" }), sdk.InvalidArgument);
+  }
   account.release();
 });

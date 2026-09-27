@@ -97,10 +97,17 @@ export function transactions(configuration: string, statistics: FeeStatistics, a
     { origin: "https://example.com", publicKey: sender.publicKey, nonce: "00".repeat(32), issuedAt: new Date(), expiresAt: new Date() },
     chain,
   );
+  const fields = SignIn.parse(message, chain, {
+    origin: "https://example.com",
+    address: sender.address,
+    publicKey: sender.publicKey,
+    now: new Date(),
+  });
+  const expires: Date = fields.expiresAt;
   const algorithm: "secp256k1-bip340-sha256" | "ml-dsa-65" = messageAlgorithmOf(chain);
   const hasFinality: boolean = capabilitiesOf(chain).has("finality");
   sender.release();
-  void [feedback, rules, back.id, vote.fee, text, message, algorithm, hasFinality, AssetId.ROOT];
+  void [feedback, rules, back.id, vote.fee, text, message, expires, algorithm, hasFinality, AssetId.ROOT];
   return summary.fee.amount + BigInt(rules.memo.maxBytes);
 }
 

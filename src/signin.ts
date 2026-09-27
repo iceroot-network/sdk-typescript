@@ -48,17 +48,23 @@ export interface SignInFields {
   readonly expiresAt: Date;
 }
 
-/** What `SignIn.parse` checks the challenge against. Unset fields are not compared. */
+/**
+ * What `SignIn.parse` checks the challenge against. Every field is required: without the origin
+ * and the identity, a challenge made for another website or another account would pass. A context
+ * that knows only the public key derives the address with `Address.fromPublicKey`.
+ */
 export interface SignInExpectations {
-  /** The origin of the page that asks. */
-  readonly origin?: string;
+  /** The origin of the page that asks, as the browser reports it; never one the page claims. */
+  readonly origin: string;
   /** The selected account's address. */
-  readonly address?: string;
+  readonly address: string;
   /** The selected account's public key, as hex. */
-  readonly publicKey?: Hex;
+  readonly publicKey: Hex;
   /** The current time. */
   readonly now: Date;
 }
+
+const EXPECTED_FIELDS = ["origin", "address", "publicKey"] as const;
 
 function seconds(date: Date, name: string): number {
   const time = date instanceof Date ? date.getTime() : Number.NaN;
@@ -86,19 +92,26 @@ export const SignIn = {
   /**
    * The fields of the sign-in `message` on the network of `source`, after every check: the fixed
    * lines, a secure origin with `URI` its `/login`, the network, the forms of the key, address and
-   * nonce, that the address is the key's, the expected fields and the times. A message that fails
-   * a check throws `InvalidSignIn` with the reason in `details.reason`.
+   * nonce, that the address is the key's, the expected origin, public key and address, and the
+   * times. A message that fails a check throws `InvalidSignIn` with the reason in
+   * `details.reason`; a missing expected field throws `InvalidArgument`.
    */
   parse(message: string, source: ProfileSource, expected: SignInExpectations): SignInFields {
     const profile = profileHandleOf(source);
+    for (const name of EXPECTED_FIELDS) {
+      const value: unknown = expected[name];
+      if (typeof value !== "string" || value === "") {
+        throw new InvalidArgument(`the expected ${name} is required`, { field: name });
+      }
+    }
     const now = expected.now instanceof Date ? expected.now.getTime() : Number.NaN;
     if (!Number.isFinite(now)) {
       throw new InvalidArgument("now is not a valid date");
     }
     const json = JSON.stringify({
-      origin: expected.origin ?? null,
-      publicKey: expected.publicKey ?? null,
-      address: expected.address ?? null,
+      origin: expected.origin,
+      publicKey: expected.publicKey,
+      address: expected.address,
     });
     const fields = parse<Omit<SignInFields, "issuedAt" | "expiresAt"> & { issuedAtMs: number; expiresAtMs: number }>(
       call((module) => module.parseSignIn(profile, message, json, now)),
