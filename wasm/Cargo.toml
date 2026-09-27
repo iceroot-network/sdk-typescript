@@ -45,6 +45,11 @@ hex = "0.4"
 name = "vectors"
 required-features = ["fixed-aux"]
 
+# The native side of the differential test (scripts/check-differential.mjs).
+[[example]]
+name = "differential"
+required-features = ["fixed-aux"]
+
 [lints.rust]
 missing_docs = "warn"
 unused_must_use = "deny"

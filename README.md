@@ -128,6 +128,7 @@ npm run check:docs     # the documentation's sample markers, links and anchors
 npm run check:rust     # rustfmt, clippy (native and wasm32) with warnings as errors
 npm run test:rust      # the bindings' unit tests in native Rust
 npm run check:vectors  # the vector file equals what native Rust produces now
+npm run check:differential  # 10,000 random cases give the same results natively and in WebAssembly
 npm run check:types    # sources and an app's use of the declarations, TypeScript 7.0 and 5.7
 npm run check:size     # the module at most 300 KB gzipped
 npm run test:node      # Node: the Node, browser and classic-script builds; drafts across instances; @noble cross-check
@@ -142,6 +143,7 @@ npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a 
 | Vite and React in Chromium | The package installed from its tarball; the production build under the page policy, and the development server |
 | Manifest V3 extension | Playwright's persistent context: the wallet page (fetch), the sandbox page (`connect-src 'none'` kept, embedded bytes) and the service worker (embedded bytes); the same extension without `'wasm-unsafe-eval'` fails in all three |
 | Tauri 2 on Linux | A Tauri application driven by `tauri-driver` and WebKitWebDriver; the same application without `'wasm-unsafe-eval'` fails |
+| Native and WebAssembly | `check:differential`: 10,000 random phrases, passphrase keys and message signatures, amounts, addresses, transfers and votes through the bindings compiled natively and through the WebAssembly build behind the wrapper; results and errors must be identical |
 
 ## License
 
