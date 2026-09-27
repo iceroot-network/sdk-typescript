@@ -15,6 +15,7 @@
 //   <!-- sample: later; needs: vote-library -->
 //   <!-- sample: verified 0.1.0 -->
 //   <!-- sample: plain -->
+import { realpathSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -29,8 +30,10 @@ const FORBIDDEN = [
   ["–", "en dash"],
 ];
 
-// Run as a script; scripts/check-samples.mjs imports the parser.
-const isMain = process.argv[1] !== undefined && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+// Run as a script; scripts/check-samples.mjs imports the parser. Node resolves symbolic links in
+// the main module's path, so the path the script was started with is compared once resolved too;
+// otherwise a checkout reached through a link would skip every check and pass.
+const isMain = process.argv[1] !== undefined && pathToFileURL(realPath(process.argv[1])).href === import.meta.url;
 const args = isMain ? process.argv.slice(2) : [];
 const listSamples = args.includes("--list");
 const listNeeds = args.includes("--needs");
@@ -39,6 +42,14 @@ const extractDir = extractIndex >= 0 ? args[extractIndex + 1] : null;
 if (extractIndex >= 0 && !extractDir) usage("--extract needs a directory");
 for (const arg of args) {
   if (arg.startsWith("--") && !["--list", "--needs", "--extract"].includes(arg)) usage(`unknown option ${arg}`);
+}
+
+function realPath(file) {
+  try {
+    return realpathSync(path.resolve(file));
+  } catch {
+    return path.resolve(file);
+  }
 }
 
 function usage(message) {

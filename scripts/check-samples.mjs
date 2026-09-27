@@ -56,6 +56,11 @@ async function main() {
 
   const checked = samples.filter((sample) => sample.status === "verified" && LANGS.has(sample.lang));
   const skipped = samples.filter((sample) => sample.status === "pending" || sample.status === "later");
+  // A check that finds nothing to compile would pass without checking anything.
+  if (checked.length === 0) {
+    console.error("check-samples: no TypeScript sample is marked verified; the markers or the parser are broken");
+    process.exit(1);
+  }
 
   rmSync(OUT, { recursive: true, force: true });
   const projects = new Map();
