@@ -6,7 +6,10 @@
 //   node test/contexts/tauri/run.mjs            (DOCKER="sudo docker" if docker needs it)
 //
 // Two runs: the documented policy with 'wasm-unsafe-eval', where the published and the test builds
-// must match the native vectors; and the same policy without it, where loading must fail.
+// must match the native vectors and the published build must connect to a relay through the HTTP
+// plugin's fetch (the relay answers from sdk-rust's recorded devnet answers, from the sdk-rust
+// checkout next to this repository or SDK_RUST_DIR); and the same policy without it, where loading
+// must fail.
 
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -60,9 +63,11 @@ function icon() {
 function assemble() {
   rmSync(work, { recursive: true, force: true });
   mkdirSync(work, { recursive: true });
-  for (const entry of ["frontend", "src-tauri", "smoke.mjs"]) {
+  for (const entry of ["frontend", "src-tauri", "smoke.mjs", "relay.mjs"]) {
     cpSync(join(here, entry), join(work, entry), { recursive: true });
   }
+  const sdkRust = resolve(process.env.SDK_RUST_DIR ?? join(root, "..", "sdk-rust"));
+  cpSync(join(sdkRust, "crates", "iceroot-sdk-api", "tests", "fixtures", "devnet"), join(work, "fixtures"), { recursive: true });
   const vendor = join(work, "frontend", "vendor");
   cpSync(join(root, "dist", "web"), join(vendor, "sdk"), { recursive: true });
   cpSync(join(root, "build", "test", "dist", "web"), join(vendor, "sdk-test"), { recursive: true });
@@ -78,6 +83,7 @@ function runInContainer() {
     "set -e",
     "cd /work/src-tauri",
     `cargo build --release ${locked}`,
+    "node /work/relay.mjs /work/fixtures 6003 &",
     "dbus-run-session -- xvfb-run -a node /work/smoke.mjs /target/release/iceroot-sdk-tauri-check | tee /work/documented.log || true",
     // The negative control: the same application without 'wasm-unsafe-eval' in its policy.
     "sed -i \"s/ 'wasm-unsafe-eval'//\" tauri.conf.json",
@@ -134,6 +140,22 @@ console.log(`webview: ${documented.userAgent}`);
 console.log(
   `published build: ${documented.published?.checks} checks; test build: ${documented.test?.checks} checks, ` +
     `${documented.test?.fixedAuxSignatures} signatures and ${documented.test?.fixedAuxTransactions} transactions byte for byte`,
+);
+const transport = documented.transport;
+if (
+  transport?.ok !== true ||
+  transport.webviewFetch !== "refused" ||
+  !(transport.validators > 0) ||
+  !/^[0-9a-f]{64}$/.test(transport.nethash ?? "") ||
+  !/^[1-9][0-9]*$/.test(transport.balance ?? "")
+) {
+  problems.push(`transport: ${JSON.stringify(transport ?? documented)}`);
+}
+if (withoutWasmEval.transport?.error !== "WasmLoadFailed") {
+  problems.push(`transport without 'wasm-unsafe-eval': ${JSON.stringify(withoutWasmEval.transport ?? withoutWasmEval)}`);
+}
+console.log(
+  `transport: the HTTP plugin's fetch read ${transport?.validators} validators and a balance of ${transport?.balance} at height ${transport?.height}; the webview's own fetch was ${transport?.webviewFetch}`,
 );
 console.log(`without 'wasm-unsafe-eval': ${withoutWasmEval.published?.loadError}, ${withoutWasmEval.test?.loadError}`);
 if (problems.length > 0) {

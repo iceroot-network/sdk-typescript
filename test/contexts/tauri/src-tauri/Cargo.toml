@@ -15,6 +15,9 @@ tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 tauri = { version = "2.11.6", features = [] }
+# The HTTP plugin, whose fetch the page passes to the SDK as its transport: requests leave from
+# Rust, outside the webview's content security policy.
+tauri-plugin-http = "2.8.0"
 
 [lints.rust]
 unsafe_code = "forbid"
