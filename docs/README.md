@@ -52,7 +52,7 @@ Every fenced code block in these pages is preceded by an HTML comment that state
 
 <!-- sample: plain -->
 ```text
-<!-- sample: pending; needs: connect, net.build.transfer, fee-floor -->
+<!-- sample: pending; needs: connect, net.build.transfer -->
 ```
 
 | Status | Meaning |

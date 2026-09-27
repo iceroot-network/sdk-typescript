@@ -262,7 +262,7 @@
       default:
         converted = operation;
     }
-    var result = { operation: converted, fee: BigInt(json.fee.amount) };
+    var result = { operation: converted, fee: json.fee.kind === "minimum" ? "minimum" : BigInt(json.fee.amount) };
     if (json.memo !== null) {
       result.memo = json.memo;
     }
@@ -304,6 +304,7 @@
         check(name + " nonce", txCase.summary.nonce, summary.nonce.toString());
         check(name + " fee", txCase.summary.fee, summary.fee.amount.toString());
         check(name + " fee source", txCase.summary.feeSource, summary.fee.source);
+        check(name + " fee floor", txCase.summary.feeFloor, summary.fee.floor === undefined ? null : summary.fee.floor.toString());
         check(name + " amount", txCase.summary.amount, summary.amount.toString());
         check(name + " total", String(BigInt(txCase.summary.amount) + BigInt(txCase.summary.fee)), summary.total.toString());
         check(name + " size", txCase.summary.size, summary.size);
@@ -314,6 +315,7 @@
         var again = sdk.Draft.deserialize(draft.serialize(), chain.profile);
         check(name + " draft round trip", txCase.unsigned, bytesToHex(again.unsignedBytes));
         check(name + " draft round trip summary", JSON.stringify(summary.lines), JSON.stringify(again.summary.lines));
+        check(name + " draft round trip fee source", summary.fee.source, again.summary.fee.source);
 
         // The native signed transaction verifies here and has the native id.
         var native = sdk.SignedTransaction.fromJson(chain, txCase.json, txCase.facts.height);

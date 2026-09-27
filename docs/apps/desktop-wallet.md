@@ -140,7 +140,7 @@ export function watchAddress(net: Network, text: string): string {
 
 `SendFlow.tsx` already has Details, Review and Result steps. Map them to build, review and sign:
 
-<!-- sample: pending; needs: Address.parse, Amount.parse, net.build.transfer, fee-floor, draft.summary, draft.sign, net.submit, net.transactions.wait, Draft, Account -->
+<!-- sample: pending; needs: Address.parse, Amount.parse, net.build.transfer, draft.summary, draft.sign, net.submit, net.transactions.wait, Draft, Account -->
 ```ts
 // src/transfer.ts
 import { Address, Amount, type Account, type Draft, type Network } from "@iceroot-network/sdk";
@@ -179,7 +179,7 @@ export async function sendTransfer(net: Network, draft: Draft, account: Account)
 
 The governance page's editor splits a vote evenly across the chosen validators. Wire it to `net.build.vote`:
 
-<!-- sample: pending; needs: net.build.vote, fee-floor, net.rules.vote, draft.summary, VoteEntry -->
+<!-- sample: pending; needs: net.build.vote, net.rules.vote, draft.summary, VoteEntry -->
 ```ts
 // src/votes.ts
 import type { Network, VoteEntry } from "@iceroot-network/sdk";

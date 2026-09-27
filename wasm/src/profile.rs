@@ -121,9 +121,8 @@ fn read(object: &Map<String, Value>) -> Result<Profile> {
                 profile = profile.with_network_byte(byte);
             }
             match nethash {
-                Some(nethash) => profile
-                    .with_nethash(&nethash)
-                    .map_err(|_| BindingError::profile("a network hash is 64 hex digits"))?,
+                // The core refuses a malformed hash with its own InvalidProfile.
+                Some(nethash) => profile.with_nethash(&nethash)?,
                 None => profile,
             }
         }

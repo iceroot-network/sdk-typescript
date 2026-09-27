@@ -61,11 +61,11 @@ const draft = Draft.build(
   {
     operation: { kind: "transfer", to: [{ address: Address.parse(recipient, profile), amount: Amount.parse("1.5", chain.token.decimals) }] },
     memo: "invoice 42",
-    fee: 1_000_000n,
+    // No fee given: "minimum", the exact fee floor of the milestone in force.
   },
   { sender: account, nonce: 1n, height: 2 },
 );
-draft.summary.lines; // what the review screen shows
+draft.summary.lines; // what the review screen shows, the fee included
 const signed = draft.sign(account);
 signed.id; // and signed.json for the node
 

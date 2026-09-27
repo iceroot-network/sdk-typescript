@@ -167,7 +167,7 @@ export function Overview({ address }: { address: string }) {
 
 The form builds a draft; the review screen shows the draft; only the confirm button signs.
 
-<!-- sample: pending; needs: Address.check, Amount.parse, net.build.transfer, fee-floor, draft.summary, draft.sign, net.submit, net.transactions.wait, IceRootError, Draft, Account -->
+<!-- sample: pending; needs: Address.check, Amount.parse, net.build.transfer, draft.summary, draft.sign, net.submit, net.transactions.wait, IceRootError, Draft, Account -->
 ```tsx
 // src/Send.tsx
 import { useState } from "react";

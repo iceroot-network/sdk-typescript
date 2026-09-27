@@ -18,7 +18,7 @@ npm install https://github.com/iceroot-network/sdk-typescript/releases/download/
 
 Save as `transfer.mjs`:
 
-<!-- sample: pending; needs: init, connect, profiles.devnet, net.token, net.keys.fromLegacyPassphrase, Mnemonic.generate, net.keys.fromPhrase, net.accounts.get, net.build.transfer, fee-floor, draft.summary, draft.sign, net.submit, net.transactions.wait, Amount.parse, Amount.format, account.release -->
+<!-- sample: pending; needs: init, connect, profiles.devnet, net.token, net.keys.fromLegacyPassphrase, Mnemonic.generate, net.keys.fromPhrase, net.accounts.get, net.build.transfer, draft.summary, draft.sign, net.submit, net.transactions.wait, Amount.parse, Amount.format, account.release -->
 ```js
 import { init, connect, profiles, Mnemonic, Amount, IceRootError } from "@iceroot-network/sdk";
 

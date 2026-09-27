@@ -4,9 +4,8 @@
  * Every error the SDK throws is an {@link IceRootError} with a stable string `code`, a human
  * `message` and structured `details`. Each code has a subclass for `instanceof` checks. The codes
  * are part of the API: apps may branch on them, and they never change meaning. They are the codes
- * of the SDK's Rust core, which the TypeScript, Rust and Go SDKs share, plus a few that only the
- * TypeScript wrapper raises (`InvalidProfile`, `InvalidPublicKey`, `InvalidArgument`,
- * `WasmLoadFailed`).
+ * of the SDK's Rust core, which the TypeScript, Rust and Go SDKs share, plus the two that only the
+ * TypeScript wrapper raises (`InvalidArgument`, `WasmLoadFailed`).
  *
  * @module
  */
@@ -21,7 +20,6 @@ export type ErrorCode =
   | "PhraseTooShort"
   | "InvalidPath"
   | "InvalidAddress"
-  | "InvalidPublicKey"
   | "InvalidKey"
   | "InvalidAmount"
   | "MemoTooLong"
@@ -111,14 +109,7 @@ export class InvalidAddress extends IceRootError {
   }
 }
 
-/** Bytes or hex that are not a public key. */
-export class InvalidPublicKey extends IceRootError {
-  constructor(message = "the bytes are not a public key", details: ErrorDetails = {}) {
-    super("InvalidPublicKey", message, details);
-  }
-}
-
-/** A key given to a builder is not a valid key. */
+/** A public key, as bytes or hex, is not a valid key. */
 export class InvalidKey extends IceRootError {
   constructor(message = "the key is not valid", details: ErrorDetails = {}) {
     super("InvalidKey", message, details);
@@ -202,7 +193,7 @@ export class InvalidRequest extends IceRootError {
   }
 }
 
-/** A network profile is incomplete or malformed. */
+/** A network profile is incomplete or malformed, such as a network hash that is not 64 hex digits. */
 export class InvalidProfile extends IceRootError {
   constructor(message: string, details: ErrorDetails = {}) {
     super("InvalidProfile", message, details);
@@ -298,7 +289,11 @@ export class StaleDraft extends IceRootError {
   }
 }
 
-/** No fee can be resolved for the operation: give an exact fee, or the node's fee statistics. */
+/**
+ * No fee can be resolved for the operation: its fee floor is above the largest fee a transaction
+ * can carry, or the network's formats have no floor and no fee statistics were given. An exact fee
+ * still works.
+ */
 export class FeeUnavailable extends IceRootError {
   constructor(message: string, details: ErrorDetails = {}) {
     super("FeeUnavailable", message, details);

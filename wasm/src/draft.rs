@@ -511,8 +511,10 @@ mod tests {
             "NoRecipients"
         );
         assert_eq!(
-            code(json!({ "operation": { "kind": "burn", "amount": "2000000" } })),
-            "FeeUnavailable"
+            code(
+                json!({ "operation": { "kind": "transfer", "to": [{ "address": RECIPIENT, "amount": "1" }] }, "fee": { "kind": "multiplier", "basisPoints": 9999 } })
+            ),
+            "InvalidFee"
         );
         assert_eq!(
             code(json!({ "operation": { "kind": "swap" } })),
@@ -530,13 +532,24 @@ mod tests {
             ),
             "InvalidVote"
         );
+        // The minimum is the exact floor, whatever the node's statistics say.
         let statistics =
             json!({ "vote": { "minimum": "1", "average": "2", "maximum": "3" } }).to_string();
         let vote = json!({ "operation": { "kind": "vote", "entries": [{ "validator": "b", "basisPoints": 4000 }, { "validator": "a", "basisPoints": 6000 }] } }).to_string();
         let draft = DraftHandle::build(&chain, &vote, &facts(&key), Some(statistics)).unwrap();
         let summary: Value = serde_json::from_str(&draft.summary()).unwrap();
-        assert_eq!(summary["fee"]["source"], "node-statistics");
-        assert_eq!(summary["fee"]["amount"], "3");
+        assert_eq!(summary["fee"]["source"], "floor");
+        let size = summary["size"].as_u64().unwrap();
+        let floor = (98 + size.div_ceil(2)) * 6173;
+        assert_eq!(summary["fee"]["amount"], floor.to_string());
+        assert_eq!(summary["fee"]["floor"], floor.to_string());
         assert_eq!(summary["operation"]["entries"][0]["validator"], "a");
+        let burn = json!({ "operation": { "kind": "burn", "amount": "2000000" } }).to_string();
+        let draft = DraftHandle::build(&chain, &burn, &facts(&key), None).unwrap();
+        let summary: Value = serde_json::from_str(&draft.summary()).unwrap();
+        assert_eq!(
+            (&summary["fee"]["amount"], &summary["fee"]["source"]),
+            (&json!("0"), &json!("floor"))
+        );
     }
 }

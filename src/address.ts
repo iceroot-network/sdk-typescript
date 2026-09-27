@@ -8,7 +8,7 @@
  * @module
  */
 
-import { InvalidAddress, InvalidPublicKey, type AddressProblem } from "./errors.js";
+import { InvalidAddress, InvalidKey, type AddressProblem } from "./errors.js";
 import { call } from "./internal/bindings.js";
 import { fromHex, toHex } from "./internal/hex.js";
 import { profileHandleOf, type ProfileSource } from "./profiles.js";
@@ -61,7 +61,7 @@ export class Address {
     const profile = profileHandleOf(source);
     const bytes = typeof publicKey === "string" ? fromHex(publicKey) : publicKey;
     if (bytes === undefined) {
-      throw new InvalidPublicKey("the public key is not hex");
+      throw new InvalidKey("the public key is not hex");
     }
     const text = call((module) => module.addressFromPublicKey(bytes, profile));
     return new Address(text, call((module) => module.parseAddress(text, profile)));

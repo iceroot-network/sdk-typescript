@@ -172,7 +172,7 @@ The sandbox answers three operations. `address` returns the address of a phrase.
 
 Replace `http://127.0.0.1:6003` with your devnet's origin.
 
-<!-- sample: pending; needs: init, iife-build, connect, profiles.devnet, net.profile, profile-structured-clone, net.build.transfer, fee-floor, draft.serialize, SignedTransaction.deserialize, net.submit, net.transactions.wait, Address.parse, Amount.parse, Amount.format, account.release -->
+<!-- sample: pending; needs: init, iife-build, connect, profiles.devnet, net.profile, profile-structured-clone, net.build.transfer, draft.serialize, SignedTransaction.deserialize, net.submit, net.transactions.wait, Address.parse, Amount.parse, Amount.format, account.release -->
 ```js
 // extension/wallet.js
 (async function () {

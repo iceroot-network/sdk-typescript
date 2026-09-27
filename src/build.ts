@@ -31,13 +31,18 @@ export type { OperationKind } from "./chain.js";
  * The fee of a draft: `"minimum"` (the default), an exact amount in base units, or the minimum
  * times `multiplierBasisPoints / 10000` (at least 10,000), rounded up.
  *
- * Until this release computes the exact fee floor of the milestone in force, `"minimum"` is the
- * largest fee in the node's fee statistics for the operation, and without statistics the build
- * fails with `FeeUnavailable`; an exact fee always works. A draft never falls back to a fixed fee.
+ * `"minimum"` is the exact fee floor of the milestone in force for the transaction's type and
+ * size, computed with the node's own function. A draft never falls back to a fixed fee.
  */
 export type FeeChoice = "minimum" | BaseUnits | { readonly multiplierBasisPoints: number };
 
-/** Where a draft's fee comes from. */
+/**
+ * Where a draft's fee comes from: `"floor"` when the fee equals the exact fee floor, `"explicit"`
+ * for a fee the caller set (an exact amount, or a multiple of the minimum above the floor), and
+ * `"node-statistics"` where a network's formats have no floor and the node's statistics were
+ * used. A deserialized draft reads `"floor"` only when its fee equals the floor computed again,
+ * and `"explicit"` otherwise.
+ */
 export type FeeSource = "floor" | "node-statistics" | "explicit";
 
 /** One recipient of a transfer. */
@@ -102,7 +107,10 @@ export interface DraftFee {
   readonly amount: BaseUnits;
   /** Where it comes from. */
   readonly source: FeeSource;
-  /** The exact fee floor of the milestone in force, when this release computes it. */
+  /**
+   * The exact fee floor of the milestone in force for the transaction's type and size; absent only
+   * where a network's formats have no floor.
+   */
   readonly floor?: BaseUnits;
 }
 
@@ -141,7 +149,12 @@ export interface DraftSummary {
   readonly size: number;
   /** Whether the sender's second key must sign too. */
   readonly secondSignature: boolean;
-  /** One readable line per effect, then the memo and the fee. */
+  /**
+   * One readable line per effect, then the memo and the fee. Control characters, line and
+   * paragraph separators and bidirectional formatting characters are written as `\uXXXX`
+   * escapes, and a backslash as `\\`, so no text from the transaction or the network can start a
+   * line of its own or reorder what the screen shows.
+   */
   readonly lines: readonly string[];
 }
 
@@ -262,6 +275,19 @@ function basisPointsText(basisPoints: number): string {
   return fraction === 0 ? `${whole}%` : `${whole}.${String(fraction).padStart(2, "0").replace(/0$/, "")}%`;
 }
 
+/** Control characters (C0, DEL, C1), line and paragraph separators, bidirectional formatting characters and the backslash. */
+const UNSAFE_TEXT = /[\\\p{Cc}\p{Zl}\p{Zp}\p{Bidi_Control}]/gu;
+
+/**
+ * `text` safe for one line of a review screen: every character of {@link UNSAFE_TEXT} is written as
+ * a `\uXXXX` escape, and a backslash as `\\`, so the escapes cannot be mistaken for text.
+ */
+function displayText(text: string): string {
+  return text.replace(UNSAFE_TEXT, (char) =>
+    char === "\\" ? "\\\\" : `\\u${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`,
+  );
+}
+
 function lines(summary: Omit<DraftSummary, "lines">, symbol: string, decimals: number): string[] {
   const amount = (value: BaseUnits) => `${Amount.format(value, decimals)} ${symbol}`;
   const operation = summary.operation;
@@ -301,7 +327,8 @@ function lines(summary: Omit<DraftSummary, "lines">, symbol: string, decimals: n
     out.push(`Memo: ${summary.memo}`);
   }
   out.push(`Fee ${amount(summary.fee.amount)}`);
-  return out;
+  // The memo, names, addresses and the token symbol all come from the transaction or the network.
+  return out.map(displayText);
 }
 
 const drafts = new WeakMap<Draft, DraftHandle>();
@@ -347,9 +374,9 @@ export class Draft {
   }
 
   /**
-   * The draft of `request` on `chain`, with the `facts` the node reported and, when the fee is
-   * resolved from them, the node's fee `statistics`. Every rule is applied before anything is
-   * signed; a refusal names the rule it breaks.
+   * The draft of `request` on `chain`, with the `facts` the node reported. The node's fee
+   * `statistics` are used only where a network's formats have no fee floor. Every rule is applied
+   * before anything is signed; a refusal names the rule it breaks.
    */
   static build(chain: Chain, request: DraftRequest, facts: OnlineFacts, statistics?: FeeStatistics): Draft {
     const sender = typeof facts.sender === "string" ? facts.sender : facts.sender.publicKey;
@@ -377,7 +404,8 @@ export class Draft {
    * The draft in `bytes` (from {@link Draft.serialize}), for the profile of `source`, whose network
    * hash must be pinned. A draft for another profile or network is refused with
    * `NetworkMismatch`, and the summary is computed again from the transaction's own fields: the
-   * signing context shows what it signs, not what it was told.
+   * signing context shows what it signs, not what it was told. The fee floor is computed again
+   * too, and the fee's source reads `"floor"` only when the fee equals it.
    */
   static deserialize(bytes: Uint8Array, source: ProfileSource): Draft {
     const profile = profileHandleOf(source);
