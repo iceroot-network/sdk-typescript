@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // The end-to-end tests against a local devnet:
 //
-//   ICEROOT_DEVNET_TOOLS=<devnet tooling> npm run test:e2e [-- --only node,chromium,quickstarts,rust]
+//   ICEROOT_DEVNET_TOOLS=<devnet tooling> npm run test:e2e [-- --only node,chromium,quickstarts,wallet,rust]
 //
 // Node and Chromium run the scenario of scenario.js at the same time, each funded by its own
 // genesis wallet. Then the documentation's quickstarts (quickstarts.e2e.ts) run, funded by the third
-// genesis wallet, and last the Rust SDK's end-to-end test, which also verifies the messages the
-// TypeScript scenarios signed and reads their transactions back. The node allows 100 requests a
+// genesis wallet, then the example wallet (wallet.e2e.ts) from the same one, and last the Rust
+// SDK's end-to-end test, which also verifies the messages the TypeScript scenarios signed and reads
+// their transactions back. The node allows 100 requests a
 // minute from one address, so only the two scenarios run at the same time. Build the package
 // first (npm run build).
 //
@@ -23,7 +24,7 @@ import { parseArgs } from "node:util";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const sdkRust = resolve(process.env.SDK_RUST_DIR ?? join(root, "..", "sdk-rust"));
-const JOBS = ["node", "chromium", "quickstarts", "rust"];
+const JOBS = ["node", "chromium", "quickstarts", "wallet", "rust"];
 const { values } = parseArgs({ options: { only: { type: "string", default: JOBS.join(",") } } });
 const selected = new Set(values.only.split(",").map((name) => name.trim()));
 for (const name of selected) {
@@ -103,6 +104,13 @@ if (process.env.ICEROOT_E2E_RELAY === undefined) {
       ICEROOT_E2E_FUNDER: "team-placeholder-1",
     });
     results.push(["Quickstarts", status]);
+  }
+  if (selected.has("wallet")) {
+    const playwright = join(root, "node_modules", ".bin", "playwright");
+    const status = await run("wallet", playwright, ["test", "-c", "playwright.e2e.config.ts", "test/e2e/wallet.e2e.ts"], {
+      ICEROOT_E2E_FUNDER: "team-placeholder-1",
+    });
+    results.push(["Example wallet", status]);
   }
   if (selected.has("rust")) {
     // Every TypeScript scenario that passed left a signed message and its transactions.
