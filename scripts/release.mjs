@@ -14,6 +14,10 @@
 // the checks and tests. It needs the GitHub CLI with a token that may write releases (GH_TOKEN).
 // The build is built from sdk-rust next to this repository, which the workflow checks out at the
 // same tag.
+//
+// The notes say how to install the release, what it contains, the notes written for the version in
+// release-notes/<tag>.md (what an application must know: changed or removed interfaces), the
+// assets and the commits since the previous tag.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -134,6 +138,7 @@ function releaseNotes(pkg, tag, head, assets) {
   const changes = git(root, "log", "--no-merges", "--format=- %s", previous ? `${previous}..${head}` : head)
     .split("\n")
     .filter(Boolean);
+  const written = versionNotes(tag);
 
   return `Install from this release, with no registry account or token:
 
@@ -150,7 +155,7 @@ Imports use the package name, \`${pkg.name}\`, so moving to a registry later cha
 - Profiles: ${profiles}
 - WebAssembly module: ${assets.module.length} bytes, ${gzipSync(assets.module, { level: 9 }).length} bytes gzipped; the web, Node and classic-script builds share it
 - Built with Rust ${rustVersion()} and wasm-bindgen ${bindgen}
-
+${written ? `\n## Notes\n\n${written}\n` : ""}
 ## Assets
 
 | Asset | What it is |
@@ -170,6 +175,12 @@ Check a download with \`sha256sum --check --ignore-missing SHA256SUMS\` (on macO
 
 ${changes.join("\n") || "- No changes."}
 `;
+}
+
+// The notes written for this version, if any.
+function versionNotes(tag) {
+  const file = join(root, "release-notes", `${tag}.md`);
+  return existsSync(file) ? readFileSync(file, "utf8").trim() : null;
 }
 
 // Where heartwood-crypto comes from, as wasm/Cargo.lock records it.
