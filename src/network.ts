@@ -150,8 +150,8 @@ export interface WatchedAccount {
 /** What {@link Network.watch} follows. */
 export interface WatchFilter {
   /**
-   * An account whose new transactions, sent and received, are reported once they are in a block.
-   * Without it, only new blocks are reported.
+   * An account whose new transactions, sent and received, are reported once they are in a block:
+   * at most 50 per poll (see {@link Network.watch}). Without it, only new blocks are reported.
    */
   readonly address?: Address | WatchedAccount | string;
 }
@@ -164,7 +164,7 @@ export type WatchEvent =
       readonly block: BlockInfo;
     }
   | {
-      /** A transaction of the watched account that is new in a block, oldest first. */
+      /** A transaction of the watched account that is new in a block, oldest first; at most 50 per poll. */
       readonly type: "transaction";
       readonly transaction: TxRecord;
     }
@@ -182,7 +182,10 @@ export interface WatchOptions {
   readonly signal?: AbortSignal;
 }
 
-/** Transactions of the watched account read at each poll, newest first. */
+/**
+ * Transactions of the watched account read at each poll, newest first: the most a poll can report
+ * (the node API's largest page is 100; one page keeps a poll to a few requests).
+ */
 const WATCH_HISTORY_LIMIT = 50;
 
 /** What every builder takes. */
@@ -624,10 +627,17 @@ export class Network {
    * block, `handler` gets the latest block and, with `filter.address`, each transaction of that
    * account that is new in a block since the watch began (sent or received, oldest first). A poll
    * that fails is reported as an `error` event and the watch goes on. Returns a function that
-   * stops the watch.
+   * stops the watch; aborting `options.signal` does the same.
    *
    * Each poll reads the node's status; when the height moved it also reads the latest block and,
    * with an address, the first page of the account's history, within the request allowance.
+   * Polling has two limits:
+   *
+   * - One `block` event per poll, for the latest block. Blocks produced between two polls are not
+   *   listed; read them with `blocks.list`.
+   * - At most 50 new transactions per poll for the address: the newest 50 of its history. When
+   *   more arrive between two polls, the older ones are not reported; read them with
+   *   `history.forAccount`, or poll more often with `intervalMs`.
    */
   watch(filter: WatchFilter, handler: (event: WatchEvent) => void, options: WatchOptions = {}): () => void {
     const blockMs = this.configuration.blockTime * 1000;
@@ -637,10 +647,17 @@ export class Network {
       watched === undefined ? undefined : typeof watched === "object" && "watchOnly" in watched ? watched.address : String(watched);
     const address = text === undefined ? undefined : Address.parse(text, this.profile).toString();
     const stopper = new AbortController();
-    const stop = () => stopper.abort();
-    options.signal?.addEventListener("abort", stop, { once: true });
-    if (options.signal?.aborted) {
+    const outer = options.signal;
+    // Stopping, by the returned function or by the caller's signal, also removes the listener
+    // from that signal, so a long-lived signal keeps no reference to a watch that ended.
+    const stop = () => {
+      outer?.removeEventListener("abort", stop);
+      stopper.abort();
+    };
+    if (outer?.aborted) {
       stop();
+    } else {
+      outer?.addEventListener("abort", stop, { once: true });
     }
     const signal = stopper.signal;
     let height: bigint | undefined;

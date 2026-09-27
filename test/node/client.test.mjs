@@ -655,4 +655,38 @@ test("watch-only accounts, and watching blocks and an account's transactions", a
   assert.equal(blocks[0].type, "block");
   assert.equal(historyReads, reads);
   assert.throws(() => net.watch({}, () => {}, { intervalMs: 0 }), sdk.InvalidArgument);
+
+  // Stopping a watch removes its listener from the caller's signal, which may outlive it.
+  const listeners = new Set();
+  const signal = {
+    aborted: false,
+    addEventListener: (type, listener) => {
+      assert.equal(type, "abort");
+      listeners.add(listener);
+    },
+    removeEventListener: (type, listener) => {
+      assert.equal(type, "abort");
+      listeners.delete(listener);
+    },
+  };
+  const stops = [1, 2, 3].map(() => net.watch({}, () => {}, { intervalMs: 10, signal }));
+  assert.equal(listeners.size, 3);
+  for (const stopOne of stops) {
+    stopOne();
+  }
+  assert.equal(listeners.size, 0);
+  // Aborting the signal stops the watch and removes the listener too.
+  net.watch({}, () => {}, { intervalMs: 10, signal });
+  assert.equal(listeners.size, 1);
+  const [listener] = listeners;
+  listener();
+  assert.equal(listeners.size, 0);
+  // A signal aborted already gets no listener, and the watch reads nothing. The polls the stopped
+  // watches began settle first.
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  const before = node.requests.length;
+  net.watch({}, () => {}, { intervalMs: 10, signal: { ...signal, aborted: true } });
+  assert.equal(listeners.size, 0);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(node.requests.length, before);
 });

@@ -226,7 +226,10 @@ const stop = net.watch({ address }, (event) => {
 stop();   // or pass { signal } as the third argument and abort it
 ```
 
-The network pushes no events yet, so `net.watch` polls the node once a block time (`{ intervalMs }` changes that). Each time the height moves it reports the latest block and, with an address (or a watch-only account from `net.keys.watch`), each transaction of that address that is new in a block since the watch began, oldest first. Blocks in between are not listed; read them with `net.blocks.list()`. A failed poll is an `error` event, never an empty update.
+The network pushes no events yet, so `net.watch` polls the node once a block time (`{ intervalMs }` changes that). Each time the height moves it reports the latest block and, with an address (or a watch-only account from `net.keys.watch`), each transaction of that address that is new in a block since the watch began, oldest first. A failed poll is an `error` event, never an empty update. Polling has two limits:
+
+- **One block per poll.** Blocks produced between two polls are not listed; read them with `net.blocks.list()`.
+- **At most 50 new transactions per poll and address.** A poll reads the newest 50 of the address's history; when more arrive between two polls, the older ones are not reported. An address that receives in bulk (an exchange's deposit address, for example) reads `net.history.forAccount` page by page instead, or polls more often with `{ intervalMs }`.
 
 Record shapes used in the guides (the full types are exported: `TxRecord`, `ValidatorInfo`, `AccountInfo`, `BlockInfo` and the rest). Amounts, nonces, heights and lifetime counters are `bigint`; an absent value is a missing property:
 
