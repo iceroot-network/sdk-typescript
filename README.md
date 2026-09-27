@@ -157,7 +157,7 @@ npm run test:rust      # the bindings' unit tests in native Rust
 npm run check:vectors  # the vector file equals what native Rust produces now
 npm run check:differential  # 10,000 random cases give the same results natively and in WebAssembly
 npm run check:types    # sources and an app's use of the declarations, TypeScript 7.0 and 5.7
-npm run check:size     # the module at most 300 KB gzipped
+npm run check:size     # the module at most 330 KiB gzipped
 npm run check:notice   # NOTICE matches wasm/Cargo.lock and package-lock.json
 npm run test:node      # Node: the Node, browser and classic-script builds; drafts across instances; @noble cross-check; the node API client
 npm run test:browser   # Chromium: a page, a Vite and React app, a Manifest V3 extension
