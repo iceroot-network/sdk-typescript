@@ -56,6 +56,7 @@ import {
   Selection,
 } from "@iceroot-network/sdk/vote";
 import * as keystore from "@iceroot-network/sdk/keystore";
+import * as ownership from "@iceroot-network/sdk/ownership";
 
 export async function example(bytes: Uint8Array, transport: Transport): Promise<string> {
   await init();
@@ -227,4 +228,31 @@ export function keys(phrase: string, password: Uint8Array, stored: Uint8Array | 
     }
   }
   return `${words} ${upgrade} ${text.length}`;
+}
+
+export function proofs(passphrase: string, typedAccount: string, pasted: string, now: Date): string {
+  const key: ownership.SolarKey = ownership.SolarKey.fromPassphrase(passphrase);
+  const account: ownership.ParsedAccount = ownership.IceRootAccount.parse(typedAccount);
+  const network: ownership.AccountNetwork = account.network;
+  const message: string = ownership.OwnershipProof.build({
+    address: key.address,
+    account: account.account,
+    nonce: ownership.OwnershipProof.randomNonce(),
+    issuedAt: now,
+  });
+  const fields: ownership.ProofFields = ownership.OwnershipProof.parse(message, { address: key.address }, now);
+  const proof: ownership.OwnershipProof = ownership.OwnershipProof.sign(key, message, now.getTime());
+  key.release();
+  const json: string = ownership.OwnershipProof.toJson(proof);
+  const again = ownership.OwnershipProof.fromSignature(message, proof.publicKey, proof.signature, now);
+  const source: string = ownership.sourceAddress(again.publicKey);
+  try {
+    ownership.OwnershipProof.verify(ownership.OwnershipProof.fromJson(pasted), now);
+  } catch (error) {
+    if (error instanceof ownership.InvalidProof) {
+      const reason: ownership.ProofProblem = error.reason;
+      return reason;
+    }
+  }
+  return `${network} ${fields.issuedAtMs} ${json.length} ${source} ${ownership.SOLAR_NETWORK_BYTE}`;
 }
