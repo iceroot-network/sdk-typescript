@@ -149,7 +149,12 @@ export interface DraftSummary {
   readonly size: number;
   /** Whether the sender's second key must sign too. */
   readonly secondSignature: boolean;
-  /** One readable line per effect, then the memo and the fee. */
+  /**
+   * One readable line per effect, then the memo and the fee. Control characters, line and
+   * paragraph separators and bidirectional formatting characters are written as `\uXXXX`
+   * escapes, and a backslash as `\\`, so no text from the transaction or the network can start a
+   * line of its own or reorder what the screen shows.
+   */
   readonly lines: readonly string[];
 }
 
@@ -270,6 +275,19 @@ function basisPointsText(basisPoints: number): string {
   return fraction === 0 ? `${whole}%` : `${whole}.${String(fraction).padStart(2, "0").replace(/0$/, "")}%`;
 }
 
+/** Control characters (C0, DEL, C1), line and paragraph separators, bidirectional formatting characters and the backslash. */
+const UNSAFE_TEXT = /[\\\p{Cc}\p{Zl}\p{Zp}\p{Bidi_Control}]/gu;
+
+/**
+ * `text` safe for one line of a review screen: every character of {@link UNSAFE_TEXT} is written as
+ * a `\uXXXX` escape, and a backslash as `\\`, so the escapes cannot be mistaken for text.
+ */
+function displayText(text: string): string {
+  return text.replace(UNSAFE_TEXT, (char) =>
+    char === "\\" ? "\\\\" : `\\u${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`,
+  );
+}
+
 function lines(summary: Omit<DraftSummary, "lines">, symbol: string, decimals: number): string[] {
   const amount = (value: BaseUnits) => `${Amount.format(value, decimals)} ${symbol}`;
   const operation = summary.operation;
@@ -309,7 +327,8 @@ function lines(summary: Omit<DraftSummary, "lines">, symbol: string, decimals: n
     out.push(`Memo: ${summary.memo}`);
   }
   out.push(`Fee ${amount(summary.fee.amount)}`);
-  return out;
+  // The memo, names, addresses and the token symbol all come from the transaction or the network.
+  return out.map(displayText);
 }
 
 const drafts = new WeakMap<Draft, DraftHandle>();

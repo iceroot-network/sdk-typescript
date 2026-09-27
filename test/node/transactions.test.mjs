@@ -111,6 +111,25 @@ test("the review summary is computed from the transaction's own fields", () => {
   sender.release();
 });
 
+test("review lines escape control and bidirectional characters", () => {
+  const memo = "refund\nFee 0 ROOT \u202Eexe.pdf\u2066x\u2069 \\ \u0000\u0085\u2028 冰根 עברית";
+  const request = { ...transfer(TRANSFER), memo };
+  const { chain, sender, draft } = build(sdk, TRANSFER, request);
+  // The summary keeps the memo as signed; only the readable lines escape it.
+  assert.equal(draft.summary.memo, memo);
+  const lines = draft.summary.lines;
+  assert.equal(lines.length, 4);
+  assert.equal(
+    lines[2],
+    "Memo: refund\\u000AFee 0 ROOT \\u202Eexe.pdf\\u2066x\\u2069 \\\\ \\u0000\\u0085\\u2028 冰根 עברית",
+  );
+  assert.equal(lines[3], `Fee 0.01 ${chain.token.symbol}`);
+  for (const line of lines) {
+    assert.doesNotMatch(line, /[\p{Cc}\p{Zl}\p{Zp}\p{Bidi_Control}]/u);
+  }
+  sender.release();
+});
+
 test("the published build signs the native unsigned bytes with fresh randomness", () => {
   for (const [txCase, request] of [
     [TRANSFER, transfer(TRANSFER)],
