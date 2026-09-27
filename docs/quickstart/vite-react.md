@@ -18,7 +18,7 @@ npm install https://github.com/iceroot-network/sdk-typescript/releases/download/
 
 Vite's dependency pre-bundling rewrites the module and breaks the URL of its `.wasm` file. Exclude the SDK from it:
 
-<!-- sample: pending; needs: web-build-vite -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // vite.config.ts
 import { defineConfig } from "vite";
@@ -167,7 +167,7 @@ export function Overview({ address }: { address: string }) {
 
 The form builds a draft; the review screen shows the draft; only the confirm button signs.
 
-<!-- sample: pending; needs: fee-floor -->
+<!-- sample: verified 0.1.0 -->
 ```tsx
 // src/Send.tsx
 import { useState } from "react";
@@ -245,7 +245,7 @@ A real review screen renders the summary's fields (recipients with amounts, tota
 
 ## 7. Put it together
 
-<!-- sample: pending; needs: account.release, Account -->
+<!-- sample: verified 0.1.0 -->
 ```tsx
 // src/App.tsx
 import { useEffect, useState } from "react";

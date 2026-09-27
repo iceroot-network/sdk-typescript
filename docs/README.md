@@ -2,11 +2,11 @@
 
 These pages explain how to use the IceRoot SDK for TypeScript and JavaScript, and how to replace the sample data of the five IceRoot apps (explorer, validators portal, desktop wallet, mobile wallet and browser wallet) with SDK calls. They are written so that a developer can wire an app from these pages alone, without guessing.
 
-The SDK is one Rust core with two front ends: this package, which is the core compiled to WebAssembly with a thin TypeScript wrapper, and the Rust crates in [sdk-rust](https://github.com/iceroot-network/sdk-rust), which the explorer and portal backends use natively. Both expose the same API with the same names (snake case in Rust).
+The SDK is one Rust core with two front ends: this package, which is the core compiled to WebAssembly with a thin TypeScript wrapper, and the Rust crates in [sdk-rust](https://github.com/iceroot-network/sdk-rust), which the explorer and portal backends use natively. Both use the same types and rules, and the records the node API returns have the same fields (snake case in Rust). In Rust the node API client is sans-IO: it builds each request and decodes each answer, and its HTTP transport sends them; the [Rust backend quickstart](quickstart/rust-backend.md) shows the few lines that `connect` does in TypeScript.
 
 ## Status of these pages
 
-These pages were written for release 0.1.0 before its code was complete. Every code sample carries a status marker (see [Sample status](#sample-status)). A sample marked `pending` uses functions whose final names and shapes had not been checked against a build when it was written; treat it as the intended shape, and check the generated API reference of the release you install before relying on a detail.
+Every code sample carries a status marker (see [Sample status](#sample-status)). The samples marked `verified 0.1.0` were checked against the build of release 0.1.0: each was type-checked against the package's declarations (the Rust samples compiled against the crates), and the quickstarts are assembled from their samples and run against a local devnet by the package's end-to-end test. The samples still marked `pending` install the release itself from its GitHub URL, which exists only once the release is published.
 
 ## Reading order
 
@@ -41,7 +41,7 @@ Each integration guide lists what can be wired with release 0.1.0 and what waits
 | Addresses, amounts in base units | Yes | Bech32m addresses (`ice1...`, `tice1...`), 18 decimals |
 | Transfers (1 to 256 recipients, one memo), votes, burns, second key, validator registration, resignation and its revoke | Yes | Names, reward-sharing declarations, assets, swaps, hash time locks, time locks, key rotation, multisig, migration exits |
 | Fees resolved from the network, drafts, draft serialization, submission and status | Yes | Finality (`until: "final"`) |
-| Node reads: status, accounts, history, blocks, transactions, validators, rounds, fees, supply | Yes | Indexer history and live events |
+| Node reads: status, accounts, history, blocks, transactions, validators, rounds, fees, supply; watching blocks and accounts by polling, watch-only accounts | Yes | Indexer history and pushed live events |
 | Message signing, sign-in challenge format | Yes | Post-quantum message signatures |
 | Vote selection library (Diversity, Reliability, Maximum Rewards, Support Newcomers) | | Next release |
 | Native Tauri plugin (keys and signing in Rust) and keystore format | | Release after the vote library |

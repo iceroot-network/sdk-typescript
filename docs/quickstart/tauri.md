@@ -23,7 +23,7 @@ Follow steps 1 to 3 of the [Vite and React quickstart](vite-react.md): install t
 
 Add `'wasm-unsafe-eval'` to `script-src` in both `csp` and `devCsp` of `src-tauri/tauri.conf.json`. Keep everything else:
 
-<!-- sample: pending; needs: tauri-wasm-csp -->
+<!-- sample: verified 0.1.0 -->
 ```json
 {
   "app": {
@@ -83,7 +83,7 @@ Allow exactly the devnet URLs the app uses, in a capability file (`src-tauri/cap
 
 Pass the plugin's `fetch` as the transport:
 
-<!-- sample: pending; needs: tauri-http-transport -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // src/network.ts
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";

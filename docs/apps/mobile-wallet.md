@@ -65,7 +65,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 
 Keep the domain layer's role (validated data for the UI, exact amounts), and back it with the SDK:
 
-<!-- sample: pending; needs: tauri-http-transport -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // src/domain/network.ts
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
@@ -104,7 +104,7 @@ export const loadValidators = (net: Network) => net.validators.list();
 
 The send and vote flows show a quote before submission. Build the draft for the quote now; it gives the exact fee and the summary, and needs only the sender's address:
 
-<!-- sample: pending; needs: fee-floor -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // src/domain/quotes.ts
 import { Address, Amount, type Network, type VoteEntry } from "@iceroot-network/sdk";

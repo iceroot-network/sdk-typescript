@@ -30,7 +30,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Rust backend quic
 
 ## Mapping: sample field to SDK call
 
-In Rust the call groups are methods: `net.blocks().latest().await`, `net.validators().list().await`, and so on.
+The calls are named as in TypeScript. In Rust the node API client builds each call and `HttpClient` sends it, with the connected `net` of the [Rust backend quickstart](../quickstart/rust-backend.md#2-connect-once-share-the-network): `blocks.latest()` is `net.client.send(&net.api.latest_block())`, `blocks.missed()` is `net.api.missed_slots(page)`, `blocks.transactions(id)` is `net.api.block_transactions(&BlockRef::Id(id), page)?`, `validators.list()` is `net.api.validators(PageRequest::first(100))`, `economics.supply()` is `net.api.supply()`, and `economics.seats` is `net.chain.economics(height).seats()`.
 
 | Sample field | SDK source | Notes |
 |---|---|---|
@@ -72,33 +72,84 @@ Transaction kinds:
 
 Remove `include_str!` of `fixtures.json` and the replay in `build_collections`. The `Store` becomes a cache filled from the network:
 
-<!-- sample: pending; needs: rust:connect, rust:blocks().latest, rust:blocks().list, rust:blocks().transactions, rust:validators().list, rust:economics().supply, rust:blocks().missed -->
+<!-- sample: verified 0.1.0 -->
 ```rust
+use std::collections::{BTreeMap, VecDeque};
+
+use iceroot_sdk::api::{BlockInfo, BlockRef, MissedSlot, PageRequest, Supply, TxRecord, ValidatorInfo};
+
+/// The newest blocks the explorer keeps, for example the last two rounds.
+const WINDOW: usize = 106;
+
 struct Store {
-    net: iceroot_sdk::Network,
+    net: Network,                            // the connected network of the Rust backend quickstart
     cache: tokio::sync::RwLock<Cache>,
 }
 
+#[derive(Default)]
 struct Cache {
     latest_height: u64,
-    updated_at: Option<String>,               // the latest block's time, never the server's clock
-    blocks: std::collections::VecDeque<Value>, // the newest blocks, for example the last two rounds
-    transactions: BTreeMap<String, Value>,     // the transactions of those blocks
-    validators: Vec<Value>,                    // refreshed once per round
-    missed: Vec<Value>,                        // refreshed once per round
-    supply: Value,
+    updated_at: Option<i64>,                 // the latest block's time (unix seconds), never the server's clock
+    blocks: VecDeque<BlockInfo>,             // the newest blocks, newest first
+    transactions: BTreeMap<String, TxRecord>, // the transactions of those blocks
+    validators: Vec<ValidatorInfo>,          // refreshed once per round
+    missed: Vec<MissedSlot>,                 // refreshed once per round
+    supply: Option<Supply>,
 }
 
 async fn refresh(store: &Store) -> Result<(), iceroot_sdk::Error> {
-    let latest = store.net.blocks().latest().await?;
-    // Fetch only blocks newer than the cache, with their transactions; drop the oldest beyond the window.
-    // Refresh validators, missed slots and supply when the round changes.
+    let net = &store.net;
+    let latest = net.client.send(&net.api.latest_block()).await?;
+    let known = store.cache.read().await.latest_height;
+    if latest.height <= known {
+        return Ok(());
+    }
+    // The blocks newer than the cache (at most a page of them), each with its transactions.
+    let page = net.client.send(&net.api.blocks(PageRequest::first(20))).await?;
+    let mut fresh = Vec::new();
+    for block in page.items.into_iter().filter(|block| block.height > known) {
+        let call = net.api.block_transactions(&BlockRef::Id(block.id.clone()), PageRequest::first(100))?;
+        let transactions = net.client.send(&call).await?;
+        fresh.push((block, transactions.items));
+    }
+    // Once per round: validators, missed slots and supply.
+    let seats = net.chain.economics(u32::try_from(latest.height).unwrap_or(u32::MAX)).seats();
+    let new_round = known == 0 || latest.height / seats != known / seats;
+    let round = if new_round {
+        Some((
+            net.client.send(&net.api.validators(PageRequest::first(100))).await?,
+            net.client.send(&net.api.missed_slots(PageRequest::first(100))).await?,
+            net.client.send(&net.api.supply()).await?,
+        ))
+    } else {
+        None
+    };
+
+    let mut cache = store.cache.write().await;
+    cache.latest_height = latest.height;
+    cache.updated_at = Some(latest.time.unix);
+    for (block, transactions) in fresh.into_iter().rev() {
+        for transaction in transactions {
+            cache.transactions.insert(transaction.id.clone(), transaction);
+        }
+        cache.blocks.push_front(block);
+    }
+    while cache.blocks.len() > WINDOW {
+        if let Some(old) = cache.blocks.pop_back() {
+            cache.transactions.retain(|_, tx| tx.block.as_ref().is_none_or(|b| b.id != old.id));
+        }
+    }
+    if let Some((validators, missed, supply)) = round {
+        cache.validators = validators.items;
+        cache.missed = missed.items;
+        cache.supply = Some(supply);
+    }
     Ok(())
 }
 ```
 
-- Run `refresh` on a timer of one block time (`economics.block_time_seconds`, 8 seconds). The reference API allows about 100 requests per minute per client; one new block with its transactions costs two requests, and a round refresh a few more.
-- Serve every endpoint from the cache. Requests for older blocks or transactions outside the window go to the network (`blocks().get(height)`, `transactions().get(id)`) and are cached.
+- Run `refresh` on a timer of one block time (`net.chain.economics(height).block_time_seconds()`, 8 seconds). The reference API allows about 100 requests per minute per client; one new block with its transactions costs two requests, and a round refresh a few more.
+- Serve every endpoint from the cache. Requests for older blocks or transactions outside the window go to the network (`net.api.block(&BlockRef::Height(height))?`, `net.api.transaction(&id)?`) and are cached.
 - Build `status` and `health` from the cache: `chainConnected` is true only while the last refresh succeeded.
 - Keep the existing API contract (paths, filters, pagination, error envelope, CORS) so the frontend and the documentation playground keep working.
 
@@ -122,7 +173,7 @@ Every response carries `meta`. Today it says `mode: "demo"`. For live data:
 - `components/ExplorerController.jsx`: the snapshot now holds a window of recent blocks, not a whole ledger. Load older blocks, account history and search results from the resource endpoints (`/api/v1/blocks?offset=...`, `/api/v1/accounts/{id}`, `/api/v1/search?q=...`) instead of from the snapshot.
 - Show the network name ("Devnet") wherever the demo label is shown today.
 - Show amounts with the asset's decimals from the API (8 for ROOT on today's devnet). Keep the exact integer arithmetic.
-- Hide asset pages other than ROOT, and the migration and route views, while the API reports the capability as absent. Add `capabilities` to `/api/v1/status` from `net.capabilities` so the frontend can decide.
+- Hide asset pages other than ROOT, and the migration and route views, while the API reports the capability as absent. Add `capabilities` to `/api/v1/status` from `net.chain.profile().capabilities()` so the frontend can decide.
 
 ### 5. Search
 
@@ -130,10 +181,10 @@ Every response carries `meta`. Today it says `mode: "demo"`. For live data:
 
 | Input | Check | Lookup |
 |---|---|---|
-| Digits only | A height up to the latest | `blocks().get(height)` |
-| 64 hexadecimal characters | A block or transaction id | `transactions().get(id)`, then `blocks().get(id)` |
-| An address | `Address::check(text, &profile)` is ok | `accounts().get(address)` |
-| Lowercase letters | A validator name | `validators().get(name)` |
+| Digits only | A height up to the latest | `api.block(&BlockRef::Height(height))` |
+| 64 hexadecimal characters | A block or transaction id | `api.transaction(id)`, then `api.block(&BlockRef::Id(id))` |
+| An address | `Address::check(text, &profile)` is ok | `api.account(address)` |
+| Lowercase letters | A validator name | `api.validator(name)` |
 
 Never decide what an address is with a regular expression; the SDK checks the network byte and the checksum.
 
@@ -142,7 +193,7 @@ Never decide what an address is with a regular expression; the SDK checks the ne
 The explorer shows each round's forging order. The order is shuffled per round by the chain, and neither the reference API nor the SDK exposes it. Until a node API field provides it:
 
 - Show the order observed so far in the current round: each block's slot comes from its timestamp, and its generator is the validator who forged it.
-- Show missed slots from `blocks().missed()`.
+- Show missed slots from `net.api.missed_slots(page)`.
 - Do not recompute the shuffle in the explorer from Heartwood's consensus crates unless the explorer's maintainers accept that dependency; it is not part of the SDK.
 
 ## Rules that apply to the explorer

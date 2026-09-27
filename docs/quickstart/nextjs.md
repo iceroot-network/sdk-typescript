@@ -15,7 +15,7 @@ npm install https://github.com/iceroot-network/sdk-typescript/releases/download/
 
 Keep the SDK out of the server bundle, so Node loads its Node build and `.wasm` file directly:
 
-<!-- sample: pending; needs: node-build-next -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // next.config.ts
 import type { NextConfig } from "next";
@@ -85,7 +85,7 @@ A server component can call `iceroot()` the same way and render the list directl
 
 Client components load the web build with `init()`. Here a search box tells an address from a block height or a validator name, without a request:
 
-<!-- sample: pending; needs: init, Address.check, offline-profile, profiles.devnet -->
+<!-- sample: verified 0.1.0 -->
 ```tsx
 // components/Search.tsx
 "use client";
@@ -118,11 +118,11 @@ export function Search({ onSearch }: { onSearch: (kind: "address" | "height" | "
 
 ## 5. Wallet sign-in verified on the server
 
-The browser wallet's provider, `window.iceroot`, offers `connect` and `signMessage`. The server builds a single-use challenge with `SignIn.build` and verifies the signature with `Messages.verify`. The page needs no SDK for this; only the server does.
+The browser wallet's provider, `window.iceroot`, offers `connect` and `signMessage`. The server builds a single-use challenge with `SignIn.build` and verifies the signature with `Messages.verify`. The page needs no SDK for this; only the server does. Route files may export only handlers, so the helpers live in `lib/signin.server.ts`.
 
-<!-- sample: pending; needs: SignIn.build, Address.fromPublicKey, Messages.verify, messageNetworkOf, messageAlgorithmOf -->
+<!-- sample: verified 0.1.0 -->
 ```ts
-// lib/signin.server.ts (route files may export only handlers, so the helpers live here)
+// lib/signin.server.ts
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { Address, Messages, SignIn, messageAlgorithmOf, messageNetworkOf } from "@iceroot-network/sdk";
@@ -152,7 +152,7 @@ export async function checkSignature(stored: { message: string; publicKey: strin
 }
 ```
 
-<!-- sample: pending; needs: IceRootError, Address.fromPublicKey -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // app/api/auth/challenge/route.ts
 import { IceRootError } from "@iceroot-network/sdk";

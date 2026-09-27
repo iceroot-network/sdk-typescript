@@ -68,7 +68,7 @@ Add the SDK as a dependency and copy its classic-script build into the runtime f
 
 `'wasm-unsafe-eval'` is needed wherever the SDK runs. Every other directive stays as it is; the sandbox keeps `connect-src 'none'`.
 
-<!-- sample: pending; needs: mv3-wasm-csp -->
+<!-- sample: verified 0.1.0 -->
 ```json
 {
   "content_security_policy": {
@@ -92,7 +92,7 @@ For the web build served over HTTPS, the same meta policies apply; the devnet or
 
 `signing-protocol.js` mixes two things: the sign-in format, which moves to the SDK, and the wallet's own site rules (`allowedOrigin` for requesting pages, `siteOrigin` for the settings list), which stay in the wallet. Move the site rules to a small file, for example `site-policy.js`, loaded by the worker and by `sites.js`, and load the SDK in the worker:
 
-<!-- sample: pending; needs: initSync, embedded-bytes, iife-build, SignIn.parse, Address.fromPublicKey, offline-profile -->
+<!-- sample: verified 0.1.0 -->
 ```js
 // extension/background.js (top of the file)
 importScripts("vendor/iceroot-sdk/iceroot-sdk.js", "vendor/iceroot-sdk/iceroot-sdk-bytes.js", "site-policy.js");
@@ -129,7 +129,7 @@ Keep the website allow-list, the pending-request store and the approval flow exa
 
 Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no network, answers only its embedder) and gains the transaction operations:
 
-<!-- sample: pending; needs: initSync, embedded-bytes, iife-build, profiles.devnet, offline-profile, messageNetworkOf, messageAlgorithmOf, Mnemonic.generate, Keys.fromPhrase, Keys.fromLegacyPassphrase, SignIn.parse, Messages.sign, Draft.deserialize, draft.sign, signed.serialize, account.release -->
+<!-- sample: verified 0.1.0 -->
 ```js
 // sandbox.js
 (function () {
@@ -209,7 +209,7 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
 
 The wallet page (`wallet.js`) talks to the network. Add a devnet mode next to the demo:
 
-<!-- sample: pending; needs: iife-build -->
+<!-- sample: verified 0.1.0 -->
 ```js
 // wallet.js: devnet mode (inside the page's existing module pattern)
 const Sdk = globalThis.IceRootSdk;
@@ -253,7 +253,7 @@ The wallet page builds the draft; the identity page reviews and signs it through
 3. The identity page unlocks the vault if needed, calls the sandbox's `reviewDraft`, and shows the recomputed summary and fee. On approval it calls `signDraft` with the phrase and scheme, and returns the signed bytes.
 4. `wallet.js` restores them with `SignedTransaction.deserialize(bytes, net.profile)`, calls `net.submit`, and follows `net.transactions.wait(id, { until: "confirmed" })`.
 
-<!-- sample: pending; needs: fee-floor -->
+<!-- sample: verified 0.1.0 -->
 ```js
 // wallet.js: build and submit; `approveInIdentityPage` is the request round trip of step 2
 async function sendTransfer(from, recipients, memo) {

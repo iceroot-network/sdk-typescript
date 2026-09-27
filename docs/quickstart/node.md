@@ -18,7 +18,7 @@ npm install https://github.com/iceroot-network/sdk-typescript/releases/download/
 
 Save as `transfer.mjs`:
 
-<!-- sample: pending; needs: fee-floor -->
+<!-- sample: verified 0.1.0 -->
 ```js
 import { init, connect, profiles, Mnemonic, Amount, IceRootError, balanceOf } from "@iceroot-network/sdk";
 
@@ -75,7 +75,7 @@ try {
 DEVNET_FUNDING_PASSPHRASE='<twelve words of a funded devnet test account>' node transfer.mjs
 ```
 
-The output ends with two transaction ids, each `confirmed`, and the new account's balance: 100 ROOT received, minus 1.5 ROOT sent, minus the fee shown in the second review.
+The output ends with two transaction ids, each `confirmed`, and the new account's balance: 100 received, minus 1.5 sent, minus the fee shown in the second review. Amounts show the token's symbol as the network configures it, `dRT` on today's devnet.
 
 ## What to notice
 

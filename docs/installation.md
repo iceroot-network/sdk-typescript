@@ -70,7 +70,7 @@ Replace the version in both places of the URL and run `npm install` again. Read 
 
 Files in the tarball, for tools that copy them into an app (the browser wallet does):
 
-<!-- sample: pending; needs: release-tarball, iife-build, embedded-bytes -->
+<!-- sample: verified 0.1.0 -->
 ```text
 package/dist/web/index.js              ES module for browsers and bundlers
 package/dist/web/iceroot_sdk_bg.wasm   its WebAssembly module
@@ -86,7 +86,7 @@ How each environment loads the module, and the settings it needs, is in its quic
 
 The explorer and portal backends use the Rust SDK directly. It is a git dependency on a tag of [sdk-rust](https://github.com/iceroot-network/sdk-rust):
 
-<!-- sample: pending; needs: rust:iceroot-sdk-crate, rust:http-feature -->
+<!-- sample: pending; needs: rust-release-tag -->
 ```toml
 [dependencies]
 iceroot-sdk = { git = "https://github.com/iceroot-network/sdk-rust.git", tag = "v0.1.0", features = ["http"] }

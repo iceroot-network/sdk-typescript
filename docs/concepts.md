@@ -6,7 +6,7 @@ The whole API in one page. The quickstarts and integration guides use only what 
 
 The SDK is WebAssembly. It must be loaded once before any other call.
 
-<!-- sample: pending; needs: init, initSync -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { init, initSync } from "@iceroot-network/sdk";
 
@@ -111,7 +111,7 @@ Every network declares what it supports. An operation the network lacks throws `
 
 ## Keys and recovery phrases
 
-<!-- sample: pending; needs: net.keys.watch -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { Mnemonic } from "@iceroot-network/sdk";
 
@@ -124,7 +124,7 @@ account.publicKey;   // hex
 account.algorithm;   // "secp256k1-bip340" today; "ml-dsa-65" from the post-quantum formats
 account.release();   // wipes the key; the handle throws KeyReleased afterwards
 
-const watched = net.keys.watch(address);                  // watch-only: no key
+const watched = net.keys.watch(address);                  // watch-only: { address, watchOnly: true }, no key
 const legacy = net.keys.fromLegacyPassphrase(text);       // devnet profiles only; see below
 ```
 
@@ -138,7 +138,7 @@ const legacy = net.keys.fromLegacyPassphrase(text);       // devnet profiles onl
 
 A Manifest V3 sandbox page, a signing worker or another device holds keys but has no network. It works from the profile alone. Static functions take the profile, or a connected network, as their last argument before options; a profile is a plain object, so the page that connected can hand `net.profile` to such a context with `postMessage`:
 
-<!-- sample: pending; needs: Keys.fromPhrase, Keys.fromLegacyPassphrase, Messages.sign, offline-profile -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { Keys, Messages, profiles } from "@iceroot-network/sdk";
 
@@ -150,7 +150,7 @@ account.release();
 
 ## Addresses
 
-<!-- sample: pending; needs: Address.parse, Address.check -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { Address } from "@iceroot-network/sdk";
 
@@ -163,7 +163,7 @@ Addresses are always parsed against a network. On today's devnet an address is B
 
 ## Amounts and assets
 
-<!-- sample: pending; needs: Amount.parse, Amount.format, AssetId.ROOT -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { Amount, AssetId } from "@iceroot-network/sdk";
 
@@ -216,12 +216,17 @@ const fees = await net.fees.statistics();                // the node's fee figur
 
 Live updates:
 
-<!-- sample: pending; needs: net.watch -->
+<!-- sample: verified 0.1.0 -->
 ```ts
-const stop = net.watch({ address }, (event) => { /* new block or transaction for this address */ });
+const stop = net.watch({ address }, (event) => {
+  if (event.type === "block") console.log(`block ${event.block.height}`);           // the node's latest block
+  if (event.type === "transaction") console.log(`new: ${event.transaction.id}`);    // a new transaction of the address, in a block
+  if (event.type === "error") console.warn("the node did not answer", event.error); // one poll failed; the watch goes on
+});
+stop();   // or pass { signal } as the third argument and abort it
 ```
 
-Until `net.watch` exists, poll: read `net.node.status()` every block time and refresh what changed.
+The network pushes no events yet, so `net.watch` polls the node once a block time (`{ intervalMs }` changes that). Each time the height moves it reports the latest block and, with an address (or a watch-only account from `net.keys.watch`), each transaction of that address that is new in a block since the watch began, oldest first. Blocks in between are not listed; read them with `net.blocks.list()`. A failed poll is an `error` event, never an empty update.
 
 Record shapes used in the guides (the full types are exported: `TxRecord`, `ValidatorInfo`, `AccountInfo`, `BlockInfo` and the rest). Amounts, nonces, heights and lifetime counters are `bigint`; an absent value is a missing property:
 
@@ -282,7 +287,7 @@ The reference implementation's API allows about 100 requests per minute per clie
 
 A build call resolves everything online (nonce, fee, the rules in force) and returns a draft. Signing is a separate step, so the review screen shows exactly what will be signed.
 
-<!-- sample: pending; needs: fee-floor -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { Address, Amount } from "@iceroot-network/sdk";
 
@@ -309,7 +314,7 @@ const outcome = await net.transactions.wait(signed.id, { until: "confirmed", tim
 
 Other builders:
 
-<!-- sample: pending; needs: fee-floor -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 await net.build.vote({ from, entries: [{ validator: "bergschrund", basisPoints: 500 }, /* ... */] });
 await net.build.vote({ from, entries: [] });                           // withdraws the current vote
@@ -321,7 +326,7 @@ await net.build.resignValidator({ from, resignation: "temporary" });   // "tempo
 
 - **Online facts.** Each builder reads the sender's account (for its nonce and second key) and the node's status (for the next block's height), and refuses with `WrongKey` when the node knows another public key for the sender's address. The draft is checked against the rules of that next block.
 - **Votes** name validators by their name. Entries are whole basis points summing to `net.rules.vote.totalBasisPoints`. The builder checks `net.rules.vote` and throws `InvalidVote` with the problem in `details`.
-- **Fees.** `fee: "minimum"` is the exact floor the node accepts, computed from the transaction's size and the milestone in force, and never below the node's pool minimum. Surcharges (validator registration, and later names and reward-sharing declarations) are part of the floor. Show `draft.fee` on the review screen; never a constant. Until the release that computes the floor, `"minimum"` is the largest fee in the node's recent fee statistics for the operation (`draft.summary.fee.source` is `node-statistics`), which the builder reads for you.
+- **Fees.** `fee: "minimum"` is the exact floor, computed by Heartwood Core's own function from the transaction's size and the milestone in force at the next block (`draft.summary.fee.source` is `floor`); burns and resignations have a floor of zero. Surcharges (validator registration, and later names and reward-sharing declarations) are part of the floor. The node's pool checks fees against its own settings (`net.configuration.poolFees`), which on today's devnet are the milestone's; a node configured above the milestone refuses a fee at the floor with reason `low-fee`, so pass a larger `bigint` or `{ multiplierBasisPoints }` for such a node. Show `draft.fee` on the review screen; never a constant.
 - **Submission.** `net.submit(signed)` sends one transaction; `net.submitAll(list)` sends several in as few requests as the pool allows (`net.configuration.pool.maxTransactionsPerRequest` per request), refuses a transaction larger than `maxTransactionBytes` with reason `too-large` without sending it, and reports one outcome per transaction in order. If a request fails midway, the error is thrown and earlier requests may have reached the pool: look their transactions up before sending them again.
 - **Refusals.** `result.reason` is one of `low-fee`, `nonce`, `balance`, `duplicate`, `invalid`, `pool-full`, `wrong-network`, `too-large`, `other`; `result.nodeCode` keeps the node's own code (for example `ERR_LOW_FEE`).
 - **Stale drafts.** A draft records the height and the nonce it was built for. If the account sent another transaction in the meantime, the node refuses the draft's transaction with reason `nonce`: build again and show the new review.

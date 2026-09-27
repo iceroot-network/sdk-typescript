@@ -49,7 +49,7 @@ npm install https://github.com/iceroot-network/sdk-typescript/releases/download/
 
 An extension cannot load files from `node_modules`. Copy the classic-script build into the extension at build time:
 
-<!-- sample: pending; needs: iife-build, embedded-bytes -->
+<!-- sample: verified 0.1.0 -->
 ```js
 // scripts/copy-sdk.mjs
 import { cp, mkdir } from "node:fs/promises";
@@ -70,7 +70,7 @@ Add `extension/vendor/` to `.gitignore`, and run `npm run build` after every SDK
 
 ## 3. Manifest
 
-<!-- sample: pending; needs: mv3-wasm-csp -->
+<!-- sample: verified 0.1.0 -->
 ```json
 {
   "manifest_version": 3,
@@ -91,7 +91,7 @@ The service worker must be a classic worker (no `"type": "module"`), because the
 
 ## 4. Sandbox page: keys only, no network
 
-<!-- sample: pending; needs: mv3-wasm-csp -->
+<!-- sample: verified 0.1.0 -->
 ```html
 <!-- extension/sandbox.html -->
 <!doctype html>
@@ -104,7 +104,7 @@ The service worker must be a classic worker (no `"type": "module"`), because the
 
 The sandbox answers three operations. `address` returns the address of a phrase. `review` returns the summary recomputed from the draft's bytes, so the approval screen shows what will really be signed. `sign` signs the same bytes with a key derived for this one operation and wipes it.
 
-<!-- sample: pending; needs: initSync, embedded-bytes, iife-build, profile-structured-clone, Draft.deserialize, Keys.fromPhrase, draft.sign, signed.serialize, account.release -->
+<!-- sample: verified 0.1.0 -->
 ```js
 // extension/sandbox.js
 (function () {
@@ -149,7 +149,7 @@ The sandbox answers three operations. `address` returns the address of a phrase.
 
 ## 5. Wallet page: network, drafts and submission
 
-<!-- sample: pending; needs: mv3-wasm-csp -->
+<!-- sample: verified 0.1.0 -->
 ```html
 <!-- extension/wallet.html -->
 <!doctype html>
@@ -172,7 +172,7 @@ The sandbox answers three operations. `address` returns the address of a phrase.
 
 Replace `http://127.0.0.1:6003` with your devnet's origin.
 
-<!-- sample: pending; needs: iife-build, profile-structured-clone, fee-floor -->
+<!-- sample: verified 0.1.0 -->
 ```js
 // extension/wallet.js
 (async function () {
@@ -248,7 +248,7 @@ In a real wallet the phrase comes from an encrypted vault that the trusted page 
 
 ## 6. Service worker: the sign-in check
 
-<!-- sample: pending; needs: initSync, embedded-bytes, iife-build, profiles.devnet, offline-profile, SignIn.parse -->
+<!-- sample: verified 0.1.0 -->
 ```js
 // extension/background.js
 importScripts("vendor/iceroot-sdk/iceroot-sdk.js", "vendor/iceroot-sdk/iceroot-sdk-bytes.js");

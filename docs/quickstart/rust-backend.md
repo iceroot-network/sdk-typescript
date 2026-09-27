@@ -1,12 +1,12 @@
 # Quickstart: Rust backend (Axum)
 
-The explorer and the validators portal have Rust (Axum) backends. They use the Rust SDK natively: no WebAssembly, the same API in snake case. This page builds an Axum service with two endpoints, the validator list and a sign-in signature check. The crate's own documentation (rustdoc) in [sdk-rust](https://github.com/iceroot-network/sdk-rust) is the reference for exact signatures.
+The explorer and the validators portal have Rust (Axum) backends. They use the Rust SDK natively: no WebAssembly, the same types and rules as the TypeScript package. The Rust node API client is sans-IO: `SolarCompat` builds each call (the request and the decoder of its answer) and `HttpClient`, behind the `http` feature, sends it. The TypeScript `connect` wraps these steps; in Rust, a short `connect` function of your own does the same (section 2). This page builds an Axum service with a validator list and a sign-in check. The crate's own documentation (rustdoc) in [sdk-rust](https://github.com/iceroot-network/sdk-rust) is the reference for exact signatures.
 
 Requirements: Rust 1.98 or later, read access to `heartwood-core` over SSH until it is public (see [Installation](../installation.md#rust)), and a devnet (see [Devnet](../devnet.md)).
 
 ## 1. Dependencies
 
-<!-- sample: pending; needs: rust:iceroot-sdk-crate, rust:http-feature -->
+<!-- sample: pending; needs: rust-release-tag -->
 ```toml
 # Cargo.toml
 [package]
@@ -31,21 +31,43 @@ git-fetch-with-cli = true
 
 ## 2. Connect once, share the network
 
-<!-- sample: pending; needs: rust:Profile::devnet, rust:connect, rust:Network, rust:validators().list, rust:Error -->
+<!-- sample: verified 0.1.0 -->
 ```rust
 // src/main.rs
 use std::sync::Arc;
 
-use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
-use iceroot_sdk::{connect, DevnetOptions, Network, Profile};
-use serde_json::{json, Value};
+use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
+use iceroot_sdk::api::{HttpClient, PageRequest, Relay, SolarCompat};
+use iceroot_sdk::profile::DevnetOptions;
+use iceroot_sdk::{Chain, Error, Profile};
+use serde_json::{Value, json};
+
+/// A connected network: the HTTP client, the node API calls for the chain, and the chain itself.
+pub struct Network {
+    pub client: HttpClient,
+    pub api: SolarCompat,
+    pub chain: Chain,
+}
+
+/// Reads the node's configuration and the chain it serves, loads the chain for `profile` and checks
+/// the node against it. A devnet profile without a network hash is pinned now (store
+/// `chain.profile().chain().nethash`); a node of another chain is refused with `NetworkMismatch`.
+pub async fn connect(profile: &Profile) -> Result<Network, Error> {
+    let relays = profile.endpoints().relays.iter().map(|relay| Relay::parse(relay)).collect::<Result<Vec<_>, _>>()?;
+    let client = HttpClient::new(relays)?;
+    let configuration = client.send(&SolarCompat::new(0).node_configuration()).await?;
+    let api = SolarCompat::for_configuration(&configuration);
+    let chain = Chain::from_node(profile, &client.send(&api.crypto_configuration()).await?)?;
+    chain.check_node(&configuration)?;
+    Ok(Network { client, api, chain })
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let relay = std::env::var("ICEROOT_RELAY").unwrap_or_else(|_| "http://127.0.0.1:6003/api".into());
     let nethash = std::env::var("ICEROOT_NETHASH").ok();   // pin the devnet in deployment settings
-    let profile = Profile::devnet(DevnetOptions { relays: vec![relay], nethash, ..Default::default() });
-    let net = Arc::new(connect(profile).await?);
+    let net = Arc::new(connect(&Profile::devnet(DevnetOptions { relays: vec![relay], nethash })).await?);
+    println!("Connected to {}", net.chain.nethash());
 
     let app = Router::new().route("/api/v1/validators", get(validators)).with_state(net);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3190").await?;
@@ -54,10 +76,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn validators(State(net): State<Arc<Network>>) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    match net.validators().list().await {
+    match net.client.send(&net.api.validators(PageRequest::first(100))).await {
         Ok(page) => Ok(Json(json!({
             "data": page.items.iter().map(|v| json!({
-                "rank": v.rank,                            // None when not ranked
+                "rank": v.rank,                            // null when not ranked
                 "name": v.name,
                 "address": v.address,
                 "status": v.status.as_str(),               // "active", "standby", "resigned-temporary" or "resigned-permanent"
@@ -73,29 +95,39 @@ async fn validators(State(net): State<Arc<Network>>) -> Result<Json<Value>, (Sta
 }
 ```
 
+Each `client.send` is one request, and the client keeps to the node's allowance of requests. A call that can refuse its arguments (an account's address, a transaction id) returns a `Result` before anything is sent: `net.client.send(&net.api.account(&address)?)`.
+
 ## 3. Check a sign-in signature
 
 Sign-in needs no node: the challenge format, the address of a public key and the signature check are pure functions of the profile.
 
-<!-- sample: pending; needs: rust:PublicKey::from_hex, rust:Address::from_public_key, rust:signin::SignIn::build, rust:messages::verify, rust:messages::network_of -->
+<!-- sample: verified 0.1.0 -->
 ```rust
-use iceroot_sdk::{messages, signin::{self, SignIn}, Address, Profile, PublicKey};
+// src/signin.rs
+use iceroot_sdk::message::{self, MessageSignature};
+use iceroot_sdk::signin::{self, SignInRequest};
+use iceroot_sdk::{Address, Error, Profile, PublicKey};
 
-/// The challenge text for a public key, as the wallet will check it.
-pub fn challenge(profile: &Profile, origin: &str, public_key: &str, nonce: &str, issued_at: &str, expires_at: &str)
-    -> Result<(String, String), iceroot_sdk::Error>
+/// The address of a public key and the sign-in message for it, as the wallet will check it.
+/// `issued_at` and `expires_at` are seconds since 1970-01-01T00:00:00Z, at most 300 apart.
+pub fn challenge(profile: &Profile, origin: &str, public_key: &str, nonce: &str, issued_at: i64, expires_at: i64)
+    -> Result<(String, String), Error>
 {
-    let key = PublicKey::from_hex(public_key)?;                 // refuses a key that is not a valid point
+    let key = PublicKey::from_hex(public_key).map_err(|_| Error::InvalidKey)?;   // refuses a key that is not a valid point
     let address = Address::from_public_key(&key, profile)?;
-    let message = SignIn::build(&signin::Fields {
-        origin, network: &messages::network_of(profile), public_key, address: &address.to_string(), nonce, issued_at, expires_at,
-    })?;
+    let message = signin::build(profile, &SignInRequest { origin, public_key: &key, nonce, issued_at, expires_at })?;
     Ok((address.to_string(), message))
 }
 
-/// True only for a valid signature by this key over exactly this message.
+/// True only for a valid signature by this key over exactly this message, on this network.
 pub fn verify(profile: &Profile, message: &str, public_key: &str, signature: &str) -> bool {
-    messages::verify(profile, message, public_key, signature).unwrap_or(false)
+    let Ok(network) = profile.message_network() else { return false };   // "heartwood-devnet-v90" today
+    message::verify(message, &MessageSignature {
+        public_key: public_key.to_owned(),
+        signature: signature.to_owned(),
+        algorithm: message::ALGORITHM.to_owned(),
+        network,
+    })
 }
 ```
 

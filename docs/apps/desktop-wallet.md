@@ -63,7 +63,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 
 Replace the profile's `network: "mainnet" | "testnet"` preference with the network the SDK connects to. In 0.1.0 that is a devnet, with the relay URL and the pinned identity stored in the profile:
 
-<!-- sample: pending; needs: tauri-http-transport -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // src/network.ts
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
@@ -140,7 +140,7 @@ export function watchAddress(net: Network, text: string): string {
 
 `SendFlow.tsx` already has Details, Review and Result steps. Map them to build, review and sign:
 
-<!-- sample: pending; needs: fee-floor -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // src/transfer.ts
 import { Address, Amount, type Account, type Draft, type Network } from "@iceroot-network/sdk";
@@ -180,7 +180,7 @@ export async function sendTransfer(net: Network, draft: Draft, account: Account)
 
 The governance page's editor splits a vote evenly across the chosen validators. Wire it to `net.build.vote`:
 
-<!-- sample: pending; needs: fee-floor -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // src/votes.ts
 import type { Network, VoteEntry } from "@iceroot-network/sdk";

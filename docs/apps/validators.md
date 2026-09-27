@@ -40,9 +40,9 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Rust backend quic
 | Portal code | SDK |
 |---|---|
 | `identity(public_key)` | `PublicKey::from_hex` and `Address::from_public_key(&key, &profile)` |
-| `verify_signature(public_key, message, signature)` | `messages::verify(&profile, message, public_key, signature)` |
-| The `format!` of the challenge in `challenge` | `SignIn::build(...)`, which produces the same 12 lines |
-| `NETWORK` | `messages::network_of(&profile)`; `heartwood-devnet-v90` on today's devnet |
+| `verify_signature(public_key, message, signature)` | `message::verify(message, &MessageSignature { .. })` with the profile's network |
+| The `format!` of the challenge in `challenge` | `signin::build(&profile, &SignInRequest { .. })`, which produces the same 12 lines |
+| `NETWORK` | `profile.message_network()`; `heartwood-devnet-v90` on today's devnet |
 | The algorithm string in `components/auth.tsx` | The value the backend returns with the challenge |
 
 The challenge format does not change: version 1, the same 12 lines, the same checks. The wallet runs `SignIn.parse` from the same SDK before it signs, so the two sides cannot disagree.
@@ -50,27 +50,35 @@ The challenge format does not change: version 1, the same 12 lines, the same che
 ### Steps
 
 1. Add `iceroot-sdk` (see [Installation](../installation.md#rust)); the portal needs no `http` feature for sign-in alone, but the directory below does.
-2. Replace `identity` and `verify_signature` with the SDK calls, and build the message with `SignIn::build`:
+2. Replace `identity` and `verify_signature` with the SDK calls, and build the message with `signin::build`:
 
-<!-- sample: pending; needs: rust:PublicKey::from_hex, rust:Address::from_public_key, rust:signin::SignIn::build, rust:messages::verify, rust:messages::network_of -->
+<!-- sample: verified 0.1.0 -->
 ```rust
-use iceroot_sdk::{messages, signin::{self, SignIn}, Address, PublicKey};
+use iceroot_sdk::message::{self, MessageSignature};
+use iceroot_sdk::signin::{self, SignInRequest};
+use iceroot_sdk::{Address, Error, Profile, PublicKey};
 
-pub fn identity(profile: &iceroot_sdk::Profile, public_key: &str) -> Result<(String, String), String> {
-    let key = PublicKey::from_hex(public_key).map_err(|e| e.to_string())?;   // refuses an invalid point
+pub fn identity(profile: &Profile, public_key: &str) -> Result<(String, String), String> {
+    let key = PublicKey::from_hex(public_key).map_err(|_| "not a valid public key".to_owned())?;   // refuses an invalid point
     let address = Address::from_public_key(&key, profile).map_err(|e| e.to_string())?;
     Ok((key.to_hex(), address.to_string()))
 }
 
-pub fn verify_signature(profile: &iceroot_sdk::Profile, public_key: &str, message: &str, signature: &str) -> bool {
-    messages::verify(profile, message, public_key, signature).unwrap_or(false)
+pub fn verify_signature(profile: &Profile, public_key: &str, message: &str, signature: &str) -> bool {
+    let Ok(network) = profile.message_network() else { return false };
+    message::verify(message, &MessageSignature {
+        public_key: public_key.to_owned(),
+        signature: signature.to_owned(),
+        algorithm: message::ALGORITHM.to_owned(),
+        network,
+    })
 }
 
-fn challenge_message(profile: &iceroot_sdk::Profile, origin: &str, public_key: &str, address: &str,
-                     nonce: &str, issued: &str, expires: &str) -> Result<String, iceroot_sdk::Error> {
-    SignIn::build(&signin::Fields {
-        origin, network: &messages::network_of(profile), public_key, address, nonce, issued_at: issued, expires_at: expires,
-    })
+/// `issued_at` and `expires_at` in seconds since 1970-01-01T00:00:00Z, at most 300 apart.
+fn challenge_message(profile: &Profile, origin: &str, public_key: &str, nonce: &str,
+                     issued_at: i64, expires_at: i64) -> Result<String, Error> {
+    let key = PublicKey::from_hex(public_key).map_err(|_| Error::InvalidKey)?;
+    signin::build(profile, &SignInRequest { origin, public_key: &key, nonce, issued_at, expires_at })
 }
 ```
 
@@ -85,7 +93,7 @@ fn challenge_message(profile: &iceroot_sdk::Profile, origin: &str, public_key: &
 
 | Portal field | Source after wiring | Notes |
 |---|---|---|
-| `rank`, `status` | `validators().list()`: `rank`, `status` | Map `resigned-temporary` and `resigned-permanent` to the portal's own wording; `candidate` stays for profiles with no on-chain validator |
+| `rank`, `status` | `api.validators(PageRequest::first(100))`: `rank`, `status` | Map `resigned-temporary` and `resigned-permanent` to the portal's own wording; `candidate` stays for profiles with no on-chain validator |
 | `votingWeight` | `vote_weight` (base units) | Format with `Amount::format` and the token's decimals (8 today); keep it a string in JSON |
 | `voters` | `voters` | |
 | `uptime` | From `production`: forged and missed block counts | Today these are lifetime counters, not a 30-day window; label them so |
@@ -96,7 +104,7 @@ fn challenge_message(profile: &iceroot_sdk::Profile, origin: &str, public_key: &
 
 ### Steps
 
-1. Connect the backend to the devnet (the [Rust backend quickstart](../quickstart/rust-backend.md) shows the setup) and cache `validators().list()`, refreshed once per round (53 blocks of 8 seconds). One request per round keeps well inside the API's rate limit.
+1. Connect the backend to the devnet (the [Rust backend quickstart](../quickstart/rust-backend.md) shows the setup) and cache `net.api.validators(PageRequest::first(100))`, refreshed once per round (53 blocks of 8 seconds). One request per round keeps well inside the API's rate limit.
 2. Link a signed identity to its validator: when a signed-in account's address equals the address of a registered validator, the portal shows that profile with the chain's rank and status. Status and rank are never taken from the profile or set by the holder.
 3. Drop `seed.rs`'s sample validators from the directory once the chain is connected; keep them only in a clearly separate demo mode, if at all.
 4. When the network is unavailable, show the portal's own data with the chain figures marked unavailable. Never show old chain figures as current, and never fill them with sample numbers.
@@ -105,22 +113,28 @@ fn challenge_message(profile: &iceroot_sdk::Profile, origin: &str, public_key: &
 
 `lib/rewards.ts` hard-codes the network's economics. Read them from the network instead. The page does not need WebAssembly for this: add a backend endpoint that returns the economics as JSON, and load it on the calculator page.
 
-<!-- sample: pending; needs: rust:economics, rust:economics().supply -->
+<!-- sample: verified 0.1.0 -->
 ```rust
-// GET /api/v1/network: the figures the calculator needs, amounts as decimal strings of base units
+// GET /api/v1/network: the figures the calculator needs, amounts as decimal strings of base units.
+// `state.net` is the connected network of the Rust backend quickstart; `ApiResult` and
+// `ApiError::unavailable` are the portal's own.
 async fn network(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let economics = state.net.economics();
-    let supply = state.net.economics().supply().await.map_err(|_| ApiError::unavailable())?;
+    let net = &state.net;
+    let status = net.client.send(&net.api.node_status()).await.map_err(|_| ApiError::unavailable())?;
+    let supply = net.client.send(&net.api.supply()).await.map_err(|_| ApiError::unavailable())?;
+    let next = u32::try_from(status.height + 1).map_err(|_| ApiError::unavailable())?;   // the rules of the next block
+    let economics = net.chain.economics(next);
     Ok(Json(json!({
-        "network": state.net.profile().id(),
-        "decimals": state.net.token().decimals,
-        "seats": economics.seats,
-        "blockTimeSeconds": economics.block_time_seconds,
-        "rewardsByRank": economics.rewards_by_rank.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
-        "donations": economics.donations.iter().map(|d| json!({ "address": d.address.to_string(), "basisPoints": d.basis_points })).collect::<Vec<_>>(),
-        "supply": supply.supply.to_string(),                                         // base units, from the node's /blockchain
-        "maxBasisPointsPerEntry": state.net.rules().vote.max_basis_points_per_entry, // 10000 on today's devnet: no cap
-        "voteWeightThresholdBasisPoints": economics.vote_weight_threshold_basis_points, // null on today's devnet
+        "network": net.chain.profile().id(),
+        "decimals": net.chain.token().decimals,
+        "seats": economics.seats(),
+        "blockTimeSeconds": economics.block_time_seconds(),
+        "rewardsByRank": economics.rewards_by_rank().iter()
+            .map(|(_, reward)| reward.map(|amount| amount.base_units().to_string())).collect::<Vec<_>>(),
+        "donations": economics.donations().iter()
+            .map(|d| json!({ "address": d.address.to_string(), "basisPoints": d.basis_points })).collect::<Vec<_>>(),
+        "supply": supply.supply.to_string(),                                               // from the node's /blockchain
+        "maxBasisPointsPerEntry": net.chain.rules(next).vote.max_basis_points_per_entry,   // 10000 on today's devnet: no cap
     })))
 }
 ```
@@ -132,7 +146,7 @@ async fn network(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 | `donationPercent` | The sum of `donations[].basisPoints` |
 | `supply` | `supply` (the current supply, not the genesis figure) |
 | `maxVotePercent` | `maxBasisPointsPerEntry` when below 10,000 |
-| `weightlessAbovePercent` | `voteWeightThresholdBasisPoints` when set |
+| `weightlessAbovePercent` | Not in today's economics: the vote-weight threshold comes with the IceRoot genesis |
 | `rewardForRank` tiers | `rewardsByRank` |
 
 - The calculator's estimates may stay floating-point arithmetic, because they are estimates that nothing signs. Convert the base-unit strings with the token's decimals once, at the input, and label results as estimates, as the page does now.

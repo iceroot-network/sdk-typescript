@@ -9,7 +9,7 @@ Today's devnet runs the reference implementation with IceRoot's economics. It us
 | Fact | Value today | Read it from |
 |---|---|---|
 | Addresses | Base58Check, network byte 90, 34 characters starting with `d` | `Address.parse` |
-| Token | ROOT, 8 decimals (1 ROOT = `100000000n` base units), the only asset | `net.token` |
+| Token | ROOT, 8 decimals (1 ROOT = `100000000n` base units), the only asset; its symbol is `dRT` | `net.token` |
 | Validators | 53 seats, 8-second blocks | `net.economics` |
 | Votes | 1 to 53 entries, whole basis points summing to 10,000, no per-validator cap, at most 1,024 bytes; an empty vote withdraws | `net.rules.vote` |
 | Fees | Size-based; about 0.01 ROOT for a one-recipient transfer; validator registration adds a 75 ROOT surcharge | `draft.fee` |
