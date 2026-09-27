@@ -25,11 +25,13 @@ Every code sample carries a status marker (see [Sample status](#sample-status)).
 7. The integration guide for your app:
    - [Explorer](apps/explorer.md)
    - [Validators portal](apps/validators.md)
-   - [Desktop wallet](apps/desktop-wallet.md)
+   - [Desktop wallet](apps/desktop-wallet.md), and [step by step from sample data to the SDK](apps/desktop-wallet-steps.md)
    - [Mobile wallet](apps/mobile-wallet.md)
    - [Browser wallet](apps/browser-wallet.md)
 
 Each integration guide lists what can be wired with release 0.1.0 and what waits for a later release, so that no app builds a temporary replacement it must remove again.
+
+The [example wallet](../examples/vite-react-wallet/README.md) (Vite and React) puts the pieces together against a devnet: create and restore, a keystore, balance and history, transfers, votes in the four modes with every pick's reasons and a later check, and sign-in.
 
 ## What release 0.1.0 covers
 

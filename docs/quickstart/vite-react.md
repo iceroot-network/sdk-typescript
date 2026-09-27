@@ -270,3 +270,5 @@ export function App() {
 ```
 
 Run `npm run dev`, restore a devnet account that holds some ROOT (fund one with the [Node quickstart](node.md)), and send a transfer. The screen ends with the transfer confirmed in a block.
+
+The [example wallet](../../examples/vite-react-wallet/README.md) grows this page into a wallet: a keystore that keeps the phrase encrypted, votes in the four modes with a review screen, and sign-in.

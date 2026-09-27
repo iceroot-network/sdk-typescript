@@ -2,7 +2,7 @@
 
 The desktop wallet (`iceroot-network/desktop-wallet`) is a Vite, React 19 and Tauri 2 app for Linux and macOS. Today its **Explore demo** reads `public/mock-test-api.json`, and transfers and votes change only that sample in memory. After wiring, a wallet in a profile is a real devnet account: balances, history, transfers to 1 to 256 recipients, votes, validator registration and resignation, all through the SDK.
 
-Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart](../quickstart/tauri.md), [Vite and React quickstart](../quickstart/vite-react.md).
+Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart](../quickstart/tauri.md), [Vite and React quickstart](../quickstart/vite-react.md). The order of work, file by file, is in [Step by step: the desktop wallet from sample data to the SDK](desktop-wallet-steps.md), with the [example wallet](../../examples/vite-react-wallet/README.md) as working code.
 
 ## What to wire now and what waits
 

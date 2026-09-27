@@ -42,7 +42,8 @@ The [documentation](docs/README.md) covers the API and how to wire the IceRoot a
 - [Rules apps must never get wrong](docs/rules.md), with security notes and a review checklist.
 - [Devnet](docs/devnet.md): the network to develop against.
 - Quickstarts: [Node](docs/quickstart/node.md), [Vite and React](docs/quickstart/vite-react.md), [Next.js](docs/quickstart/nextjs.md), [Manifest V3 extension](docs/quickstart/mv3-extension.md), [Tauri desktop and mobile](docs/quickstart/tauri.md), [Rust backend](docs/quickstart/rust-backend.md).
-- Integration guides: [explorer](docs/apps/explorer.md), [validators portal](docs/apps/validators.md), [desktop wallet](docs/apps/desktop-wallet.md), [mobile wallet](docs/apps/mobile-wallet.md), [browser wallet](docs/apps/browser-wallet.md).
+- Integration guides: [explorer](docs/apps/explorer.md), [validators portal](docs/apps/validators.md), [desktop wallet](docs/apps/desktop-wallet.md) (and [step by step from sample data](docs/apps/desktop-wallet-steps.md)), [mobile wallet](docs/apps/mobile-wallet.md), [browser wallet](docs/apps/browser-wallet.md).
+- [Example wallet](examples/vite-react-wallet/README.md) (Vite and React): create and restore, a keystore, balance, transfers, votes in the four modes with every pick's reasons, a later check of the vote, and sign-in, tested against a local devnet.
 
 Every code sample in the documentation is marked with its verification status. `node scripts/check-docs.mjs` checks the markers and the links; `--list` shows the samples still to be verified against a build. `npm run check:samples` type-checks every TypeScript sample marked verified against the build.
 

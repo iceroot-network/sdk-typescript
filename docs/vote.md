@@ -69,7 +69,7 @@ for (const pick of selection.entries) {
 }
 ```
 
-Heights, days since registration, vote weights, payouts and draw weights are `bigint`; every other value is a `number`. Offer "Draw again" by selecting again with `draw` one higher.
+Heights, days since registration, vote weights, payouts and draw weights are `bigint`; every other value is a `number`. Offer "Draw again" by selecting again with `draw` one higher. The [example wallet](../examples/vite-react-wallet/README.md)'s `src/Vote.tsx` is a complete review screen, from the snapshot to the check of a kept selection.
 
 ### Signing the vote
 
@@ -82,6 +82,8 @@ showForApproval(draft.summary);
 const signed = draft.sign(account);
 await net.submit(signed);
 ```
+
+On today's devnet a node refuses a vote that names a validator which has not resigned and whose node it has not seen running: the submission is `rejected` with reason `invalid`, node code `ERR_OFFLINE` and a message such as "genesis_7 is not operating a node on the network". That is a validator registered without a running node, and on a new devnet every validator during its first round; `net.validators.list()` shows such a validator without a `version`. The selection does not know this yet, so show the node's message and offer "Draw again" or another mode.
 
 ## Checking a vote later
 
