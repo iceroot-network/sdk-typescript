@@ -129,7 +129,7 @@ Consumers of the package need none of this. Builders need:
 - the `wasm-bindgen` CLI at the exact version of the `wasm-bindgen` crate in `wasm/Cargo.lock` (`cargo install wasm-bindgen-cli --version 0.2.129 --locked`);
 - clang and llvm-ar with the wasm32 target, for libsecp256k1 (found as `clang` or `clang-N`, or set `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown`);
 - a checkout of [sdk-rust](https://github.com/iceroot-network/sdk-rust) next to this repository (`../sdk-rust`), which `wasm/Cargo.toml` uses by path until sdk-rust has a tagged release, and whose recorded devnet answers the Node tests of the node API client read;
-- read access to `heartwood-core`, which sdk-rust fetches over SSH through the host alias `github-iceroot` (see sdk-rust's README; `.cargo/config.toml` makes cargo use the git command line and its SSH configuration);
+- read access to `heartwood-core`, which sdk-rust fetches over SSH from `github.com` (see sdk-rust's README, also for a key behind an SSH host alias; `.cargo/config.toml` makes cargo use the git command line and its SSH configuration);
 - Node 22 and `npm install`, which brings esbuild, TypeScript and `wasm-opt` (binaryen).
 
 `rust-toolchain.toml` pins Rust 1.98.0, as sdk-rust and Heartwood Core. The build passes the compiler its own flags and ignores `RUSTFLAGS`: sha2's compact backend, which keeps the module small, and fixed names for the source directories (the Cargo home, sdk-rust and this repository), so that the module names no directory of the machine that built it. Two builds give the same module when they also use the same checkout paths, because Cargo hashes the absolute path of sdk-rust, a path dependency, into the crates' symbols; the release workflow always builds in the same place.
@@ -180,7 +180,7 @@ The devnet test needs a local devnet of the reference implementation. `npm run t
 
 `.github/workflows/ci.yml` runs on pull requests to `dev` and `prod` and on pushes to `prod`. It checks out sdk-rust next to this repository at the branch the change targets, then runs every check and test above; the Tauri check runs as a job of its own. The packed tarball of each run is kept as a workflow artifact for a week.
 
-The bindings build on sdk-rust, which reads `heartwood-core` over SSH. The workflows use a read-only deploy key of `heartwood-core`, stored in this repository as the secret `HEARTWOOD_DEPLOY_KEY`; `scripts/ci/heartwood-access.sh` installs it. Pull requests from forks get no secrets, so their runs stop at that step. While `heartwood-core` is private, only pull request runs save the dependency cache: it holds Cargo's copy of `heartwood-core`, and a pull request from a fork can restore the caches of this repository's branches.
+The bindings build on sdk-rust, which reads `heartwood-core` over SSH. The workflows use a read-only deploy key of `heartwood-core`, stored in this repository as the secret `HEARTWOOD_DEPLOY_KEY`; `scripts/ci/heartwood-access.sh` installs it under an SSH host alias of its own and rewrites `heartwood-core`'s `github.com` address to that alias, so the key serves that repository only. Pull requests from forks get no secrets, so their runs stop at that step. While `heartwood-core` is private, only pull request runs save the dependency cache: it holds Cargo's copy of `heartwood-core`, and a pull request from a fork can restore the caches of this repository's branches.
 
 ### Releasing
 

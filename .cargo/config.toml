@@ -1,3 +1,4 @@
-# heartwood-crypto is fetched over SSH; the git command line uses the local SSH configuration.
+# heartwood-crypto is fetched over SSH from github.com; the git command line uses the machine's SSH
+# and git configuration, including a URL rewrite to an SSH host alias (see sdk-rust's README).
 [net]
 git-fetch-with-cli = true

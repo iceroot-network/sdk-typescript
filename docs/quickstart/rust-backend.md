@@ -160,4 +160,4 @@ RUN --mount=type=ssh --mount=type=cache,target=/usr/local/cargo/registry cargo b
 docker build --ssh default -t iceroot-backend .
 ```
 
-Pin the base image by digest in production, as the explorer's Dockerfile already does. If sdk-rust fetches `heartwood-core` through an SSH host alias, add the same URL rewrite inside the build stage (`git config --global url."ssh://git@github.com/".insteadOf ...`, see [Installation](../installation.md#rust)).
+Pin the base image by digest in production, as the explorer's Dockerfile already does. The build fetches `heartwood-core` from `github.com` with the key of the forwarded SSH agent, so that agent must hold a key with read access to it; no URL rewrite is needed inside the image (see [Installation](../installation.md#rust)).
