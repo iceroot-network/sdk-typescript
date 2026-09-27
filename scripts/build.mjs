@@ -8,6 +8,9 @@
 // .wasm); bundle the wrapper for each target with esbuild; emit the type declarations; write the
 // embedded-bytes file for contexts that cannot fetch the module; write SHA256SUMS.
 //
+// The compile uses its own compiler flags (rustFlags below) and ignores RUSTFLAGS, so that every
+// builder compiles the module the same way.
+//
 // The release variant writes dist/, which is what the package ships. The test variant writes
 // build/test/dist/ with the reproducible-signature seam compiled in, for the cross-checks against
 // native Rust only; it is never packed. --pack also writes the package tarball and its checksums
@@ -20,7 +23,18 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -131,6 +145,32 @@ function findTools() {
 
 // Rust and wasm-bindgen ----------------------------------------------------------------------
 
+// The compiler flags of the WebAssembly compile:
+// - sha2's compact backend: the fully unrolled SHA-256 and SHA-512 rounds cost about 16 KB of
+//   module, and the one heavy use, a recovery phrase's PBKDF2, stays well under a second;
+// - fixed names for the directories the sources come from (the Cargo home with the registry and
+//   the git checkout of heartwood-core, sdk-rust next to this repository, and this repository), so
+//   that the module's panic locations name no directory of the machine that built it.
+// Two builds give the same bytes when they also use the same checkout paths: sdk-rust is a path
+// dependency outside this workspace, and Cargo hashes its absolute path into the crates' symbols.
+function rustFlags() {
+  const remaps = new Map();
+  const remap = (path, name) => {
+    remaps.set(resolve(path), name);
+    if (existsSync(path)) {
+      remaps.set(realpathSync(path), name);
+    }
+  };
+  remap(process.env.CARGO_HOME ?? join(homedir(), ".cargo"), "/cargo");
+  remap(join(root, "..", "sdk-rust"), "/sdk-rust");
+  remap(root, "/sdk-typescript");
+  return [
+    "--cfg",
+    'sha2_backend_soft="compact"',
+    ...[...remaps].map(([path, name]) => `--remap-path-prefix=${path}=${name}`),
+  ];
+}
+
 function compileBindings(tools) {
   step("compiling the bindings for wasm32-unknown-unknown");
   const args = [
@@ -146,10 +186,9 @@ function compileBindings(tools) {
   if (variant === "test") {
     args.push("--features", "fixed-aux");
   }
-  run("cargo", args, {
-    cwd: crateDir,
-    env: { ...process.env, ...tools.compilerEnv },
-  });
+  const env = { ...process.env, ...tools.compilerEnv, CARGO_ENCODED_RUSTFLAGS: rustFlags().join("\x1f") };
+  delete env.RUSTFLAGS;
+  run("cargo", args, { cwd: crateDir, env });
   return join(targetDir, "wasm32-unknown-unknown", "release", "iceroot_sdk_wasm.wasm");
 }
 
@@ -177,7 +216,8 @@ function optimize(tools) {
   step("optimizing the module with wasm-opt -Oz");
   const input = join(wasmDir, "web", `${OUT_NAME}_bg.wasm`);
   const optimized = join(wasmDir, `${OUT_NAME}_bg.opt.wasm`);
-  run(tools.wasmOpt, ["-Oz", ...WASM_FEATURES, input, "-o", optimized]);
+  // --converge repeats the passes while the module still shrinks.
+  run(tools.wasmOpt, ["-Oz", "--converge", ...WASM_FEATURES, input, "-o", optimized]);
   return optimized;
 }
 

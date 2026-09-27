@@ -108,6 +108,8 @@ Consumers of the package need none of this. Builders need:
 - read access to `heartwood-core`, which sdk-rust fetches over SSH through the host alias `github-iceroot` (see sdk-rust's README; `.cargo/config.toml` makes cargo use the git command line and its SSH configuration);
 - Node 22 and `npm install`, which brings esbuild, TypeScript and `wasm-opt` (binaryen).
 
+`rust-toolchain.toml` pins Rust 1.98.0, as sdk-rust and Heartwood Core. The build passes the compiler its own flags and ignores `RUSTFLAGS`: sha2's compact backend, which keeps the module small, and fixed names for the source directories (the Cargo home, sdk-rust and this repository), so that the module names no directory of the machine that built it. Two builds give the same module when they also use the same checkout paths, because Cargo hashes the absolute path of sdk-rust, a path dependency, into the crates' symbols; the release workflow always builds in the same place.
+
 <!-- sample: plain -->
 ```sh
 npm install
