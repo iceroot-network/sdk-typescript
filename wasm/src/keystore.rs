@@ -5,7 +5,9 @@
 //! Secrets cross the boundary as UTF-8 bytes in the caller's own arrays: a phrase and every
 //! password are overwritten with zeros, in WebAssembly memory and in the caller's array, whatever
 //! the outcome. A decrypted phrase goes to JavaScript as a new byte array made straight from the
-//! core's wiped buffer, so no other copy of it is left in WebAssembly memory.
+//! core's wiped buffer; what the decryption and the phrase's checksum leave on the stack (the
+//! entropy among it) is overwritten by the wrapper's [`wipe_stack`](crate::wipe_stack) after the
+//! call, so no other copy of it is left in WebAssembly memory.
 //!
 //! The keystore's refusals keep their stable codes and details (`WrongPasswordOrCorrupt`,
 //! `Malformed`, `UnsupportedVersion`, `UnsupportedKdf`, `UnsupportedPayload`, `ParamsOutOfRange`,

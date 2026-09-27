@@ -70,7 +70,7 @@ const IIFE_NAME = "iceroot-sdk";
 const IIFE_GLOBAL = "IceRootSdk";
 const BYTES_GLOBAL = "IceRootSdkWasmBytes";
 // Exports of the test seams, which the test module must have and the release module must not.
-const TEST_SEAMS = ["signMessageWithAux", "keystoreEncryptWithSaltAndNonce", "signProofWithAux"];
+const TEST_SEAMS = ["signMessageWithAux", "keystoreEncryptWithSaltAndNonce", "signProofWithAux", "wasmMemory"];
 
 // The features rustc enables by default for wasm32-unknown-unknown. wasm-bindgen drops the
 // target_features section, so wasm-opt is told the same set explicitly and never adds others.

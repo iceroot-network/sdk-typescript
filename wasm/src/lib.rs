@@ -10,7 +10,9 @@
 //! - Secret keys stay in WebAssembly memory. JavaScript receives public keys, addresses and
 //!   signatures only, and [`KeyHandle::release`] wipes a key. Phrases and passwords given as
 //!   bytes are overwritten with zeros, and the keystore gives a decrypted phrase back as a new
-//!   byte array for the caller to wipe.
+//!   byte array for the caller to wipe. The stack lives in WebAssembly memory too, so the
+//!   wrapper calls [`wipe_stack`] after every call into the module: what hashing, derivation,
+//!   signing and decryption leave in their frames does not outlive the call.
 //! - Untrusted input never causes a panic: every failure is a [`BindingError`] with the core's
 //!   stable code and details, which the wrapper turns into its typed errors.
 //! - No I/O. Requests to a node are made by the host language: the bindings build each request
@@ -47,6 +49,7 @@ mod vote;
 mod write;
 
 use wasm_bindgen::prelude::wasm_bindgen;
+use zeroize::Zeroize;
 
 pub use crate::address::{address_from_public_key, parse_address};
 pub use crate::amount::{format_amount, parse_amount};
@@ -73,4 +76,33 @@ pub use crate::vote::{
 #[wasm_bindgen(js_name = bindingsVersion)]
 pub fn bindings_version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
+}
+
+/// How much of the stack [`wipe_stack`] overwrites: several times what any call into the module
+/// uses (the deepest, a keystore's key derivation, about 11 KiB).
+const WIPED_STACK_BYTES: usize = 64 * 1024;
+
+/// Overwrites with zeros the stack below the caller's frame.
+///
+/// In WebAssembly the stack of Rust (and of the C code of libsecp256k1) lives in the module's
+/// memory, and a function that returns leaves the contents of its frame there until later calls
+/// overwrite them. Hashing a phrase's checksum, deriving a key, signing and decrypting a keystore
+/// leave copies of secrets in such frames: a keystore's entropy, the bytes of a key that
+/// `release` wiped from its handle. The wrapper calls this after every call into the module,
+/// when no frame of the module is in use, so none of those copies outlives the call. It writes
+/// only to its own frame, below every frame in use, so it is safe at any time.
+#[wasm_bindgen(js_name = wipeStack)]
+pub fn wipe_stack() {
+    let mut frame = [0u64; WIPED_STACK_BYTES / 8];
+    frame.zeroize();
+    core::hint::black_box(&frame);
+}
+
+/// Test seam of the bindings only (feature `fixed-aux`, which the test build of the package turns
+/// on and the published build never does): the module's memory, so that the tests can check that
+/// no copy of a secret is left in it.
+#[cfg(feature = "fixed-aux")]
+#[wasm_bindgen(js_name = wasmMemory)]
+pub fn wasm_memory() -> wasm_bindgen::JsValue {
+    wasm_bindgen::memory()
 }

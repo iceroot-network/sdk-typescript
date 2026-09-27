@@ -51,8 +51,10 @@ export class Account {
     try {
       return new Account(handle, profile);
     } catch (error) {
-      handle.release();
-      handle.free();
+      call(() => {
+        handle.release();
+        handle.free();
+      });
       throw error;
     }
   }
@@ -77,8 +79,10 @@ export class Account {
       return;
     }
     handles.delete(this);
-    handle.release();
-    handle.free();
+    call(() => {
+      handle.release();
+      handle.free();
+    });
   }
 }
 

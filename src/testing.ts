@@ -37,6 +37,7 @@ interface TestSeams {
   ): Uint8Array;
   keystoreDecryptWithBounds?(keystore: Uint8Array, password: string, bounds: string): string;
   keystoreCheckParamsWithBounds?(params: string, bounds: string): void;
+  wasmMemory?(): WebAssembly.Memory;
 }
 
 /** Keystore parameters, as the keystore vectors write them. */
@@ -109,6 +110,12 @@ export const testing = {
       call(() => sign.call(handle, message, nowMs, aux)),
     );
     return { address, publicKey, message: signed, signature };
+  },
+
+  /** The module's memory, for checking that no copy of a secret is left in it. */
+  wasmMemory(): WebAssembly.Memory {
+    const memory = testSeams().wasmMemory ?? seam;
+    return memory();
   },
 
   /** Whether the loaded module has the keystore vectors' seam. */

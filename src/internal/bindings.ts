@@ -65,13 +65,19 @@ export function fromBindingError(error: unknown): unknown {
   return errorFromCode(error.name, error.message, details);
 }
 
-/** Calls `f` and turns module errors into SDK errors. */
+/**
+ * Calls `f` and turns module errors into SDK errors. Afterwards the module's stack is overwritten
+ * with zeros: it lives in WebAssembly memory, and hashing, key derivation, signing and decryption
+ * leave copies of secrets in the frames they used.
+ */
 export function call<T>(f: (bindings: Bindings) => T): T {
   const module = bindings();
   try {
     return f(module);
   } catch (error) {
     throw fromBindingError(error);
+  } finally {
+    module.wipeStack();
   }
 }
 

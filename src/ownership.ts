@@ -72,8 +72,10 @@ export class SolarKey {
       try {
         return new SolarKey(handle);
       } catch (error) {
-        handle.release();
-        handle.free();
+        call(() => {
+          handle.release();
+          handle.free();
+        });
         throw error;
       }
     } finally {
@@ -96,8 +98,10 @@ export class SolarKey {
       return;
     }
     handles.delete(this);
-    handle.release();
-    handle.free();
+    call(() => {
+      handle.release();
+      handle.free();
+    });
   }
 }
 

@@ -62,9 +62,9 @@ impl SolarKeyHandle {
 
     /// Wipes the key. Later calls throw `KeyReleased`.
     pub fn release(&mut self) {
-        if let Some(key) = self.key.take() {
-            key.release();
-        }
+        // Dropped where it is, which overwrites the secret key's bytes. Taking it out first would
+        // move a copy to the stack and wipe only that, leaving the bytes in the handle's memory.
+        self.key = None;
     }
 
     /// The proof of `message` signed with this key and fresh randomness at the signer's time

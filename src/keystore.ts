@@ -13,8 +13,9 @@
  *
  * Secrets are passed as `string` or as UTF-8 bytes. Bytes are overwritten with zeros once used,
  * whatever the outcome, so an app that holds a password or phrase in a `Uint8Array` leaves no copy
- * behind; the copies the SDK makes, in JavaScript and in WebAssembly memory, are wiped too. A
- * JavaScript `string` cannot be wiped, so prefer bytes where the app can keep them.
+ * behind; the copies the SDK makes, in JavaScript and in WebAssembly memory (its stack included),
+ * are wiped too. A JavaScript `string` cannot be wiped, so prefer bytes where the app can keep
+ * them.
  *
  * Argon2id is deliberately slow (about 0.5 to 1.5 seconds with a platform's preset) and blocks the
  * thread it runs on: run these functions in a Web Worker to keep a page responsive.
@@ -64,7 +65,7 @@ export const BOUNDS = Object.freeze({
   maxWork: 2_097_152,
 });
 
-/** The longest password, in UTF-8 bytes after Unicode NFKD normalization. */
+/** The longest password, in UTF-8 bytes as given, before its Unicode NFKD normalization. */
 export const MAX_PASSWORD_BYTES = 1024;
 
 /** What a keystore holds. */
