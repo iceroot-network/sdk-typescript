@@ -118,7 +118,7 @@ The sandbox answers three operations. `address` returns the address of a phrase.
   const ops = {
     address({ profile, phrase }) {
       const account = Sdk.Keys.fromPhrase(phrase, profile, { account: 0, index: 0 });
-      try { return { address: account.address }; } finally { account.release(); }
+      try { return { address: account.address, publicKey: account.publicKey }; } finally { account.release(); }
     },
     review({ profile, draft }) {
       const parsed = Sdk.Draft.deserialize(draft, profile);   // refuses a draft for another network
@@ -172,7 +172,7 @@ The sandbox answers three operations. `address` returns the address of a phrase.
 
 Replace `http://127.0.0.1:6003` with your devnet's origin.
 
-<!-- sample: pending; needs: init, iife-build, connect, profiles.devnet, net.profile, profile-structured-clone, net.build.transfer, fee-floor, draft.serialize, SignedTransaction.deserialize, net.submit, net.transactions.wait, Address.parse, Amount.parse, Amount.format, account.release -->
+<!-- sample: pending; needs: iife-build, profile-structured-clone, fee-floor -->
 ```js
 // extension/wallet.js
 (async function () {
@@ -208,10 +208,10 @@ Replace `http://127.0.0.1:6003` with your devnet's origin.
     event.preventDefault();
     $("status").textContent = "";
     try {
-      // Keys exist only in the sandbox; the wallet page asks it for the address.
-      const { address: from } = await sandbox("address", { profile, phrase: $("phrase").value });
+      // Keys exist only in the sandbox; the wallet page asks it for the public key.
+      const { publicKey } = await sandbox("address", { profile, phrase: $("phrase").value });
       const draft = await net.build.transfer({
-        from,
+        from: publicKey,   // the builder reads the nonce and the height from the node
         to: [{ address: Sdk.Address.parse($("to").value.trim(), net), amount: Sdk.Amount.parse($("amount").value.trim(), decimals) }],
       });
       draftBytes = draft.serialize();
@@ -231,8 +231,10 @@ Replace `http://127.0.0.1:6003` with your devnet's origin.
       const result = await net.submit(transaction);
       if (result.status !== "accepted") throw new Error(`Refused: ${result.reason}`);
       $("status").textContent = "Submitted. Waiting for a block.";
-      const status = await net.transactions.wait(transaction.id, { until: "confirmed" });
-      $("status").textContent = `Confirmed (${status.confirmations} confirmation). Not final: this devnet has no finality.`;
+      const outcome = await net.transactions.wait(transaction.id, { until: "confirmed" });
+      $("status").textContent = outcome.state === "dropped"
+        ? "The network dropped the transaction. Send it again."
+        : `Confirmed (${outcome.confirmations} confirmation). Not final: this devnet has no finality.`;
     } catch (error) {
       $("status").textContent = error.message;
     } finally {

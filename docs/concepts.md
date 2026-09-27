@@ -24,7 +24,7 @@ initSync(bytes);              // synchronous, from the bytes: workers and classi
 
 A profile names one chain and how to reach it. `connect` reads the chain's configuration from a node, checks the chain's identity against the profile and returns a connected network, `net`, for everything else.
 
-<!-- sample: pending; needs: connect, profiles.devnet, net.profile, transport-option, connect-headers -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { connect, profiles } from "@iceroot-network/sdk";
 
@@ -35,53 +35,58 @@ const profile = profiles.devnet({
 const net = await connect(profile, {
   transport: fetch,                         // optional; default globalThis.fetch
   headers: { authorization: `Bearer ${token}` },   // optional; for a relay behind a proxy that needs a token
+  rateLimit: { requests: 100, windowMs: 60_000 }, // optional; this is the default, false turns it off
+  timeoutMs: 15_000,                        // optional; the time allowed for one request
 });
 
 const pinned = net.profile.chain.nethash;   // store this; pass it as `nethash` next time
 ```
 
+- **What `connect` reads.** The chain the node serves (`/node/configuration/crypto`: the network description, the milestones and the genesis block) and the node's configuration (`/node/configuration`: the milestone at its tip and the pool's limits), both checked against the profile, and the node's status for the current height. `net.configuration` keeps what the node reported, for example `net.configuration.pool.maxTransactionsPerRequest`.
 - **One chain per profile.** A devnet is pinned on first contact: the node's network identity (the nethash on today's devnet) is recorded, and a later connection that finds another identity throws `NetworkMismatch`. The app may pin again only after asking the holder, because a changed identity means a different chain (for example a devnet that was reset).
-- **Relays.** Reads go to the first healthy relay; submissions may go to several. The URL includes the API base path; the SDK appends route paths to it and never guesses the base path.
+- **Relays.** Every request goes to the first relay that answers: a relay that cannot be reached, times out or answers with a server error is skipped. The URL includes the API base path; the SDK appends route paths to it and never guesses the base path.
 - **Transport.** Any function with the signature of `fetch`. Tauri apps pass the HTTP plugin's `fetch` so requests leave from Rust (see the [Tauri quickstart](quickstart/tauri.md)).
 - **Headers.** A hosted devnet endpoint that needs a token takes it as a request header, passed in `headers` (see [Devnet](devnet.md)); the token is never part of the profile.
+- **Errors.** No relay answering is `NodeUnavailable`, a request that takes longer than `timeoutMs` is `Timeout`, and a node that keeps refusing for its rate limit is `RateLimited`.
 - **Built-in profiles.** Release 0.1.0 has `profiles.devnet(options)` only. Profiles for the public testnet and mainnet are added in the releases made when those chains' geneses are fixed; until then they do not exist, so no app can point at a guessed identity. Show them in a network selector as not yet available.
 
 ### What `net` tells you about the network
 
-<!-- sample: pending; needs: net.stage, net.token, net.rules, net.economics, net.capabilities -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 net.stage;          // "s1" on today's devnet (the Solar-compatible formats); later "pq", then "id"
-net.token;          // { assetId, symbol: "ROOT", decimals }: 8 decimals today, 18 from the IceRoot genesis
+net.token;          // { assetId, name, symbol, decimals }: the labels the network configures, 8 decimals today, 18 from the IceRoot genesis
 net.rules;          // vote, transfer, memo, name, burn and fee rules in force at the next block
 net.economics;      // seats, block time, reward per rank, donations, fee burn share
 net.capabilities.has("finality");   // false today
+net.height;         // the node's height as last read: bigint
 ```
 
-Never copy these values into constants. `net.rules` and `net.economics` follow the chain's milestones, and they differ between today's devnet and the IceRoot networks.
+Never copy these values into constants. `net.rules` and `net.economics` are those of the next block (`net.nextHeight`) and follow the chain as its height is read: every answer carries the node's height, and `await net.refresh()` reads it on purpose. They differ between today's devnet and the IceRoot networks.
 
 Rule fields used in these guides:
 
-<!-- sample: pending; needs: net.rules.vote, net.rules.transfer, net.rules.memo -->
+<!-- sample: verified 0.1.0 -->
 ```ts
-net.rules.vote.minEntries;          // 1 today; 20 from the IceRoot genesis
-net.rules.vote.maxEntries;          // 53
-net.rules.vote.maxShareBasisPoints; // null today (no per-validator cap); 500 from the IceRoot genesis
-net.rules.vote.totalBasisPoints;    // 10000
-net.rules.vote.maxBytes;            // 1024 today; 1280 from the IceRoot genesis
-net.rules.transfer.maxRecipients;   // 256
-net.rules.memo.maxBytes;            // 255 (UTF-8 bytes, not characters)
+net.rules.vote.minEntries;             // 1 today; 20 from the IceRoot genesis
+net.rules.vote.maxEntries;             // 53
+net.rules.vote.maxBasisPointsPerEntry; // 10000 today (no per-validator cap); 500 from the IceRoot genesis
+net.rules.vote.totalBasisPoints;       // 10000
+net.rules.vote.maxBytes;               // 1024 today; 1280 from the IceRoot genesis
+net.rules.transfer.maxRecipients;      // 256
+net.rules.memo.maxBytes;               // 255 (UTF-8 bytes, not characters)
 ```
 
 `net.economics` serves displays and estimates, such as the portal's rewards calculator; nothing in it is signed:
 
-<!-- sample: pending; needs: net.economics, net.economics.supply -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 net.economics.seats;                // active validators per round (53)
 net.economics.blockTimeSeconds;     // 8
-net.economics.rewardsByRank;        // block reward in base units for each seated rank
-net.economics.donations;            // [{ address, basisPoints }]
+net.economics.rewardsByRank;        // [{ rank, reward }]: block reward in base units for each seated rank
+net.economics.donations;            // [{ address, basisPoints, purpose }]
 net.economics.feeBurnBasisPoints;   // share of each fee that is burned
-const supply = await net.economics.supply();   // { issued, burned, current } in base units, from the node
+const supply = await net.economics.supply();   // from the node: { height, blockId, supply, burned: { fees, transactions, total } }, bigint base units
 ```
 
 ### Capabilities
@@ -106,7 +111,7 @@ Every network declares what it supports. An operation the network lacks throws `
 
 ## Keys and recovery phrases
 
-<!-- sample: pending; needs: Mnemonic.generate, Mnemonic.check, net.keys.fromPhrase, net.keys.watch, net.keys.fromLegacyPassphrase, account.release -->
+<!-- sample: pending; needs: net.keys.watch -->
 ```ts
 import { Mnemonic } from "@iceroot-network/sdk";
 
@@ -174,29 +179,31 @@ AssetId.ROOT;                                               // the ROOT asset id
 
 ## Reading from the network
 
-All reads are methods of `net`, return typed records and throw on failure. An unavailable node is an error, never an empty list.
+All reads are methods of `net`, return typed records and throw on failure. An unavailable node is an error, never an empty list. A lookup that finds nothing returns `null`.
 
-<!-- sample: pending; needs: net.node.status, net.accounts.get, net.history.forAccount, net.transactions.get, net.transactions.list, net.blocks.latest, net.blocks.get, net.blocks.transactions, net.blocks.missed, net.validators.list, net.validators.missed, net.rounds.validators, net.names.resolve, net.fees.statistics, net.watch -->
+<!-- sample: verified 0.1.0 -->
 ```ts
-const status = await net.node.status();                  // { height, synced, ... }
-const info = await net.accounts.get(address);
-info.balances.get(net.token.assetId);                    // bigint base units
+import { balanceOf } from "@iceroot-network/sdk";
+
+const status = await net.node.status();                  // { height, synced, blocksBehind, chainTime }
+const info = await net.accounts.get(address);            // an address the chain has never seen is an empty account
+balanceOf(info);                                         // bigint base units of ROOT; info.balances lists each asset
 info.nonce;                                              // bigint
 info.vote;                                               // [{ validator, basisPoints }], empty when not voting
-info.validator;                                          // the validator name if the account is a registered validator, else null
+info.validatorName;                                      // the validator name if the account is a registered validator, else undefined
 
 const page = await net.history.forAccount(address, { direction: "all", page: 1, limit: 25 });
-page.items;                                              // TxRecord[]
-page.hasMore;
+page.items;                                              // TxRecord[], each with its direction relative to the account
+page.hasNext;                                            // and page.total, page.pageCount
 
-const tx = await net.transactions.get(id);               // TxRecord, also found while still in the pool
-const recent = await net.transactions.list({ page: 1, limit: 25 });   // newest first; filters by account and kind
-const latest = await net.blocks.latest();                 // { height, id, timestamp, generator, transactionCount, ... }
-const block = await net.blocks.get(heightOrId);
-const txs = await net.blocks.transactions(block.id);
+const tx = await net.transactions.get(id);               // TxRecord, also found while still in the pool; null when unknown
+const recent = await net.transactions.list({ kind: "transfer", page: 1, limit: 25 });   // newest first; filters by sender, recipient, kind and block
+const latest = await net.blocks.latest();                // BlockInfo: { id, height, time, producerName, transactionCount, ... }
+const block = await net.blocks.get(heightOrId);          // a height (number or bigint) or an id; null when not found
+const txs = await net.blocks.transactions(heightOrId);
 const missed = await net.blocks.missed({ page: 1, limit: 50 });   // recent missed slots: height, time, validator
 
-const validators = await net.validators.list();          // ValidatorInfo[] in rank order
+const validators = await net.validators.list();          // a page of ValidatorInfo in rank order, up to 100 per page
 const one = await net.validators.get(nameOrAddress);
 const voters = await net.validators.voters(name);
 const produced = await net.validators.blocks(name);
@@ -205,56 +212,82 @@ const missedBy = await net.validators.missed(name);
 const round = await net.rounds.validators(roundNumber); // the validators seated in a round
 const named = await net.names.resolve(name);             // today: validator names only
 const fees = await net.fees.statistics();                // the node's fee figures, for display
+```
+
+Live updates:
+
+<!-- sample: pending; needs: net.watch -->
+```ts
 const stop = net.watch({ address }, (event) => { /* new block or transaction for this address */ });
 ```
 
-Record shapes used in the guides:
+Until `net.watch` exists, poll: read `net.node.status()` every block time and refresh what changed.
 
-<!-- sample: pending; needs: TxRecord, ValidatorInfo -->
+Record shapes used in the guides (the full types are exported: `TxRecord`, `ValidatorInfo`, `AccountInfo`, `BlockInfo` and the rest). Amounts, nonces, heights and lifetime counters are `bigint`; an absent value is a missing property:
+
+<!-- sample: verified 0.1.0 -->
 ```ts
 type TxRecord = {
   id: string;
-  kind: "transfer" | "vote" | "burn" | "second-key" | "validator-registration" | "validator-resignation";
-  direction: "incoming" | "outgoing" | "self" | "none";   // relative to the account asked about
   status: "pending" | "confirmed";
+  block?: { id: string; height: bigint; confirmations: bigint; time?: { chain: bigint; unix: bigint } };   // absent while pending
+  direction?: "sent" | "received" | "to-self" | "other";   // in a history: relative to the account asked about
   sender: string;
-  transfers: { address: string; amount: bigint }[];      // a transfer's recipients (1 to 256)
-  vote?: { validator: string; basisPoints: number }[];   // a vote's entries; empty withdraws
+  senderPublicKey: string;
+  nonce: bigint;
   fee: bigint;
-  memo: string;
-  height: bigint | null;                                   // null while pending
-  timestamp: string | null;                                // block time, ISO 8601 UTC
-  confirmations: number;
+  burnedFee?: bigint;
+  memo?: string;
+  secondSigned: boolean;
+  version: number;
+  details:
+    | { kind: "transfer"; recipients: { address: string; amount: bigint }[] }   // 1 to 256 recipients
+    | { kind: "vote"; entries: { validator: string; basisPoints: number }[] }    // empty withdraws the vote
+    | { kind: "burn"; amount: bigint }
+    | { kind: "register-second-key"; publicKey: string }
+    | { kind: "register-validator"; name: string }
+    | { kind: "resign-validator"; resignation: "temporary" | "permanent" | "revoke" }
+    | { kind: "other"; typeGroup: number; typeId: number; assetJson?: string };
 };
 
 type ValidatorInfo = {
   name: string;
   address: string;
-  rank: number | null;                                     // null when resigned
+  publicKey: string;
+  rank?: number;                                   // absent when not ranked
   status: "active" | "standby" | "resigned-temporary" | "resigned-permanent";
-  voteWeight: bigint;                                      // base units
-  voteWeightBasisPoints: number;                           // share of supply, in basis points
-  voters: number;
-  production: { forged: number; missed: number };          // lifetime counters today
+  voteWeight: bigint;                              // base units
+  voteShareBasisPoints: number;                    // share of the supply, in basis points, rounded by the node
+  voters: bigint;
+  production: {                                    // lifetime counters today
+    produced: bigint;
+    missed: bigint;
+    productivityBasisPoints?: number;
+    lastBlock?: { id: string; height?: bigint; time?: { chain: bigint; unix: bigint } };
+  };
+  earnings: { rewards: bigint; fees: bigint; burnedFees: bigint; donations: bigint; total: bigint };
+  version?: string;
 };
 ```
+
+Times are `{ chain, unix }`: seconds since the chain's epoch and since the Unix epoch. Show a time with `new Date(Number(time.unix) * 1000)`.
 
 Profile texts of validators (tagline, website, location) are not chain data. The SDK does not fetch them; they come from the validators portal.
 
 ### Limits of today's devnet API
 
-The reference implementation's API allows about 100 requests per minute per client address. The SDK keeps a request budget, retries HTTP 429 with backoff, and reports `RateLimited` when the budget runs out. Design screens to read once and refresh on a timer or on new blocks, not per row: for example read `validators.list()` once, not `validators.get(name)` for each validator.
+The reference implementation's API allows about 100 requests per minute per client address. The SDK spends a request budget before each request (waiting when it is spent), retries HTTP 429 with backoff (2 seconds, doubling, three retries), and reports `RateLimited` when the node keeps refusing. Design screens to read once and refresh on a timer or on new blocks, not per row: for example read `validators.list()` once, not `validators.get(name)` for each validator.
 
 ## Transactions: build, review, sign, submit, follow
 
 A build call resolves everything online (nonce, fee, the rules in force) and returns a draft. Signing is a separate step, so the review screen shows exactly what will be signed.
 
-<!-- sample: pending; needs: net.build.transfer, fee-floor, draft.summary, draft.sign, net.submit, net.transactions.wait, Address.parse, Amount.parse -->
+<!-- sample: pending; needs: fee-floor -->
 ```ts
 import { Address, Amount } from "@iceroot-network/sdk";
 
 const draft = await net.build.transfer({
-  from: account.address,
+  from: account,                      // the sender's Account, or its public key
   to: [{ address: Address.parse(recipient, net), amount: Amount.parse("2.5", net.token.decimals) }],   // 1 to 256
   memo: "invoice 42",                 // at most net.rules.memo.maxBytes UTF-8 bytes
   fee: "minimum",                     // the default: the exact floor; or a bigint, or { multiplierBasisPoints }
@@ -263,40 +296,43 @@ const draft = await net.build.transfer({
 draft.fee;        // bigint: show this, never a constant
 draft.nonce;      // bigint
 draft.size;       // bytes, with the signatures it will carry
-draft.summary;    // what the review screen shows: { kind, from, total, lines }, lines being readable text such as each recipient and amount
+draft.summary;    // what the review screen shows: { kind, from, total, lines, ... }, lines being readable text such as each recipient and amount
 
 const signed = draft.sign(account);                       // pass { secondKey } when the account has one
 signed.id;                                                // known after signing on today's devnet
-const result = await net.submit(signed);                  // { status: "accepted" } or { status: "rejected", reason, nodeCode }
+const result = await net.submit(signed);                  // { id, status: "accepted", broadcast } or { id, status: "rejected", reason, nodeCode, message }
 if (result.status === "rejected") showRefusal(result.reason);
 
-const status = await net.transactions.wait(signed.id, { until: "confirmed", timeoutMs: 60_000 });
-// status.state: "pending" | "confirmed" | "final" | "rejected" | "dropped"; status.confirmations
+const outcome = await net.transactions.wait(signed.id, { until: "confirmed", timeoutMs: 60_000 });
+// outcome.state: "confirmed" (with outcome.confirmations and outcome.record) or "dropped"; throws Timeout when the time runs out
 ```
 
 Other builders:
 
-<!-- sample: pending; needs: net.build.vote, net.build.burn, net.build.registerSecondKey, net.build.registerValidator, net.build.resignValidator, fee-floor -->
+<!-- sample: pending; needs: fee-floor -->
 ```ts
 await net.build.vote({ from, entries: [{ validator: "bergschrund", basisPoints: 500 }, /* ... */] });
 await net.build.vote({ from, entries: [] });                           // withdraws the current vote
 await net.build.burn({ from, amount });
-await net.build.registerSecondKey({ from, secondKey: secondAccount.publicKey });
+await net.build.registerSecondKey({ from, secondKey: secondAccount.publicKey });   // or the Account itself
 await net.build.registerValidator({ from, name: "bergschrund" });      // the surcharge is in draft.fee
-await net.build.resignValidator({ from, kind: "temporary" });          // "temporary", "permanent" or "revoke"
+await net.build.resignValidator({ from, resignation: "temporary" });   // "temporary", "permanent" or "revoke"
 ```
 
+- **Online facts.** Each builder reads the sender's account (for its nonce and second key) and the node's status (for the next block's height), and refuses with `WrongKey` when the node knows another public key for the sender's address. The draft is checked against the rules of that next block.
 - **Votes** name validators by their name. Entries are whole basis points summing to `net.rules.vote.totalBasisPoints`. The builder checks `net.rules.vote` and throws `InvalidVote` with the problem in `details`.
-- **Fees.** `fee: "minimum"` is the exact floor the node accepts, computed from the transaction's size and the milestone in force, and never below the node's pool minimum. Surcharges (validator registration, and later names and reward-sharing declarations) are part of the floor. Show `draft.fee` on the review screen; never a constant.
+- **Fees.** `fee: "minimum"` is the exact floor the node accepts, computed from the transaction's size and the milestone in force, and never below the node's pool minimum. Surcharges (validator registration, and later names and reward-sharing declarations) are part of the floor. Show `draft.fee` on the review screen; never a constant. Until the release that computes the floor, `"minimum"` is the largest fee in the node's recent fee statistics for the operation (`draft.summary.fee.source` is `node-statistics`), which the builder reads for you.
+- **Submission.** `net.submit(signed)` sends one transaction; `net.submitAll(list)` sends several in as few requests as the pool allows (`net.configuration.pool.maxTransactionsPerRequest` per request), refuses a transaction larger than `maxTransactionBytes` with reason `too-large` without sending it, and reports one outcome per transaction in order. If a request fails midway, the error is thrown and earlier requests may have reached the pool: look their transactions up before sending them again.
 - **Refusals.** `result.reason` is one of `low-fee`, `nonce`, `balance`, `duplicate`, `invalid`, `pool-full`, `wrong-network`, `too-large`, `other`; `result.nodeCode` keeps the node's own code (for example `ERR_LOW_FEE`).
-- **Stale drafts.** A draft records the height it was built for. If the nonce, the fee floor or the milestone changed before submission, `net.submit` throws `StaleDraft`: build again and show the new review.
+- **Stale drafts.** A draft records the height and the nonce it was built for. If the account sent another transaction in the meantime, the node refuses the draft's transaction with reason `nonce`: build again and show the new review.
+- **Waiting.** `net.transactions.wait` polls the chain and the pool every half block. It ends with `confirmed` once the transaction is in a block with the confirmations asked for (`confirmations`, 1 by default), with `dropped` when it has been in neither for `droppedAfterMs` (three block times by default), and throws `Timeout` after `timeoutMs`. `onProgress` reports each poll, and `signal` cancels.
 - **Finality.** Today's devnet has no finality, so `until: "final"` throws `UnsupportedOnNetwork`. Show confirmations and "not final" wording; never call a transaction final. When `net.capabilities.has("finality")` becomes true, credit and complete claims only on `state: "final"`.
 
 ### Drafts that travel
 
 A draft is built where the network is and signed where the key is: a Manifest V3 sandbox page, the native Tauri plugin, another device. Drafts and signed transactions serialize to bytes:
 
-<!-- sample: pending; needs: draft.serialize, Draft.deserialize, signed.serialize, SignedTransaction.deserialize -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { Draft, SignedTransaction } from "@iceroot-network/sdk";
 
@@ -315,7 +351,7 @@ await net.submit(signedTx);
 
 ## Messages and sign-in
 
-<!-- sample: pending; needs: net.messages.sign, Messages.verify, SignIn.parse, SignIn.build, messageNetworkOf, messageAlgorithmOf -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { Messages, SignIn, messageAlgorithmOf, messageNetworkOf } from "@iceroot-network/sdk";
 
@@ -355,7 +391,7 @@ Every SDK error is an `IceRootError` with a stable `code`, a readable `message` 
 | Support | `UnsupportedOnNetwork` (with `capability`), `SdkNotInitialized`, `WasmLoadFailed` |
 | Crypto | `RandomnessUnavailable`, `SigningFailed`, `WrongKey`, `KeyReleased` |
 
-<!-- sample: pending; needs: IceRootError, error-codes -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { IceRootError } from "@iceroot-network/sdk";
 

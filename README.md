@@ -2,7 +2,7 @@
 
 The IceRoot SDK for TypeScript and JavaScript: the Rust core compiled to WebAssembly with a thin, typed wrapper. It runs in browsers, Next.js, Vite and React, Tauri webviews and Manifest V3 extensions.
 
-The SDK is in early development and not yet published to a public registry. Today the package loads the WebAssembly module in every supported environment and offers, for today's devnet: recovery phrases and accounts, the legacy passphrase import, addresses, exact amounts, the network's rules and economics, drafts of every operation with review summaries, signing in the same or another context, message signatures and the sign-in message. The typed values of the node API client are in place; `connect`, reads, submission and the vote library come next.
+The SDK is in early development and not yet published to a public registry. Today the package loads the WebAssembly module in every supported environment and offers, for today's devnet: `connect` with a pinned network identity, the network's rules and economics, every read of the node API as typed records, builders that read a draft's facts from the node, submission within the pool's limits and waiting for inclusion; recovery phrases and accounts, the legacy passphrase import, addresses, exact amounts, drafts of every operation with review summaries, signing in the same or another context, message signatures and the sign-in message. The vote library comes next.
 
 ## Install
 
@@ -13,7 +13,7 @@ Releases are published on GitHub, starting with 0.1.0. Each release attaches the
 npm install https://github.com/iceroot-network/sdk-typescript/releases/download/v0.1.0/iceroot-network-sdk-0.1.0.tgz
 ```
 
-<!-- sample: pending; needs: init, connect, profiles.devnet -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { init, connect, profiles } from "@iceroot-network/sdk";
 
@@ -39,7 +39,23 @@ Every code sample in the documentation is marked with its verification status. `
 
 ## Using the package
 
-Every key, address, amount, draft and signature comes from the SDK's Rust core ([sdk-rust](https://github.com/iceroot-network/sdk-rust)), which builds on Heartwood Core's byte-exact `heartwood-crypto`, compiled to WebAssembly. Secret keys stay in WebAssembly memory: an `Account` exposes its public key and address, signs through the module, and `release()` wipes the key.
+Every key, address, amount, draft and signature comes from the SDK's Rust core ([sdk-rust](https://github.com/iceroot-network/sdk-rust)), which builds on Heartwood Core's byte-exact `heartwood-crypto`, compiled to WebAssembly. Secret keys stay in WebAssembly memory: an `Account` exposes its public key and address, signs through the module, and `release()` wipes the key. The node API client is the same Rust code: it builds each request and decodes each answer, and the package sends them with `fetch` or the transport you pass to `connect`.
+
+<!-- sample: verified 0.1.0 -->
+```ts
+import { connect, profiles, Amount, balanceOf } from "@iceroot-network/sdk";
+
+const net = await connect(profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] }));
+const info = await net.accounts.get(address);   // typed records; amounts are bigint base units
+Amount.format(balanceOf(info), net.token.decimals);
+
+const draft = await net.build.transfer({ from: account, to: [{ address: recipient, amount: 150_000_000n }], fee: 1_000_000n });
+const signed = draft.sign(account);
+const outcome = await net.submit(signed);        // { id, status: "accepted", broadcast } or { id, status: "rejected", reason, nodeCode, message }
+if (outcome.status === "accepted") await net.transactions.wait(signed.id);   // polls until the transaction is in a block
+```
+
+Offline, from a configuration you already hold:
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -104,7 +120,7 @@ Consumers of the package need none of this. Builders need:
 - Rust 1.98 with the `wasm32-unknown-unknown` target;
 - the `wasm-bindgen` CLI at the exact version of the `wasm-bindgen` crate in `wasm/Cargo.lock` (`cargo install wasm-bindgen-cli --version 0.2.129 --locked`);
 - clang and llvm-ar with the wasm32 target, for libsecp256k1 (found as `clang` or `clang-N`, or set `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown`);
-- a checkout of [sdk-rust](https://github.com/iceroot-network/sdk-rust) next to this repository (`../sdk-rust`), which `wasm/Cargo.toml` uses by path until sdk-rust has a tagged release;
+- a checkout of [sdk-rust](https://github.com/iceroot-network/sdk-rust) next to this repository (`../sdk-rust`), which `wasm/Cargo.toml` uses by path until sdk-rust has a tagged release, and whose recorded devnet answers the Node tests of the node API client read;
 - read access to `heartwood-core`, which sdk-rust fetches over SSH through the host alias `github-iceroot` (see sdk-rust's README; `.cargo/config.toml` makes cargo use the git command line and its SSH configuration);
 - Node 22 and `npm install`, which brings esbuild, TypeScript and `wasm-opt` (binaryen).
 
@@ -130,14 +146,14 @@ npm run test:rust      # the bindings' unit tests in native Rust
 npm run check:vectors  # the vector file equals what native Rust produces now
 npm run check:types    # sources and an app's use of the declarations, TypeScript 7.0 and 5.7
 npm run check:size     # the module at most 300 KB gzipped
-npm run test:node      # Node: the Node, browser and classic-script builds; drafts across instances; @noble cross-check
+npm run test:node      # Node: the Node, browser and classic-script builds; drafts across instances; @noble cross-check; the node API client
 npm run test:browser   # Chromium: a page, a Vite and React app, a Manifest V3 extension
 npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a container
 ```
 
 | Environment | What runs |
 |---|---|
-| Node 22 | The Node build; the browser build with `init(bytes)`; the classic-script build and embedded bytes in an isolated scope with `initSync`; a transfer and a vote built and signed byte for byte as native Rust; a draft built in one module instance and signed in another; the wrapper's errors, phrases, amounts, capabilities and sign-in; the missing-randomness path; an independent check of the vectors with `@noble/curves` |
+| Node 22 | The Node build; the browser build with `init(bytes)`; the classic-script build and embedded bytes in an isolated scope with `initSync`; a transfer and a vote built and signed byte for byte as native Rust; a draft built in one module instance and signed in another; the wrapper's errors, phrases, amounts, capabilities and sign-in; the missing-randomness path; an independent check of the vectors with `@noble/curves`; the node API client against the devnet answers recorded in sdk-rust's `iceroot-sdk-api` fixtures (connect and the chain's identity, every read, relays, timeouts, the request budget and HTTP 429, submission within the pool's limits, waiting for inclusion, builders that read their facts from the node) |
 | Chromium | The browser build fetched by URL under `script-src 'self' 'wasm-unsafe-eval'`, and refused without `'wasm-unsafe-eval'` |
 | Vite and React in Chromium | The package installed from its tarball; the production build under the page policy, and the development server |
 | Manifest V3 extension | Playwright's persistent context: the wallet page (fetch), the sandbox page (`connect-src 'none'` kept, embedded bytes) and the service worker (embedded bytes); the same extension without `'wasm-unsafe-eval'` fails in all three |

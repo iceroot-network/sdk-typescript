@@ -41,7 +41,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 | `wallets[].vote` (`validatorId`, `basisPoints`) | `net.accounts.get(address).vote` (`validator`, `basisPoints`) | `validator` is the validator's name |
 | `assets[]` | `net.token` | One asset on today's devnet; `id: "root"` becomes `net.token.assetId` |
 | `transactions[]` | `net.history.forAccount(address)` | `TxRecord`; one transfer has one id however many recipients it pays |
-| `validators[]`: `name`, `rank`, `status`, `votingBalance`, `validatedBlocks`, `address` | `net.validators.list()`: `name`, `rank`, `status`, `voteWeight`, `production.forged`, `address` | `uptime` comes from `production` (lifetime counters today). `tagline` and `color` are not chain data: take the tagline from the validators portal later, or omit it |
+| `validators[]`: `name`, `rank`, `status`, `votingBalance`, `validatedBlocks`, `address` | `(await net.validators.list()).items`: `name`, `rank`, `status`, `voteWeight`, `production.produced`, `address` | `uptime` comes from `production` (lifetime counters today). `tagline` and `color` are not chain data: take the tagline from the validators portal later, or omit it |
 | `contacts[]` | The profile's own storage | Check each address with `Address.check` against the connected network |
 | `snapshotAt` | The latest block's time, `net.blocks.latest()` | Never the device clock |
 | `historyStartsAt` | None | History is paged from the node |
@@ -63,7 +63,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 
 Replace the profile's `network: "mainnet" | "testnet"` preference with the network the SDK connects to. In 0.1.0 that is a devnet, with the relay URL and the pinned identity stored in the profile:
 
-<!-- sample: pending; needs: init, connect, profiles.devnet, transport-option, tauri-http-transport, net.profile, IceRootError -->
+<!-- sample: pending; needs: tauri-http-transport -->
 ```ts
 // src/network.ts
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
@@ -78,7 +78,7 @@ export async function openNetwork(setting: NetworkSetting): Promise<{ net: Netwo
     profiles.devnet({ relays: [setting.relay], nethash: setting.nethash }),
     { transport: isTauri() ? tauriFetch : globalThis.fetch },
   );
-  return { net, nethash: net.profile.chain.nethash };   // save nethash in the profile on first contact
+  return { net, nethash: net.chain.nethash };   // save nethash in the profile on first contact
 }
 
 export function isNetworkChanged(error: unknown): boolean {
@@ -97,7 +97,7 @@ export function isNetworkChanged(error: unknown): boolean {
 - **Import.** Replace "Import is coming soon." with phrase entry: `Mnemonic.check(text)` for feedback (18, 21 or 24 words; fewer give `PhraseTooShort`).
 - **Where the key lives.** Release 0.1.0 has no keystore format, and `storage.ts` writes unencrypted JSON. Never put a phrase or key into it. Hold the key handle in memory for the session: when the holder signs, ask for the phrase if no handle is open, and `release()` handles on lock, on window close and after a period of inactivity. Do not design a desktop key vault now; the keystore arrives with the native plugin, and the wallet adopts it then.
 
-<!-- sample: pending; needs: Mnemonic.generate, Mnemonic.check, net.keys.fromPhrase, net.keys.watch, Address.check, Address.parse, account.release, Account -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // src/keys.ts: session-only key handles, one per wallet id
 import { Address, Mnemonic, type Account, type Network } from "@iceroot-network/sdk";
@@ -140,7 +140,7 @@ export function watchAddress(net: Network, text: string): string {
 
 `SendFlow.tsx` already has Details, Review and Result steps. Map them to build, review and sign:
 
-<!-- sample: pending; needs: Address.parse, Amount.parse, net.build.transfer, fee-floor, draft.summary, draft.sign, net.submit, net.transactions.wait, Draft, Account -->
+<!-- sample: pending; needs: fee-floor -->
 ```ts
 // src/transfer.ts
 import { Address, Amount, type Account, type Draft, type Network } from "@iceroot-network/sdk";
@@ -165,6 +165,7 @@ export async function sendTransfer(net: Network, draft: Draft, account: Account)
   const result = await net.submit(signed);
   if (result.status !== "accepted") return { state: "rejected" as const, reason: result.reason, id: signed.id };
   const status = await net.transactions.wait(signed.id, { until: "confirmed" });
+  if (status.state === "dropped") return { state: "dropped" as const, id: signed.id };
   return { state: status.state, id: signed.id, confirmations: status.confirmations };
 }
 ```
@@ -172,14 +173,14 @@ export async function sendTransfer(net: Network, draft: Draft, account: Account)
 - The Review step renders `draft.summary` and `draft.fee`. The demo's "one receipt per recipient" goes away: a transfer to 12 recipients is one transaction with one id and one fee.
 - The form's limits come from `net.rules.transfer.maxRecipients` and `net.rules.memo.maxBytes`; keep counting memo bytes with `TextEncoder`, as `memoBytes` does.
 - The amount field accepts at most `net.token.decimals` fraction digits; `Amount.parse` refuses more.
-- A `StaleDraft` error at submission means the network moved on: build again and show the new review.
+- A refusal with reason `nonce` means the account sent another transaction since the draft was built: build again and show the new review.
 - The Result step says "Confirmed in block N", never "final".
 
 ### Votes
 
 The governance page's editor splits a vote evenly across the chosen validators. Wire it to `net.build.vote`:
 
-<!-- sample: pending; needs: net.build.vote, fee-floor, net.rules.vote, draft.summary, VoteEntry -->
+<!-- sample: pending; needs: fee-floor -->
 ```ts
 // src/votes.ts
 import type { Network, VoteEntry } from "@iceroot-network/sdk";
@@ -197,8 +198,8 @@ export function voteProblem(net: Network, entries: VoteEntry[]): string | null {
   if (entries.length === 0) return null;   // an empty vote withdraws
   if (entries.length < rules.minEntries) return `Choose at least ${rules.minEntries} validators.`;
   if (entries.length > rules.maxEntries) return `A vote names at most ${rules.maxEntries} validators.`;
-  if (rules.maxShareBasisPoints !== null && entries.some((entry) => entry.basisPoints > rules.maxShareBasisPoints!)) {
-    return `No validator can receive more than ${rules.maxShareBasisPoints / 100}% of your vote.`;
+  if (entries.some((entry) => entry.basisPoints > rules.maxBasisPointsPerEntry)) {
+    return `No validator can receive more than ${rules.maxBasisPointsPerEntry / 100}% of your vote.`;
   }
   return null;
 }

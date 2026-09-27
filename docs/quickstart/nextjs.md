@@ -32,7 +32,7 @@ If the app sends a Content Security Policy header, add `'wasm-unsafe-eval'` to `
 
 Route handlers that use the SDK run on the Node.js runtime, never the Edge runtime. Share one connection per server process:
 
-<!-- sample: pending; needs: connect, profiles.devnet, Network -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // lib/iceroot.server.ts
 import "server-only";
@@ -56,7 +56,7 @@ export function toJson(value: unknown): string {
 
 ## 3. A server route: validators
 
-<!-- sample: pending; needs: net.validators.list, ValidatorInfo, IceRootError -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 // app/api/validators/route.ts
 import { IceRootError } from "@iceroot-network/sdk";

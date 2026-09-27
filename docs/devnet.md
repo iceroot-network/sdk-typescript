@@ -20,7 +20,7 @@ The values in the middle column are for orientation only. Apps read them from th
 
 ## Profile
 
-<!-- sample: pending; needs: profiles.devnet, connect, net.profile -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { connect, profiles } from "@iceroot-network/sdk";
 
@@ -28,7 +28,7 @@ const net = await connect(profiles.devnet({
   relays: [process.env.ICEROOT_RELAY ?? "http://127.0.0.1:6003/api"],
   nethash: loadPinnedNethash(),   // undefined on first contact
 }));
-savePinnedNethash(net.profile.chain.nethash);
+savePinnedNethash(net.chain.nethash);   // the same value as net.profile.chain.nethash, always set once connected
 ```
 
 - The relay URL is the node's API origin plus the base path `/api`. The port depends on how the devnet was started; `6003` is used throughout these pages.
@@ -48,13 +48,13 @@ A local devnet runs on the machine that starts it and is the default for develop
 
 - **Funded accounts.** A new devnet has a few genesis accounts holding the supply, and its generated wallet file lists their passphrases. These are legacy passphrase keys: import one with `net.keys.fromLegacyPassphrase(passphrase)` and fund new accounts from it. Never use a devnet passphrase for anything of value; anyone who knows the devnet's seed can derive it.
 - **Keep chains short.** Stop a test devnet after a few rounds (a round is 53 blocks, about 7 minutes). Long chains make tests slow and gain nothing.
-- **Rate limit.** The API allows about 100 requests per minute per client address. A local devnet shares that budget between the app, the tests and any scripts on the same machine.
+- **Rate limit.** The API allows about 100 requests per minute per client address. A local devnet shares that budget between the app, the tests and any scripts on the same machine. `connect` keeps each network to that budget by default; pass `rateLimit` when a node allows more.
 
 ## The hosted devnet endpoint
 
 Integrators who cannot run a local devnet, and phones, use a hosted devnet endpoint over HTTPS. Android and iOS refuse plain HTTP to a remote host, so a phone or emulator always needs this endpoint. It needs an access token, sent as a request header; the URL, the header name and the token are handed out with access to the endpoint.
 
-<!-- sample: pending; needs: profiles.devnet, connect-headers -->
+<!-- sample: verified 0.1.0 -->
 ```ts
 import { connect, profiles } from "@iceroot-network/sdk";
 

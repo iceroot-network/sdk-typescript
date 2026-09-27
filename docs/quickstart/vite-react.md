@@ -41,7 +41,7 @@ If the page sets a Content Security Policy, `script-src` needs `'wasm-unsafe-eva
 
 Load the module before the first render, and share one connected network through a context:
 
-<!-- sample: pending; needs: init, connect, profiles.devnet, net.profile -->
+<!-- sample: verified 0.1.0 -->
 ```tsx
 // src/network.tsx
 import { createContext, useContext } from "react";
@@ -55,7 +55,7 @@ export async function openNetwork(): Promise<Network> {
     relays: [import.meta.env.VITE_ICEROOT_RELAY ?? "http://127.0.0.1:6003/api"],
     nethash: localStorage.getItem(NETHASH_KEY) ?? undefined,
   }));
-  localStorage.setItem(NETHASH_KEY, net.profile.chain.nethash);
+  localStorage.setItem(NETHASH_KEY, net.chain.nethash);
   return net;
 }
 
@@ -67,7 +67,7 @@ export function useNetwork(): Network {
 }
 ```
 
-<!-- sample: pending; needs: init, connect, IceRootError -->
+<!-- sample: verified 0.1.0 -->
 ```tsx
 // src/main.tsx
 import { StrictMode } from "react";
@@ -97,7 +97,7 @@ openNetwork().then(
 
 For this quickstart the phrase is held in memory for the session only. A real wallet stores keys encrypted (see [rules](../rules.md#security-notes)).
 
-<!-- sample: pending; needs: Mnemonic.check, net.keys.fromPhrase, account.release, Account -->
+<!-- sample: verified 0.1.0 -->
 ```tsx
 // src/Restore.tsx
 import { useState } from "react";
@@ -128,11 +128,11 @@ export function Restore({ onAccount }: { onAccount: (account: Account) => void }
 
 ## 5. Balance and history
 
-<!-- sample: pending; needs: net.accounts.get, net.history.forAccount, Amount.format, TxRecord -->
+<!-- sample: verified 0.1.0 -->
 ```tsx
 // src/Overview.tsx
 import { useEffect, useState } from "react";
-import { Amount, type TxRecord } from "@iceroot-network/sdk";
+import { Amount, balanceOf, type TxRecord } from "@iceroot-network/sdk";
 import { useNetwork } from "./network";
 
 export function Overview({ address }: { address: string }) {
@@ -143,7 +143,7 @@ export function Overview({ address }: { address: string }) {
   useEffect(() => {
     let live = true;
     Promise.all([net.accounts.get(address), net.history.forAccount(address, { page: 1, limit: 20 })])
-      .then(([info, page]) => { if (live) { setBalance(info.balances.get(net.token.assetId) ?? 0n); setHistory(page.items); setFailed(false); } })
+      .then(([info, page]) => { if (live) { setBalance(balanceOf(info)); setHistory([...page.items]); setFailed(false); } })
       .catch(() => { if (live) setFailed(true); });
     return () => { live = false; };
   }, [net, address]);
@@ -155,7 +155,7 @@ export function Overview({ address }: { address: string }) {
       <h2>{Amount.format(balance, decimals, { grouping: true })} {symbol}</h2>
       <ul>
         {history.map((tx) => (
-          <li key={tx.id}>{tx.kind} {tx.direction} {tx.status === "pending" ? "pending" : `block ${tx.height}`} fee {Amount.format(tx.fee, decimals)} {symbol}</li>
+          <li key={tx.id}>{tx.details.kind} {tx.direction} {tx.block ? `block ${tx.block.height}` : "pending"} fee {Amount.format(tx.fee, decimals)} {symbol}</li>
         ))}
       </ul>
     </section>
@@ -167,7 +167,7 @@ export function Overview({ address }: { address: string }) {
 
 The form builds a draft; the review screen shows the draft; only the confirm button signs.
 
-<!-- sample: pending; needs: Address.check, Amount.parse, net.build.transfer, fee-floor, draft.summary, draft.sign, net.submit, net.transactions.wait, IceRootError, Draft, Account -->
+<!-- sample: pending; needs: fee-floor -->
 ```tsx
 // src/Send.tsx
 import { useState } from "react";
@@ -189,7 +189,7 @@ export function Send({ account }: { account: Account }) {
     if (!address.ok) return setMessage(`Check the address (${address.reason}).`);
     try {
       setDraft(await net.build.transfer({
-        from: account.address,
+        from: account,
         to: [{ address: Address.parse(to, net), amount: Amount.parse(amount, decimals) }],
         memo,
       }));
@@ -203,12 +203,16 @@ export function Send({ account }: { account: Account }) {
     try {
       const signed = draft.sign(account);
       const result = await net.submit(signed);
-      if (result.status !== "accepted") return setMessage(`The network refused the transfer (${result.reason}).`);
+      if (result.status !== "accepted") {
+        return setMessage(result.reason === "nonce" ? "The account sent another transaction meanwhile. Review the transfer again." : `The network refused the transfer (${result.reason}).`);
+      }
       setMessage("Submitted. Waiting for a block.");
-      const status = await net.transactions.wait(signed.id, { until: "confirmed" });
-      setMessage(`Confirmed in a block (${status.confirmations} confirmation). Not final: this devnet has no finality.`);
+      const outcome = await net.transactions.wait(signed.id, { until: "confirmed" });
+      setMessage(outcome.state === "dropped"
+        ? "The network dropped the transfer. Review it again."
+        : `Confirmed in a block (${outcome.confirmations} confirmation). Not final: this devnet has no finality.`);
     } catch (error) {
-      setMessage(error instanceof IceRootError && error.code === "StaleDraft" ? "The network changed. Review the transfer again." : "The transfer failed.");
+      setMessage(error instanceof IceRootError && error.code === "Timeout" ? "No block has included the transfer yet. Check the history later." : "The transfer failed.");
     } finally {
       setDraft(null);
     }

@@ -209,7 +209,7 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
 
 The wallet page (`wallet.js`) talks to the network. Add a devnet mode next to the demo:
 
-<!-- sample: pending; needs: init, iife-build, connect, profiles.devnet, connect-headers, net.profile, net.accounts.get, net.history.forAccount, net.validators.list, Amount.format -->
+<!-- sample: pending; needs: iife-build -->
 ```js
 // wallet.js: devnet mode (inside the page's existing module pattern)
 const Sdk = globalThis.IceRootSdk;
@@ -218,9 +218,9 @@ let net = null;
 async function openDevnet(settings) {
   await Sdk.init(new URL("vendor/iceroot-sdk/iceroot-sdk_bg.wasm", location.href));
   net = await Sdk.connect(Sdk.profiles.devnet({ relays: [settings.relay], nethash: settings.nethash }), {
-    headers: settings.token ? { authorization: "Bearer " + settings.token } : undefined,
+    headers: settings.token ? { authorization: "Bearer " + settings.token } : {},
   });
-  return net.profile.chain.nethash;   // store with the settings on first contact
+  return net.chain.nethash;   // store with the settings on first contact
 }
 
 async function loadAccount(address) {
@@ -231,11 +231,11 @@ async function loadAccount(address) {
   ]);
   const { decimals, symbol } = net.token;
   return {
-    balance: info.balances.get(net.token.assetId) ?? 0n,
-    balanceText: Sdk.Amount.format(info.balances.get(net.token.assetId) ?? 0n, decimals) + " " + symbol,
+    balance: Sdk.balanceOf(info),
+    balanceText: Sdk.Amount.format(Sdk.balanceOf(info), decimals) + " " + symbol,
     vote: info.vote,
     history: history.items,
-    validators,
+    validators: validators.items,
   };
 }
 ```
@@ -248,12 +248,12 @@ async function loadAccount(address) {
 
 The wallet page builds the draft; the identity page reviews and signs it through the sandbox; the wallet page submits it:
 
-1. `wallet.js` builds `net.build.transfer({ from, to: [...1 to 256 recipients], memo })` or `net.build.vote({ from, entries })`, and serializes it with `draft.serialize()`.
+1. `wallet.js` builds `net.build.transfer({ from, to: [...1 to 256 recipients], memo })` or `net.build.vote({ from, entries })`, and serializes it with `draft.serialize()`. `from` is the identity's public key from its metadata: the builder reads the nonce from the node. The address alone works only once the identity has sent a transaction, because the node learns the public key from it.
 2. It hands the bytes to the identity page as a transaction request. In the extension this goes through the service worker's pending-request store, like website requests, but only from the extension's own wallet page: refuse a transaction request from any other sender, and never accept one from a website. In the web build the wallet page opens the identity page with the request.
 3. The identity page unlocks the vault if needed, calls the sandbox's `reviewDraft`, and shows the recomputed summary and fee. On approval it calls `signDraft` with the phrase and scheme, and returns the signed bytes.
 4. `wallet.js` restores them with `SignedTransaction.deserialize(bytes, net.profile)`, calls `net.submit`, and follows `net.transactions.wait(id, { until: "confirmed" })`.
 
-<!-- sample: pending; needs: net.build.transfer, net.build.vote, fee-floor, draft.serialize, SignedTransaction.deserialize, net.submit, net.transactions.wait, Address.parse, Amount.parse -->
+<!-- sample: pending; needs: fee-floor -->
 ```js
 // wallet.js: build and submit; `approveInIdentityPage` is the request round trip of step 2
 async function sendTransfer(from, recipients, memo) {
@@ -274,7 +274,7 @@ async function sendTransfer(from, recipients, memo) {
 
 The basket holds percentages with two decimals. The vote carries whole basis points. Convert the text exactly, without floating point, and let `net.rules.vote` decide the limits:
 
-<!-- sample: pending; needs: net.rules.vote, net.build.vote -->
+<!-- sample: verified 0.1.0 -->
 ```js
 // "4.76" -> 476; refuses more than two decimals
 function basisPoints(percentText) {
@@ -293,7 +293,7 @@ function voteEntries(basket) {
 }
 ```
 
-The basket's `shareMax()` comes from `net.rules.vote.maxShareBasisPoints` (none on today's devnet; 500 from the IceRoot genesis).
+The basket's `shareMax()` comes from `net.rules.vote.maxBasisPointsPerEntry` (10,000 on today's devnet, so no cap; 500 from the IceRoot genesis).
 
 ### 8. Remove what the SDK replaces
 
