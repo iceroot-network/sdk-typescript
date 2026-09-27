@@ -1,0 +1,3 @@
+# heartwood-crypto is fetched over SSH; the git command line uses the local SSH configuration.
+[net]
+git-fetch-with-cli = true
