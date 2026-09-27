@@ -21,7 +21,15 @@ await init();
 const net = await connect(profiles.devnet({ relays: ["http://127.0.0.1:6003/api"] }));
 ```
 
-See [installation](docs/installation.md) for checksums, entry points and the Rust crates.
+Each release attaches these assets:
+
+| Asset | What it is |
+|---|---|
+| `iceroot-network-sdk-<version>.tgz` | The npm package, with the WebAssembly module built |
+| `iceroot_sdk_bg.wasm`, `iceroot-sdk-bytes.js` | The module on its own, and as an embedded byte array, for hosts that serve them separately |
+| `SHA256SUMS` | SHA-256 of each asset |
+
+The release notes state the sdk-rust release and the `heartwood-crypto` revision the module is built from, the profiles it supports, the module's size and the changes. See [installation](docs/installation.md) for checking the sums, the entry points and the Rust crates.
 
 ## Documentation
 
@@ -151,6 +159,13 @@ npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a 
 `.github/workflows/ci.yml` runs on pull requests to `dev` and `prod` and on pushes to `prod`. It checks out sdk-rust next to this repository at the branch the change targets, then runs every check and test above; the Tauri check runs as a job of its own. The packed tarball of each run is kept as a workflow artifact for a week.
 
 The bindings build on sdk-rust, which reads `heartwood-core` over SSH. The workflows use a read-only deploy key of `heartwood-core`, stored in this repository as the secret `HEARTWOOD_DEPLOY_KEY`; `scripts/ci/heartwood-access.sh` installs it. Pull requests from forks get no secrets, so their runs stop at that step.
+
+### Releasing
+
+1. Release sdk-rust first, with the same version tag: the package is built from it.
+2. Set `version` in `package.json` on `dev` and merge `dev` into `prod` through a pull request.
+3. Tag the merge commit on `prod` with `v` and the version, and push the tag: `git tag -a v0.1.0 -m "IceRoot SDK for TypeScript 0.1.0"`, then `git push origin v0.1.0`.
+4. `.github/workflows/release.yml` checks out sdk-rust at the same tag, runs the checks and tests, packs the package with `npm pack` and publishes the GitHub release with its assets through `scripts/release.mjs`. The script refuses a tag that differs from the version or is not on `prod`, and checks every asset against `SHA256SUMS`. `npm run pack && node scripts/release.mjs --tag v0.1.0 --no-build --dry-run` shows the notes and the assets without publishing.
 
 ## License
 

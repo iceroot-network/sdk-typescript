@@ -45,6 +45,7 @@
     "check:rust": "node scripts/check-rust.mjs",
     "check:notice": "node scripts/notice.mjs --check",
     "notice": "node scripts/notice.mjs",
+    "release": "node scripts/release.mjs",
     "test": "npm run test:rust && npm run test:node && npm run test:browser",
     "test:rust": "cargo test --manifest-path wasm/Cargo.toml --all-features",
     "test:node": "node --test \"test/node/*.test.mjs\"",
