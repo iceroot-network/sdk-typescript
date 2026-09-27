@@ -52,6 +52,7 @@ import {
   UnsupportedVersion,
   WrongPasswordOrCorrupt,
 } from "../keystore-errors.js";
+import { InvalidProof } from "../ownership-errors.js";
 import {
   BreaksRules,
   DoesNotFit,
@@ -122,6 +123,8 @@ const PLAIN: Readonly<Record<string, Plain>> = {
   InvalidPayload,
   InvalidPassword,
   OutOfMemory,
+  // Ownership proofs.
+  InvalidProof,
 };
 
 /** The SDK error of a code, message and details, as the Rust core reports them. */

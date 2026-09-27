@@ -10,6 +10,8 @@ export type Bindings = Omit<typeof Glue, "default" | "initSync">;
 
 /** A secret key held in WebAssembly memory, with its profile. */
 export type KeyHandle = Glue.KeyHandle;
+/** A Solar key held in WebAssembly memory, for ownership proofs. */
+export type SolarKeyHandle = Glue.SolarKeyHandle;
 /** A network profile of the Rust core. */
 export type ProfileHandle = Glue.ProfileHandle;
 /** A loaded chain of the Rust core. */

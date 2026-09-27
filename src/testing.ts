@@ -5,17 +5,21 @@
 // salts, nonces and lowered parameter floor, so that every keystore vector runs in WebAssembly.
 // The published module has no way to choose the auxiliary randomness of a signature, nor a
 // keystore's salt or nonce. The entry also carries the vote library and the keystore as the
-// namespaces `vote` and `keystore`, as the published classic-script build does.
+// namespaces `vote` and `keystore`, and the ownership proofs as `ownership`, as the published
+// classic-script build does. Ownership proofs have a seam for reproducible signatures too.
 
 import { handleOf as draftHandleOf, SignedTransaction, type Draft } from "./build.js";
-import { InvalidArgument } from "./errors.js";
+import { InvalidArgument, KeyReleased } from "./errors.js";
 import { keyHandleOf, type Account } from "./keys.js";
 import { call, parse, type DraftHandle, type KeyHandle, type SignedHandle } from "./internal/bindings.js";
 import { messageBytes, toHex } from "./internal/hex.js";
+import { solarKeyHandles, type SolarKeyHandle } from "./internal/solar-keys.js";
+import type { OwnershipProof, SolarKey } from "./ownership.js";
 
 export * from "./index.js";
 export * as vote from "./vote.js";
 export * as keystore from "./keystore.js";
+export * as ownership from "./ownership.js";
 
 /** The test seams of the vote library and the keystore in the test module. */
 interface TestSeams {
@@ -48,6 +52,10 @@ function testSeams(): TestSeams {
 
 type TestKeyHandle = KeyHandle & {
   signMessageWithAux?(message: Uint8Array, aux: Uint8Array): string;
+};
+
+type TestSolarKeyHandle = SolarKeyHandle & {
+  signProofWithAux?(message: string, nowMs: number, aux: Uint8Array): string;
 };
 
 type TestDraftHandle = DraftHandle & {
@@ -88,6 +96,19 @@ export const testing = {
       return (handle.signWithSecondAux ?? seam).call(handle, key, keyHandleOf(secondKey), aux);
     });
     return SignedTransaction.fromHandle(signed);
+  },
+
+  /** An ownership proof of `message` signed with `key` and these 32 auxiliary bytes instead of random ones, at `nowMs`. */
+  signProofWithAux(key: SolarKey, message: string, nowMs: number, aux: Uint8Array): OwnershipProof {
+    const handle = solarKeyHandles.get(key) as TestSolarKeyHandle | undefined;
+    if (handle === undefined) {
+      throw new KeyReleased();
+    }
+    const sign = handle.signProofWithAux ?? seam;
+    const { address, publicKey, message: signed, signature } = parse<OwnershipProof>(
+      call(() => sign.call(handle, message, nowMs, aux)),
+    );
+    return { address, publicKey, message: signed, signature };
   },
 
   /** Whether the loaded module has the keystore vectors' seam. */

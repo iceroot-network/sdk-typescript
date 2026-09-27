@@ -70,7 +70,7 @@ const IIFE_NAME = "iceroot-sdk";
 const IIFE_GLOBAL = "IceRootSdk";
 const BYTES_GLOBAL = "IceRootSdkWasmBytes";
 // Exports of the test seams, which the test module must have and the release module must not.
-const TEST_SEAMS = ["signMessageWithAux", "keystoreEncryptWithSaltAndNonce"];
+const TEST_SEAMS = ["signMessageWithAux", "keystoreEncryptWithSaltAndNonce", "signProofWithAux"];
 
 // The features rustc enables by default for wasm32-unknown-unknown. wasm-bindgen drops the
 // target_features section, so wasm-opt is told the same set explicitly and never adds others.
@@ -243,11 +243,12 @@ function entryPoints() {
     index: join(root, "src", variant === "release" ? "index.ts" : "testing.ts"),
     vote: join(root, "src", "vote.ts"),
     keystore: join(root, "src", "keystore.ts"),
+    ownership: join(root, "src", "ownership.ts"),
   };
 }
 
-// The classic-script build has one entry: the root with the vote library and the keystore as
-// namespaces (the test entry carries them too).
+// The classic-script build has one entry: the root with the vote library, the keystore and the
+// ownership proofs as namespaces (the test entry carries them too).
 function classicScriptEntry() {
   return join(root, "src", variant === "release" ? "iife.ts" : "testing.ts");
 }
@@ -393,6 +394,7 @@ function emitDeclarations() {
   visit("index.d.ts");
   visit("vote.d.ts");
   visit("keystore.d.ts");
+  visit("ownership.d.ts");
   for (const file of reachable) {
     mkdirSync(dirname(join(outDir, "web", file)), { recursive: true });
     cpSync(join(types, file), join(outDir, "web", file));

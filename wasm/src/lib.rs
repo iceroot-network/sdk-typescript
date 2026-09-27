@@ -39,6 +39,7 @@ mod json;
 mod keys;
 mod keystore;
 mod messages;
+mod ownership;
 mod phrase;
 mod profile;
 mod signin;
@@ -59,6 +60,7 @@ pub use crate::keystore::{
     keystore_decrypt, keystore_encrypt, keystore_inspect, keystore_is_weaker, keystore_reencrypt,
 };
 pub use crate::messages::{sha256, verify_message};
+pub use crate::ownership::{SolarKeyHandle, ownership_call};
 pub use crate::phrase::{check_phrase, generate_phrase};
 pub use crate::profile::ProfileHandle;
 pub use crate::signin::{build_sign_in, parse_sign_in};

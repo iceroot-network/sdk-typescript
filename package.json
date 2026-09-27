@@ -27,6 +27,11 @@
       "node": "./dist/node/keystore.js",
       "default": "./dist/web/keystore.js"
     },
+    "./ownership": {
+      "types": "./dist/web/ownership.d.ts",
+      "node": "./dist/node/ownership.js",
+      "default": "./dist/web/ownership.js"
+    },
     "./iife": "./dist/iife/iceroot-sdk.js",
     "./iife/bytes": "./dist/iife/iceroot-sdk-bytes.js",
     "./wasm": "./dist/web/iceroot_sdk_bg.wasm",

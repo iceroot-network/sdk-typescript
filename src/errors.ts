@@ -8,8 +8,9 @@
  * TypeScript wrapper raises (`InvalidArgument`, `WasmLoadFailed`). A code two crates give has the
  * same meaning and details in both.
  *
- * The classes of the vote library's codes are exported by `@iceroot-network/sdk/vote`, and those
- * of the keystore's codes by `@iceroot-network/sdk/keystore`, with the functions that raise them.
+ * The classes of the vote library's codes are exported by `@iceroot-network/sdk/vote`, those of
+ * the keystore's codes by `@iceroot-network/sdk/keystore`, and `InvalidProof` by
+ * `@iceroot-network/sdk/ownership`, with the functions that raise them.
  *
  * @module
  */
@@ -35,6 +36,7 @@ export type ErrorCode =
   | "InvalidDraft"
   | "InvalidTransaction"
   | "InvalidSignIn"
+  | "InvalidProof"
   | "InvalidRequest"
   | "InvalidProfile"
   | "InvalidArgument"

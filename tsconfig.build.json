@@ -9,5 +9,5 @@
     "outDir": "build/types"
   },
   "include": [],
-  "files": ["src/index.ts", "src/vote.ts", "src/keystore.ts"]
+  "files": ["src/index.ts", "src/vote.ts", "src/keystore.ts", "src/ownership.ts"]
 }
