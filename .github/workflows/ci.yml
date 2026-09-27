@@ -1,0 +1,173 @@
+name: SDK checks
+
+on:
+  pull_request:
+    branches: [dev, prod]
+  push:
+    branches: [prod]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: sdk-typescript-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # libsecp256k1 is C: the WebAssembly build compiles it with clang.
+  CC_wasm32_unknown_unknown: clang-18
+  AR_wasm32_unknown_unknown: llvm-ar-18
+
+jobs:
+  production-merge:
+    if: github.event_name == 'push' && github.event.created == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Require the merged dev to prod pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            count=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls?per_page=100" --jq '[.[] | select(.merged_at != null and .merge_commit_sha == env.GITHUB_SHA and .base.ref == "prod" and .head.ref == "dev" and .base.repo.full_name == env.GITHUB_REPOSITORY and .head.repo.full_name == env.GITHUB_REPOSITORY)] | length')
+            if [ "$count" -gt 0 ]; then exit 0; fi
+            sleep 2
+          done
+          echo "::error::Production CI requires this exact commit to be a merged dev to prod PR in this repository."
+          exit 1
+
+  checks:
+    needs: production-merge
+    # Pull requests run without the production gate; pushes to prod only after it.
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.production-merge.result == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: sdk-typescript
+    steps:
+      # The bindings build on sdk-rust next to this repository (wasm/Cargo.toml), from the branch
+      # this change targets.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: sdk-typescript
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: iceroot-network/sdk-rust
+          ref: ${{ github.base_ref || github.ref_name }}
+          path: sdk-rust
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: '1.98.0'
+          components: rustfmt,clippy
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.21.1'
+          cache: npm
+          cache-dependency-path: sdk-typescript/package-lock.json
+      - name: Install clang and llvm-ar for the WebAssembly build
+        run: |
+          command -v clang-18 >/dev/null && command -v llvm-ar-18 >/dev/null ||
+            (sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-18 llvm-18)
+      - name: Read access to heartwood-core
+        env:
+          HEARTWOOD_DEPLOY_KEY: ${{ secrets.HEARTWOOD_DEPLOY_KEY }}
+        run: scripts/ci/heartwood-access.sh
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: sdk-typescript/wasm -> target
+      - name: Install the wasm-bindgen CLI at the version of wasm/Cargo.lock
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p}' wasm/Cargo.lock)
+          test -n "$version"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+      - run: npm ci --no-audit --no-fund
+      - name: Install Chromium for the browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Rust formatting, lints and documentation of the bindings
+        run: npm run check:rust
+      - name: Bindings unit tests
+        run: npm run test:rust
+      - name: Build the package
+        run: npm run build
+      - name: Build the test variant
+        run: npm run build:test
+      - name: Documentation, types, size budget, vectors and NOTICE
+        run: npm run check
+      - name: Node tests
+        run: npm run test:node
+      - name: Browser tests (Chromium, Vite and React, Manifest V3)
+        run: npm run test:browser
+      - name: Pack the release tarball
+        run: npm run pack
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package
+          path: sdk-typescript/build/pack/
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: browser-traces
+          path: sdk-typescript/test-results/
+          retention-days: 7
+
+  # A Tauri 2 webview (WebKitGTK) under tauri-driver, in a container.
+  tauri:
+    needs: production-merge
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.production-merge.result == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: sdk-typescript
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: sdk-typescript
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: iceroot-network/sdk-rust
+          ref: ${{ github.base_ref || github.ref_name }}
+          path: sdk-rust
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: '1.98.0'
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.21.1'
+          cache: npm
+          cache-dependency-path: sdk-typescript/package-lock.json
+      - name: Install clang and llvm-ar for the WebAssembly build
+        run: |
+          command -v clang-18 >/dev/null && command -v llvm-ar-18 >/dev/null ||
+            (sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-18 llvm-18)
+      - name: Read access to heartwood-core
+        env:
+          HEARTWOOD_DEPLOY_KEY: ${{ secrets.HEARTWOOD_DEPLOY_KEY }}
+        run: scripts/ci/heartwood-access.sh
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: sdk-typescript/wasm -> target
+      - name: Install the wasm-bindgen CLI at the version of wasm/Cargo.lock
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p}' wasm/Cargo.lock)
+          test -n "$version"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+      - run: npm ci --no-audit --no-fund
+      - name: Build the package and the test variant
+        run: npm run build && npm run build:test
+      - name: Tauri webview tests
+        run: npm run test:tauri

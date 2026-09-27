@@ -21,7 +21,15 @@ await init();
 const net = await connect(profiles.devnet({ relays: ["http://127.0.0.1:6003/api"] }));
 ```
 
-See [installation](docs/installation.md) for checksums, entry points and the Rust crates.
+Each release attaches these assets:
+
+| Asset | What it is |
+|---|---|
+| `iceroot-network-sdk-<version>.tgz` | The npm package, with the WebAssembly module built |
+| `iceroot_sdk_bg.wasm`, `iceroot-sdk-bytes.js` | The module on its own, and as an embedded byte array, for hosts that serve them separately |
+| `SHA256SUMS` | SHA-256 of each asset |
+
+The release notes state the sdk-rust release and the `heartwood-crypto` revision the module is built from, the profiles it supports, the module's size and the changes. See [installation](docs/installation.md) for checking the sums, the entry points and the Rust crates.
 
 ## Documentation
 
@@ -108,6 +116,8 @@ Consumers of the package need none of this. Builders need:
 - read access to `heartwood-core`, which sdk-rust fetches over SSH through the host alias `github-iceroot` (see sdk-rust's README; `.cargo/config.toml` makes cargo use the git command line and its SSH configuration);
 - Node 22 and `npm install`, which brings esbuild, TypeScript and `wasm-opt` (binaryen).
 
+`rust-toolchain.toml` pins Rust 1.98.0, as sdk-rust and Heartwood Core. The build passes the compiler its own flags and ignores `RUSTFLAGS`: sha2's compact backend, which keeps the module small, and fixed names for the source directories (the Cargo home, sdk-rust and this repository), so that the module names no directory of the machine that built it. Two builds give the same module when they also use the same checkout paths, because Cargo hashes the absolute path of sdk-rust, a path dependency, into the crates' symbols; the release workflow always builds in the same place.
+
 <!-- sample: plain -->
 ```sh
 npm install
@@ -130,6 +140,7 @@ npm run test:rust      # the bindings' unit tests in native Rust
 npm run check:vectors  # the vector file equals what native Rust produces now
 npm run check:types    # sources and an app's use of the declarations, TypeScript 7.0 and 5.7
 npm run check:size     # the module at most 300 KB gzipped
+npm run check:notice   # NOTICE matches wasm/Cargo.lock and package-lock.json
 npm run test:node      # Node: the Node, browser and classic-script builds; drafts across instances; @noble cross-check
 npm run test:browser   # Chromium: a page, a Vite and React app, a Manifest V3 extension
 npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a container
@@ -143,6 +154,21 @@ npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a 
 | Manifest V3 extension | Playwright's persistent context: the wallet page (fetch), the sandbox page (`connect-src 'none'` kept, embedded bytes) and the service worker (embedded bytes); the same extension without `'wasm-unsafe-eval'` fails in all three |
 | Tauri 2 on Linux | A Tauri application driven by `tauri-driver` and WebKitWebDriver; the same application without `'wasm-unsafe-eval'` fails |
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on pull requests to `dev` and `prod` and on pushes to `prod`. It checks out sdk-rust next to this repository at the branch the change targets, then runs every check and test above; the Tauri check runs as a job of its own. The packed tarball of each run is kept as a workflow artifact for a week.
+
+The bindings build on sdk-rust, which reads `heartwood-core` over SSH. The workflows use a read-only deploy key of `heartwood-core`, stored in this repository as the secret `HEARTWOOD_DEPLOY_KEY`; `scripts/ci/heartwood-access.sh` installs it. Pull requests from forks get no secrets, so their runs stop at that step.
+
+### Releasing
+
+1. Release sdk-rust first, with the same version tag: the package is built from it.
+2. Set `version` in `package.json` on `dev` and merge `dev` into `prod` through a pull request.
+3. Tag the merge commit on `prod` with `v` and the version, and push the tag: `git tag -a v0.1.0 -m "IceRoot SDK for TypeScript 0.1.0"`, then `git push origin v0.1.0`.
+4. `.github/workflows/release.yml` checks out sdk-rust at the same tag, runs the checks and tests, packs the package with `npm pack` and publishes the GitHub release with its assets through `scripts/release.mjs`. The script refuses a tag that differs from the version or is not on `prod`, and checks every asset against `SHA256SUMS`. `npm run pack && node scripts/release.mjs --tag v0.1.0 --no-build --dry-run` shows the notes and the assets without publishing.
+
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE). The WebAssembly module contains compiled code of Heartwood Core; see [NOTICE](NOTICE).
+
+`NOTICE` lists what the package contains from others: Heartwood Core's notice, the Rust crates compiled into the module with their licences, copyright lines and licence texts, and the JavaScript side from `package-lock.json`. It is generated: after changing a dependency here or in sdk-rust, run `npm run notice` and commit the result.
