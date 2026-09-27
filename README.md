@@ -154,21 +154,27 @@ npm run check:docs     # the documentation's sample markers, links and anchors
 npm run check:rust     # rustfmt, clippy (native and wasm32) with warnings as errors
 npm run test:rust      # the bindings' unit tests in native Rust
 npm run check:vectors  # the vector file equals what native Rust produces now
+npm run check:differential  # 10,000 random cases give the same results natively and in WebAssembly
 npm run check:types    # sources and an app's use of the declarations, TypeScript 7.0 and 5.7
 npm run check:size     # the module at most 300 KB gzipped
 npm run check:notice   # NOTICE matches wasm/Cargo.lock and package-lock.json
 npm run test:node      # Node: the Node, browser and classic-script builds; drafts across instances; @noble cross-check; the node API client
 npm run test:browser   # Chromium: a page, a Vite and React app, a Manifest V3 extension
 npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a container
+npm run test:e2e       # Node, Chromium and the Rust SDK against a local devnet (see below)
 ```
 
 | Environment | What runs |
 |---|---|
-| Node 22 | The Node build; the browser build with `init(bytes)`; the classic-script build and embedded bytes in an isolated scope with `initSync`; a transfer and a vote built and signed byte for byte as native Rust; a draft built in one module instance and signed in another; the wrapper's errors, phrases, amounts, capabilities and sign-in; the missing-randomness path; an independent check of the vectors with `@noble/curves`; the node API client against the devnet answers recorded in sdk-rust's `iceroot-sdk-api` fixtures (connect and the chain's identity, every read, relays, timeouts, the request budget and HTTP 429, submission within the pool's limits, waiting for inclusion, builders that read their facts from the node) |
+| Node 22 | The Node build; the browser build with `init(bytes)`; the classic-script build and embedded bytes in an isolated scope with `initSync`; a transfer and a vote built and signed byte for byte as native Rust; a draft built in one module instance and signed in another; the wrapper's errors, phrases, amounts, capabilities and sign-in; the missing-randomness path; an independent check of the vectors with `@noble/curves`; the node API client against the devnet answers recorded in sdk-rust's `iceroot-sdk-api` fixtures (connect and the chain's identity, every read, relays, timeouts, the request budget and HTTP 429, submission within the pool's limits, waiting for inclusion, builders that read their facts from the node); 1,000 legacy passphrase keys, addresses and message signatures checked against `@noble/curves`, and 1,000 hardened derivations of 18, 21 and 24 words against `@scure/bip39` and `@scure/bip32` |
 | Chromium | The browser build fetched by URL under `script-src 'self' 'wasm-unsafe-eval'`, and refused without `'wasm-unsafe-eval'` |
 | Vite and React in Chromium | The package installed from its tarball; the production build under the page policy, and the development server |
 | Manifest V3 extension | Playwright's persistent context: the wallet page (fetch), the sandbox page (`connect-src 'none'` kept, embedded bytes) and the service worker (embedded bytes); the same extension without `'wasm-unsafe-eval'` fails in all three |
 | Tauri 2 on Linux | A Tauri application driven by `tauri-driver` and WebKitWebDriver; the same application without `'wasm-unsafe-eval'` fails |
+| Native and WebAssembly | `check:differential`: 10,000 random phrases, passphrase keys and message signatures, amounts, addresses, transfers and votes through the bindings compiled natively and through the WebAssembly build behind the wrapper; results and errors must be identical |
+| A local devnet | `test:e2e`, in Node and in Chromium at the same time: a new account from a recovery phrase, funded from a genesis wallet; a validator registration and a resignation, and a revoke that the node refuses because the new validator operates no node; transfers with a memo and to 256 recipients; a burn; a second key; votes; a transfer built in one WebAssembly instance and signed in another that cannot reach the network; the fee floor and one base unit below it. Every transaction is read back from the node and compared with what was signed. Then the Rust SDK's own devnet test, which also verifies the messages the TypeScript runs signed |
+
+The devnet test needs a local devnet of the reference implementation. `npm run test:e2e` starts one through sdk-rust's `tools/e2e/devnet.sh` (from the sdk-rust checkout next to this repository, or `SDK_RUST_DIR`), with `ICEROOT_DEVNET_TOOLS` pointing at the devnet tooling, and stops and removes it when the tests end; the chain never runs more than five rounds. Until the package has its node client, the test reaches the node through a small client of its own over `fetch` (`test/e2e/node-api.js`), whose methods have the client's names and result shapes.
 
 ### Continuous integration
 
