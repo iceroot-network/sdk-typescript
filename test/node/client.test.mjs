@@ -518,9 +518,11 @@ test("builders read the sender's nonce, the height and the second key from the n
     const signed = draft.sign(account);
     assert.equal(signed.verified, true);
 
-    // The default fee comes from the node's statistics until this release computes the floor.
+    // The default fee is the exact floor; the node's fee statistics are never read for it.
     const vote = await net.build.vote({ from: account.publicKey, entries: [{ validator: "genesis_5", basisPoints: 10_000 }] });
-    assert.equal(vote.summary.fee.source, net.rules.fees.floorAvailable ? "floor" : "node-statistics");
+    assert.equal(net.rules.fees.floorAvailable, true);
+    assert.equal(vote.summary.fee.source, "floor");
+    assert.equal(vote.fee, vote.summary.fee.floor);
     assert.ok(vote.fee > 0n);
     const burn = await net.build.burn({ from: account, amount: 200_000_000n, fee: { multiplierBasisPoints: 15_000 } });
     assert.equal(burn.kind, "burn");
@@ -532,6 +534,7 @@ test("builders read the sender's nonce, the height and the second key from the n
     assert.equal(registration.kind, "register-validator");
     const resignation = await net.build.resignValidator({ from: account, resignation: "temporary", fee: 2_500_000_000n });
     assert.equal(resignation.summary.operation.resignation, "temporary");
+    assert.ok(!node.requests.some((request) => request.path === "/node/fees"), "no fee is read from the node's statistics");
   } finally {
     account.release();
     recipient.release();

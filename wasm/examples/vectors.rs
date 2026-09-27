@@ -504,7 +504,7 @@ fn transactions() -> Result<Value, Failure> {
                 FeeChoice::Exact(Amount::from_base_units(fee))
             }),
         };
-        let draft = Draft::build(&chain, &request, &facts, None)?;
+        let draft = Draft::build(&chain, &request, &facts)?;
         let signed = draft.sign_with(&account, second.as_ref(), Aux::fixed(case.aux))?;
         if !signed.is_verified() {
             return Err(format!("{}: the signed transaction does not verify", case.name).into());

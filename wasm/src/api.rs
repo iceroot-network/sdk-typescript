@@ -642,8 +642,7 @@ mod tests {
             "fee": { "kind": "exact", "amount": "1000000" },
         });
         let facts = json!({ "sender": public_key, "nonce": nonce.to_string(), "height": 2 });
-        let draft =
-            DraftHandle::build(&chain, &request.to_string(), &facts.to_string(), None).unwrap();
+        let draft = DraftHandle::build(&chain, &request.to_string(), &facts.to_string()).unwrap();
         draft.sign(&key).unwrap()
     }
 

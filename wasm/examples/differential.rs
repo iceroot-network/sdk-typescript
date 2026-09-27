@@ -138,12 +138,7 @@ fn draft(profile: &ProfileHandle, chain: &ChainHandle, case: &Value) -> Result<V
             None => Value::Null,
         },
     });
-    let built = DraftHandle::build(
-        chain,
-        &case["request"].to_string(),
-        &facts.to_string(),
-        None,
-    );
+    let built = DraftHandle::build(chain, &case["request"].to_string(), &facts.to_string());
     let draft = match built {
         Ok(draft) => draft,
         Err(failure) => return Ok(error(&failure)),

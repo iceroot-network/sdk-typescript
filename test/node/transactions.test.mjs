@@ -187,9 +187,9 @@ test("drafts apply the network's rules before anything is signed", () => {
   const sender = sdk.Keys.fromLegacyPassphrase("probe passphrase", chain);
   const facts = { sender, nonce: 1n, height: 2 };
   const to = [{ address: TRANSFER.request.operation.to[0].address, amount: 1n }];
-  const code = (request, statistics) => {
+  const code = (request) => {
     try {
-      sdk.Draft.build(chain, request, facts, statistics);
+      sdk.Draft.build(chain, request, facts);
       return "built";
     } catch (error) {
       assert.ok(error instanceof sdk.IceRootError);
@@ -205,25 +205,49 @@ test("drafts apply the network's rules before anything is signed", () => {
   assert.equal(code({ operation: { kind: "transfer", to }, fee: -1n }), "InvalidArgument");
   assert.equal(code({ operation: { kind: "swap" }, fee: 1n }), "InvalidArgument");
 
-  // "minimum" is the exact floor of the milestone in force, whatever the node's statistics say.
-  const statistics = {
-    entries: [
-      { kind: "transfer", avg: 2n, min: 1n, max: 3_000_000n, sum: 0n, burned: 0n },
-      { kind: "other", avg: 9n, min: 9n, max: 9n, sum: 9n, burned: 0n },
-    ],
-  };
+  // "minimum" is the exact floor of the milestone in force.
   const minimum = sdk.Draft.build(chain, { operation: { kind: "transfer", to } }, facts);
   const floor = (85n + BigInt(Math.ceil(minimum.size / 2))) * 6173n;
   assert.equal(minimum.fee, floor);
   assert.deepEqual({ ...minimum.summary.fee }, { amount: floor, source: "floor", floor });
-  const withStatistics = sdk.Draft.build(chain, { operation: { kind: "transfer", to } }, facts, statistics);
-  assert.equal(withStatistics.fee, floor);
-  assert.equal(withStatistics.summary.fee.source, "floor");
   const scaled = sdk.Draft.build(chain, { operation: { kind: "transfer", to }, fee: { multiplierBasisPoints: 15_000 } }, facts);
   assert.equal(scaled.fee, (floor * 15_000n + 9_999n) / 10_000n);
   assert.equal(scaled.summary.fee.source, "explicit");
   assert.equal(scaled.summary.fee.floor, floor);
   assert.equal(chain.rules(2).fees.floorAvailable, true);
+  sender.release();
+});
+
+test("without an enabled fee table there is no floor, and only an exact fee builds", () => {
+  const configuration = structuredClone(data.configuration);
+  for (const milestone of configuration.milestones) {
+    delete milestone.dynamicFees;
+  }
+  const chain = sdk.Chain.load(sdk.profiles.devnet({ relays: [RELAY] }), configuration);
+  const rules = chain.rules(2);
+  assert.equal(rules.fees.dynamic, null);
+  assert.equal(rules.fees.floorAvailable, false);
+  const sender = sdk.Keys.fromLegacyPassphrase("probe passphrase", chain);
+  const facts = { sender, nonce: 1n, height: 2 };
+  const to = [{ address: TRANSFER.request.operation.to[0].address, amount: 1n }];
+  const burn = { kind: "burn", amount: 2_000_000n };
+  for (const operation of [{ kind: "transfer", to }, burn]) {
+    for (const fee of [undefined, "minimum", { multiplierBasisPoints: 15_000 }]) {
+      assert.throws(
+        () => sdk.Draft.build(chain, { operation, ...(fee === undefined ? {} : { fee }) }, facts),
+        (error) => error instanceof sdk.FeeUnavailable && error.code === "FeeUnavailable",
+        `${operation.kind} ${JSON.stringify(fee)}`,
+      );
+    }
+  }
+  const exact = sdk.Draft.build(chain, { operation: { kind: "transfer", to }, fee: 1_000_000n }, facts);
+  assert.deepEqual({ ...exact.summary.fee }, { amount: 1_000_000n, source: "explicit" });
+
+  // A burn with no fee, whose form claims the floor, stays explicit: never a zero fee called the floor.
+  const free = sdk.Draft.build(chain, { operation: burn, fee: 0n }, facts);
+  const form = new TextDecoder().decode(free.serialize()).replace('"source":"explicit"', '"source":"floor"');
+  const read = sdk.Draft.deserialize(new TextEncoder().encode(form), chain.profile);
+  assert.deepEqual({ ...read.summary.fee }, { amount: 0n, source: "explicit" });
   sender.release();
 });
 
@@ -244,6 +268,12 @@ test("a serialized draft's fee is called the floor only when it is", () => {
   assert.ok(form.includes('"source":"explicit"'));
   const claimed = read(form.replace('"source":"explicit"', '"source":"floor"'));
   assert.deepEqual({ ...claimed }, { amount: 2_000_000n, source: "explicit", floor: minimum.fee });
+
+  // Any source other than the floor, such as the removed "node-statistics", reads as explicit.
+  for (const source of ["node-statistics", "cheapest"]) {
+    const other = read(text(minimum).replace('"source":"floor"', `"source":"${source}"`));
+    assert.deepEqual({ ...other }, { amount: minimum.fee, source: "explicit", floor: minimum.fee });
+  }
   sender.release();
 });
 

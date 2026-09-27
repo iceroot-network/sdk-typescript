@@ -61,13 +61,18 @@ export interface Rules {
   readonly name: { readonly minLength: number; readonly maxLength: number; readonly characters: string };
   /** Burns: the smallest amount. */
   readonly burn: { readonly minAmount: BaseUnits };
-  /** Fees: the milestone's dynamic fee table, and whether this build computes the exact floor. */
+  /** Fees: the milestone's dynamic fee table, and whether the exact fee floor is in force. */
   readonly fees: {
     readonly dynamic: {
       readonly enabled: boolean;
       readonly minFee: number;
       readonly addonBytes: Readonly<Partial<Record<OperationKind, number>>>;
     } | null;
+    /**
+     * Whether the exact fee floor is in force: the milestone has a dynamic fee table and it is
+     * enabled. Only then does fee `"minimum"` (or a multiplier) resolve; otherwise a draft needs an
+     * exact fee, and `"minimum"` throws `FeeUnavailable`.
+     */
     readonly floorAvailable: boolean;
   };
   /** Resignations: blocks a temporary resignation lasts before it may be revoked. */

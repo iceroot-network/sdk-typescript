@@ -5,10 +5,8 @@
 //! serialize to bytes, so a draft can be built where the network is and signed where the key is.
 
 use iceroot_sdk::api::{AccountInfo, NodeStatus, SubmitTx};
-use iceroot_sdk::fee::{FeeChoice, FeeFigures, FeeStatistics, ResolvedFee};
-use iceroot_sdk::transaction::{
-    DraftRequest, Operation, OperationKind, Recipient, Resignation, VoteEntry,
-};
+use iceroot_sdk::fee::{FeeChoice, ResolvedFee};
+use iceroot_sdk::transaction::{DraftRequest, Operation, Recipient, Resignation, VoteEntry};
 use iceroot_sdk::{Address, Aux, Draft, OnlineFacts, PublicKey, PublicKeyBytes, SignedTransaction};
 use serde_json::{Map, Value, json};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -28,32 +26,23 @@ pub struct DraftHandle {
 
 #[wasm_bindgen]
 impl DraftHandle {
-    /// The draft of `request` on `chain`, with the `facts` the node reported and, when the fee is
-    /// resolved from them, the node's fee `statistics`.
+    /// The draft of `request` on `chain`, with the `facts` the node reported.
     ///
     /// - `request`: `{ operation, memo?, fee? }`. The operation is one of
     ///   `{ kind: "transfer", to: [{ address, amount }] }`, `{ kind: "vote", entries: [{ validator,
     ///   basisPoints }] }`, `{ kind: "burn", amount }`, `{ kind: "register-second-key", publicKey }`,
     ///   `{ kind: "register-validator", name }` and `{ kind: "resign-validator", resignation }` (
     ///   `temporary`, `permanent` or `revoke`). The fee is `{ kind: "minimum" }` (the default),
-    ///   `{ kind: "exact", amount }` or `{ kind: "multiplier", basisPoints }`.
+    ///   `{ kind: "exact", amount }` or `{ kind: "multiplier", basisPoints }`; the minimum and its
+    ///   multiples fail with `FeeUnavailable` where no fee floor is in force.
     /// - `facts`: `{ sender, nonce, height, secondKey? }`, keys as hex.
-    /// - `statistics`: `{ <operation kind>: { minimum, average, maximum } }`.
     ///
     /// Amounts and the nonce are decimal strings.
-    pub fn build(
-        chain: &ChainHandle,
-        request: &str,
-        facts: &str,
-        statistics: Option<String>,
-    ) -> Result<DraftHandle> {
+    pub fn build(chain: &ChainHandle, request: &str, facts: &str) -> Result<DraftHandle> {
         let request = read_request(&json::parse_object(request, "the request")?)?;
         let facts = read_facts(&json::parse_object(facts, "the facts")?)?;
-        let statistics = statistics
-            .map(|text| read_statistics(&json::parse_object(&text, "the fee statistics")?))
-            .transpose()?;
         Ok(DraftHandle {
-            draft: Draft::build(chain.chain(), &request, &facts, statistics.as_ref())?,
+            draft: Draft::build(chain.chain(), &request, &facts)?,
         })
     }
 
@@ -431,26 +420,6 @@ fn read_facts(object: &Map<String, Value>) -> Result<OnlineFacts> {
     })
 }
 
-fn read_statistics(object: &Map<String, Value>) -> Result<FeeStatistics> {
-    let mut statistics = FeeStatistics::new();
-    for (name, figures) in object {
-        let kind = OperationKind::ALL
-            .into_iter()
-            .find(|kind| kind.as_str() == name)
-            .ok_or_else(|| BindingError::argument(format!("no operation is {name:?}")))?;
-        let figures = json::object(figures, name)?;
-        statistics.insert(
-            kind,
-            FeeFigures {
-                minimum: json::amount(figures, "minimum")?,
-                average: json::amount(figures, "average")?,
-                maximum: json::amount(figures, "maximum")?,
-            },
-        );
-    }
-    Ok(statistics)
-}
-
 fn fee_json(fee: &ResolvedFee) -> Value {
     json!({
         "amount": amount_value(fee.amount),
@@ -573,7 +542,7 @@ mod tests {
             "fee": { "kind": "exact", "amount": "1000000" },
         })
         .to_string();
-        let draft = DraftHandle::build(&chain, &request, &facts(&key), None).unwrap();
+        let draft = DraftHandle::build(&chain, &request, &facts(&key)).unwrap();
         let summary: Value = serde_json::from_str(&draft.summary()).unwrap();
         assert_eq!(summary["kind"], "transfer");
         assert_eq!(summary["amount"], "150000000");
@@ -614,7 +583,7 @@ mod tests {
         let chain = devnet();
         let key = KeyHandle::from_legacy_passphrase(&profile(), "sender".to_owned()).unwrap();
         let build = |request: Value| {
-            DraftHandle::build(&chain, &request.to_string(), &facts(&key), None).map(|_| ())
+            DraftHandle::build(&chain, &request.to_string(), &facts(&key)).map(|_| ())
         };
         let code = |request: Value| build(request).unwrap_err().code();
         assert_eq!(
@@ -645,11 +614,9 @@ mod tests {
             ),
             "InvalidVote"
         );
-        // The minimum is the exact floor, whatever the node's statistics say.
-        let statistics =
-            json!({ "vote": { "minimum": "1", "average": "2", "maximum": "3" } }).to_string();
+        // The minimum is the exact floor.
         let vote = json!({ "operation": { "kind": "vote", "entries": [{ "validator": "b", "basisPoints": 4000 }, { "validator": "a", "basisPoints": 6000 }] } }).to_string();
-        let draft = DraftHandle::build(&chain, &vote, &facts(&key), Some(statistics)).unwrap();
+        let draft = DraftHandle::build(&chain, &vote, &facts(&key)).unwrap();
         let summary: Value = serde_json::from_str(&draft.summary()).unwrap();
         assert_eq!(summary["fee"]["source"], "floor");
         let size = summary["size"].as_u64().unwrap();
@@ -658,7 +625,7 @@ mod tests {
         assert_eq!(summary["fee"]["floor"], floor.to_string());
         assert_eq!(summary["operation"]["entries"][0]["validator"], "a");
         let burn = json!({ "operation": { "kind": "burn", "amount": "2000000" } }).to_string();
-        let draft = DraftHandle::build(&chain, &burn, &facts(&key), None).unwrap();
+        let draft = DraftHandle::build(&chain, &burn, &facts(&key)).unwrap();
         let summary: Value = serde_json::from_str(&draft.summary()).unwrap();
         assert_eq!(
             (&summary["fee"]["amount"], &summary["fee"]["source"]),

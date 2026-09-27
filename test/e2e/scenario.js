@@ -113,7 +113,7 @@ export async function runScenario({ sdk, relay, label, funderPassphrase, maxHeig
   equal(net.stage, "s1", "the format stage");
   check(net.capabilities.has("transfer") && net.capabilities.has("vote"), "transfers and votes are available");
   check(!net.capabilities.has("finality"), "this devnet has no finality");
-  check(net.rules.fees.floorAvailable, "the SDK computes the exact fee floor");
+  check(net.rules.fees.floorAvailable, "the devnet's milestone puts the exact fee floor in force");
   const again = await sdk.connect(profile, options);
   equal(again.chain.nethash, chain.nethash, "the pinned profile connects again");
   const elsewhere = sdk.profiles.devnet({ relays: [relay], nethash: "00".repeat(32) });

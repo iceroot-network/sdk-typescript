@@ -290,9 +290,9 @@ export class StaleDraft extends IceRootError {
 }
 
 /**
- * No fee can be resolved for the operation: its fee floor is above the largest fee a transaction
- * can carry, or the network's formats have no floor and no fee statistics were given. An exact fee
- * still works.
+ * No minimum fee can be resolved for the operation: the milestone in force has no enabled dynamic
+ * fee table, so no fee floor is in force and the node's pool applies settings of its own, or the
+ * floor is above the largest fee a transaction can carry. An exact fee still works.
  */
 export class FeeUnavailable extends IceRootError {
   constructor(message: string, details: ErrorDetails = {}) {

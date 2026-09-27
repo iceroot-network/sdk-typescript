@@ -74,6 +74,8 @@ export async function example(bytes: Uint8Array, transport: Transport): Promise<
 }
 
 export function transactions(configuration: string, statistics: FeeStatistics, account: AccountInfo): bigint {
+  // A draft's fee never comes from the node's statistics, which are for display only.
+  const shown: bigint | undefined = statistics.entries[0]?.max;
   const phrase: string = Mnemonic.generate();
   const feedback: PhraseCheck = Mnemonic.check(phrase);
   const chain = Chain.load(profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] }), configuration);
@@ -88,9 +90,12 @@ export function transactions(configuration: string, statistics: FeeStatistics, a
       fee: "minimum",
     },
     { sender, nonce: account.nonce + 1n, height: 2 },
-    statistics,
   );
+  // @ts-expect-error Draft.build takes no fee statistics.
+  Draft.build(chain, { operation: { kind: "burn", amount: 2_000_000n } }, { sender, nonce: 1n, height: 2 }, statistics);
   const summary: DraftSummary = draft.summary;
+  const source: "floor" | "explicit" = summary.fee.source;
+  const floorInForce: boolean = rules.fees.floorAvailable;
   const again = Draft.deserialize(draft.serialize(), pinned);
   const signed: SignedTransaction = again.sign(sender);
   const back = SignedTransaction.deserialize(signed.serialize(), pinned);
@@ -114,7 +119,7 @@ export function transactions(configuration: string, statistics: FeeStatistics, a
   const algorithm: "secp256k1-bip340-sha256" | "ml-dsa-65" = messageAlgorithmOf(chain);
   const hasFinality: boolean = capabilitiesOf(chain).has("finality");
   sender.release();
-  void [feedback, rules, back.id, vote.fee, text, message, expires, algorithm, hasFinality, AssetId.ROOT];
+  void [feedback, rules, back.id, vote.fee, text, message, expires, algorithm, hasFinality, AssetId.ROOT, shown, source, floorInForce];
   return summary.fee.amount + BigInt(rules.memo.maxBytes);
 }
 

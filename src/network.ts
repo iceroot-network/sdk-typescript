@@ -439,9 +439,8 @@ export class Network {
     sign(account: Account, message: string | Uint8Array): MessageSignature;
   };
   /**
-   * Builders: each reads the sender's account, the node's status and, when the fee is resolved
-   * from them, the node's fee statistics, then builds a draft checked against every rule of the
-   * next block. Sign the draft with `draft.sign`.
+   * Builders: each reads the sender's account and the node's status, then builds a draft checked
+   * against every rule of the next block. Sign the draft with `draft.sign`.
    */
   readonly build: Builders;
 
@@ -801,11 +800,9 @@ export class Network {
     const sender = await this.#sender(options.from);
     const publicKey = sender.publicKey;
     const address = Address.fromPublicKey(publicKey, this.profile).toString();
-    const statisticsNeeded = typeof options.fee !== "bigint" && !this.rules.fees.floorAvailable;
-    const [account, status, statistics] = await Promise.all([
+    const [account, status] = await Promise.all([
       sender.account === undefined ? this.#accountJson(address) : Promise.resolve(sender.account),
       this.#read("nodeStatus", {}, (json: Json<NodeStatus>) => json),
-      statisticsNeeded ? this.fees.statistics() : Promise.resolve(undefined),
     ]);
     const height = BigInt(status.height);
     if (height > this.#height) {
@@ -829,7 +826,6 @@ export class Network {
         height: facts.height,
         ...(facts.secondKey === null ? {} : { secondKey: facts.secondKey }),
       },
-      statistics,
     );
   }
 

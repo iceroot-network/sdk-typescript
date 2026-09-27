@@ -231,8 +231,8 @@ export interface FeeStatistic extends KindFields {
 }
 
 /**
- * A node's fee statistics (`/node/fees`), for display. `Draft.build` would take them for the
- * `"minimum"` fee only on a network whose formats have no fee floor; today every network has one.
+ * A node's fee statistics (`/node/fees`): the fees transactions paid recently, for display only.
+ * A draft's fee never comes from them.
  */
 export interface FeeStatistics {
   /** The window in days, when one was requested. */

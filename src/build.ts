@@ -17,7 +17,7 @@
 import type { Address } from "./address.js";
 import { Amount } from "./amount.js";
 import { Chain, checkHeight, handleOf as chainHandleOf, type OperationKind } from "./chain.js";
-import type { FeeStatistics, SubmitOutcome } from "./client.js";
+import type { SubmitOutcome } from "./client.js";
 import { InvalidArgument } from "./errors.js";
 import { call, parse, type DraftHandle, type SignedHandle } from "./internal/bindings.js";
 import { fromHex } from "./internal/hex.js";
@@ -32,18 +32,20 @@ export type { OperationKind } from "./chain.js";
  * times `multiplierBasisPoints / 10000` (at least 10,000), rounded up.
  *
  * `"minimum"` is the exact fee floor of the milestone in force for the transaction's type and
- * size, computed with the node's own function. A draft never falls back to a fixed fee.
+ * size, computed with the node's own function. Where no floor is in force (the milestone has no
+ * enabled dynamic fee table, `rules.fees.floorAvailable` is false), the node's pool applies
+ * settings of its own: `"minimum"` and multipliers then throw `FeeUnavailable`, and the draft
+ * needs an exact fee. A draft never falls back to a fixed or guessed fee.
  */
 export type FeeChoice = "minimum" | BaseUnits | { readonly multiplierBasisPoints: number };
 
 /**
- * Where a draft's fee comes from: `"floor"` when the fee equals the exact fee floor, `"explicit"`
- * for a fee the caller set (an exact amount, or a multiple of the minimum above the floor), and
- * `"node-statistics"` where a network's formats have no floor and the node's statistics were
- * used. A deserialized draft reads `"floor"` only when its fee equals the floor computed again,
- * and `"explicit"` otherwise.
+ * Where a draft's fee comes from: `"floor"` when the fee equals the exact fee floor, and
+ * `"explicit"` for a fee the caller set (an exact amount, or a multiple of the minimum above the
+ * floor). A deserialized draft reads `"floor"` only when its fee equals the floor computed again,
+ * and `"explicit"` otherwise, whatever source its bytes claim.
  */
-export type FeeSource = "floor" | "node-statistics" | "explicit";
+export type FeeSource = "floor" | "explicit";
 
 /** One recipient of a transfer. */
 export interface Recipient {
@@ -108,8 +110,8 @@ export interface DraftFee {
   /** Where it comes from. */
   readonly source: FeeSource;
   /**
-   * The exact fee floor of the milestone in force for the transaction's type and size; absent only
-   * where a network's formats have no floor.
+   * The exact fee floor of the milestone in force for the transaction's type and size; absent
+   * where no floor is in force (the milestone has no enabled dynamic fee table).
    */
   readonly floor?: BaseUnits;
 }
@@ -252,23 +254,6 @@ function feeJson(fee: FeeChoice | undefined): object {
   return { kind: "multiplier", basisPoints };
 }
 
-function statisticsJson(statistics: FeeStatistics | undefined): string | undefined {
-  if (statistics === undefined) {
-    return undefined;
-  }
-  const figures: Record<string, { minimum: string; average: string; maximum: string }> = {};
-  for (const entry of statistics.entries) {
-    if (entry.kind !== "other") {
-      figures[entry.kind] = {
-        minimum: entry.min.toString(),
-        average: entry.avg.toString(),
-        maximum: entry.max.toString(),
-      };
-    }
-  }
-  return JSON.stringify(figures);
-}
-
 function basisPointsText(basisPoints: number): string {
   const whole = Math.trunc(basisPoints / 100);
   const fraction = basisPoints % 100;
@@ -374,11 +359,11 @@ export class Draft {
   }
 
   /**
-   * The draft of `request` on `chain`, with the `facts` the node reported. The node's fee
-   * `statistics` are used only where a network's formats have no fee floor. Every rule is applied
-   * before anything is signed; a refusal names the rule it breaks.
+   * The draft of `request` on `chain`, with the `facts` the node reported. Every rule is applied
+   * before anything is signed; a refusal names the rule it breaks. The default fee is the exact
+   * fee floor; where no floor is in force it throws `FeeUnavailable` (see {@link FeeChoice}).
    */
-  static build(chain: Chain, request: DraftRequest, facts: OnlineFacts, statistics?: FeeStatistics): Draft {
+  static build(chain: Chain, request: DraftRequest, facts: OnlineFacts): Draft {
     const sender = typeof facts.sender === "string" ? facts.sender : facts.sender.publicKey;
     if (typeof facts.nonce !== "bigint" || facts.nonce < 0n) {
       throw new InvalidArgument("the nonce is a bigint, not negative", { nonce: String(facts.nonce) });
@@ -395,7 +380,7 @@ export class Draft {
       secondKey: facts.secondKey ?? null,
     });
     const handle = call((module) =>
-      module.DraftHandle.build(chainHandleOf(chain), requestJson, factsJson, statisticsJson(statistics)),
+      module.DraftHandle.build(chainHandleOf(chain), requestJson, factsJson),
     );
     return new Draft(handle, chain);
   }
