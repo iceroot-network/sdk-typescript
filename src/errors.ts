@@ -5,8 +5,7 @@
  * `message` and structured `details`. Each code has a subclass for `instanceof` checks. The codes
  * are part of the API: apps may branch on them, and they never change meaning. They are the codes
  * of the SDK's Rust core, which the TypeScript, Rust and Go SDKs share, plus a few that only the
- * TypeScript wrapper raises (`InvalidProfile`, `InvalidPublicKey`, `InvalidArgument`,
- * `WasmLoadFailed`).
+ * TypeScript wrapper raises (`InvalidProfile`, `InvalidArgument`, `WasmLoadFailed`).
  *
  * @module
  */
@@ -21,7 +20,6 @@ export type ErrorCode =
   | "PhraseTooShort"
   | "InvalidPath"
   | "InvalidAddress"
-  | "InvalidPublicKey"
   | "InvalidKey"
   | "InvalidAmount"
   | "MemoTooLong"
@@ -111,14 +109,7 @@ export class InvalidAddress extends IceRootError {
   }
 }
 
-/** Bytes or hex that are not a public key. */
-export class InvalidPublicKey extends IceRootError {
-  constructor(message = "the bytes are not a public key", details: ErrorDetails = {}) {
-    super("InvalidPublicKey", message, details);
-  }
-}
-
-/** A key given to a builder is not a valid key. */
+/** A public key, as bytes or hex, is not a valid key. */
 export class InvalidKey extends IceRootError {
   constructor(message = "the key is not valid", details: ErrorDetails = {}) {
     super("InvalidKey", message, details);

@@ -166,7 +166,7 @@ export async function POST(request: Request) {
   try {
     return Response.json(await issueChallenge(publicKey), { headers: { "cache-control": "no-store" } });
   } catch (error) {
-    if (error instanceof IceRootError && error.code === "InvalidPublicKey") {
+    if (error instanceof IceRootError && error.code === "InvalidKey") {
       return Response.json({ error: "This public key is not valid on this network." }, { status: 400 });
     }
     return Response.json({ error: "The network is unavailable. Please try again." }, { status: 503 });

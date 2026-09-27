@@ -349,7 +349,7 @@ Every SDK error is an `IceRootError` with a stable `code`, a readable `message` 
 
 | Group | Codes |
 |---|---|
-| Input | `InvalidPhrase`, `PhraseTooShort`, `InvalidPath`, `InvalidAddress`, `InvalidKey`, `InvalidPublicKey`, `InvalidAmount`, `MemoTooLong`, `NoRecipients`, `TooManyRecipients`, `InvalidVote`, `InvalidName`, `InvalidFee`, `InvalidDraft`, `InvalidTransaction`, `InvalidSignIn`, `InvalidRequest`, `InvalidProfile`, `InvalidArgument` |
+| Input | `InvalidPhrase`, `PhraseTooShort`, `InvalidPath`, `InvalidAddress`, `InvalidKey`, `InvalidAmount`, `MemoTooLong`, `NoRecipients`, `TooManyRecipients`, `InvalidVote`, `InvalidName`, `InvalidFee`, `InvalidDraft`, `InvalidTransaction`, `InvalidSignIn`, `InvalidRequest`, `InvalidProfile`, `InvalidArgument` |
 | Network | `NodeUnavailable`, `RateLimited`, `Timeout`, `BadResponse`, `NotFound`, `Refused`, `NetworkMismatch` |
 | Submission | `TxRejected` (with `reason` and `nodeCode`), `StaleDraft`, `FeeUnavailable` |
 | Support | `UnsupportedOnNetwork` (with `capability`), `SdkNotInitialized`, `WasmLoadFailed` |

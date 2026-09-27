@@ -43,8 +43,15 @@ test("errors carry stable codes and details", () => {
       return true;
     },
   );
-  assert.throws(() => sdk.Address.fromPublicKey("02zz", devnet), sdk.InvalidPublicKey);
-  assert.throws(() => sdk.Address.fromPublicKey("05" + "11".repeat(32), devnet), sdk.InvalidPublicKey);
+  // One code for a bad key, whether the hex or the key is wrong.
+  for (const key of ["02zz", "05" + "11".repeat(32)]) {
+    assert.throws(() => sdk.Address.fromPublicKey(key, devnet), (error) => {
+      assert.ok(error instanceof sdk.InvalidKey);
+      assert.equal(error.code, "InvalidKey");
+      return true;
+    });
+  }
+  assert.equal("InvalidPublicKey" in sdk, false);
   assert.throws(() => sdk.Keys.fromLegacyPassphrase(Uint8Array.of(0xff), devnet), sdk.InvalidPhrase);
 });
 

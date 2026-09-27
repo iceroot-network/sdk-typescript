@@ -19,12 +19,8 @@ pub fn parse_address(text: &str, profile: &ProfileHandle) -> Result<Vec<u8>> {
 /// The address of `public_key` (33 or 65 bytes) on the network of `profile`.
 #[wasm_bindgen(js_name = addressFromPublicKey)]
 pub fn address_from_public_key(public_key: &[u8], profile: &ProfileHandle) -> Result<String> {
-    let key = PublicKey::from_bytes(public_key).map_err(|_| {
-        BindingError::new(
-            "InvalidPublicKey",
-            "the bytes are not a secp256k1 public key",
-        )
-    })?;
+    let key = PublicKey::from_bytes(public_key)
+        .map_err(|_| BindingError::new("InvalidKey", "the bytes are not a secp256k1 public key"))?;
     Ok(Address::from_public_key(&key, profile.profile())?.to_string())
 }
 
@@ -51,7 +47,7 @@ mod tests {
             ADDRESS
         );
         let error = address_from_public_key(&key[..32], &profile(90)).unwrap_err();
-        assert_eq!(error.code(), "InvalidPublicKey");
+        assert_eq!(error.code(), "InvalidKey");
     }
 
     #[test]
