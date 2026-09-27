@@ -57,7 +57,7 @@ const net = await connect(profiles.devnet({ relays: ["http://127.0.0.1:4003/api"
 const info = await net.accounts.get(address);   // typed records; amounts are bigint base units
 Amount.format(balanceOf(info), net.token.decimals);
 
-const draft = await net.build.transfer({ from: account, to: [{ address: recipient, amount: 150_000_000n }], fee: 1_000_000n });
+const draft = await net.build.transfer({ from: account, to: [{ address: recipient, amount: 150_000_000n }] });   // the fee is the exact floor
 const signed = draft.sign(account);
 const outcome = await net.submit(signed);        // { id, status: "accepted", broadcast } or { id, status: "rejected", reason, nodeCode, message }
 if (outcome.status === "accepted") await net.transactions.wait(signed.id);   // polls until the transaction is in a block
