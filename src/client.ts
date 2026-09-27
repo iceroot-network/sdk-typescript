@@ -230,7 +230,10 @@ export interface FeeStatistic extends KindFields {
   readonly burned: BaseUnits;
 }
 
-/** A node's fee statistics (`/node/fees`). `Draft.build` takes them for the `"minimum"` fee. */
+/**
+ * A node's fee statistics (`/node/fees`), for display. `Draft.build` would take them for the
+ * `"minimum"` fee only on a network whose formats have no fee floor; today every network has one.
+ */
 export interface FeeStatistics {
   /** The window in days, when one was requested. */
   readonly days?: number;
