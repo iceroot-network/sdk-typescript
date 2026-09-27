@@ -326,6 +326,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "iceroot-sdk-bindings"
+version = "0.1.0"
+dependencies = [
+ "iceroot-keystore",
+ "iceroot-sdk",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "sha2",
+ "wasm-bindgen",
+ "zeroize",
+]
+
+[[package]]
 name = "iceroot-sdk-core"
 version = "0.1.0"
 dependencies = [
@@ -348,11 +362,10 @@ version = "0.1.0"
 dependencies = [
  "getrandom 0.4.3",
  "hex",
- "iceroot-keystore",
  "iceroot-sdk",
+ "iceroot-sdk-bindings",
  "js-sys",
  "secp256k1",
- "serde",
  "serde_json",
  "sha2",
  "wasm-bindgen",

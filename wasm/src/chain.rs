@@ -1,14 +1,10 @@
 //! A network's loaded configuration: the chain a profile is bound to, its rules and economics.
 
-use iceroot_sdk::api::SolarCompat;
-use iceroot_sdk::rules::Rules;
-use iceroot_sdk::{Chain, Error};
-use serde_json::{Map, Value, json};
+use iceroot_sdk::Chain;
+use iceroot_sdk_bindings::chain;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use crate::api::{response, to_text};
 use crate::error::Result;
-use crate::json::amount_value;
 use crate::profile::ProfileHandle;
 
 /// A chain of the core: a network description and milestones loaded with `heartwood-crypto` and
@@ -26,9 +22,7 @@ impl ChainHandle {
     /// `profile`. The network byte must be the profile's, and so must the network hash when the
     /// profile has one pinned; otherwise the chain pins it ([`ChainHandle::profile`]).
     pub fn load(profile: &ProfileHandle, configuration: &str) -> Result<ChainHandle> {
-        Ok(ChainHandle {
-            chain: Chain::load(profile.profile(), configuration)?,
-        })
+        chain::load(profile.profile(), configuration).map(|chain| ChainHandle { chain })
     }
 
     /// The chain a node serves, for `profile`, from the node's answer to the `cryptoConfiguration`
@@ -42,14 +36,8 @@ impl ChainHandle {
         headers: &str,
         body: &[u8],
     ) -> Result<ChainHandle> {
-        let response = response(status, headers, body)?;
-        let configuration = SolarCompat::new(0)
-            .crypto_configuration()
-            .decode(&response)
-            .map_err(Error::from)?;
-        Ok(ChainHandle {
-            chain: Chain::from_node(profile.profile(), &configuration)?,
-        })
+        chain::from_node(profile.profile(), status, headers, body)
+            .map(|chain| ChainHandle { chain })
     }
 
     /// Decodes the node's answer to the `nodeConfiguration` call of [`crate::api::ApiCall`] and
@@ -58,13 +46,7 @@ impl ChainHandle {
     /// [`crate::api::ApiCall::decode`] does.
     #[wasm_bindgen(js_name = checkNode)]
     pub fn check_node(&self, status: u16, headers: &str, body: &[u8]) -> Result<String> {
-        let response = response(status, headers, body)?;
-        let configuration = SolarCompat::new(0)
-            .node_configuration()
-            .decode(&response)
-            .map_err(Error::from)?;
-        self.chain.check_node(&configuration)?;
-        to_text(&configuration)
+        chain::check_node(&self.chain, status, headers, body)
     }
 
     /// The profile, with the network hash pinned.
@@ -85,53 +67,23 @@ impl ChainHandle {
 
     /// The network's own asset. JSON: `{ assetId, name, symbol, decimals }`.
     pub fn token(&self) -> String {
-        let token = self.chain.token();
-        json!({
-            "assetId": token.asset.to_string(),
-            "name": token.name,
-            "symbol": token.symbol,
-            "decimals": token.decimals,
-        })
-        .to_string()
+        chain::token(&self.chain)
     }
 
     /// The format stage at `height`: `s1`, `pq` or `id`.
     #[wasm_bindgen(js_name = stageAt)]
     pub fn stage_at(&self, height: u32) -> String {
-        self.chain.stage_at(height).as_str().to_owned()
+        chain::stage_at(&self.chain, height)
     }
 
     /// The rules in force at `height`, in JSON.
     pub fn rules(&self, height: u32) -> String {
-        rules_json(&self.chain.rules(height)).to_string()
+        chain::rules(&self.chain, height)
     }
 
     /// The economics in force at `height`, in JSON.
     pub fn economics(&self, height: u32) -> String {
-        let economics = self.chain.economics(height);
-        json!({
-            "height": economics.height(),
-            "seats": economics.seats(),
-            "blockTimeSeconds": economics.block_time_seconds(),
-            "rewardsByRank": economics
-                .rewards_by_rank()
-                .into_iter()
-                .map(|(rank, reward)| json!({ "rank": rank, "reward": reward.map(amount_value) }))
-                .collect::<Vec<_>>(),
-            "secondaryReward": economics.secondary_reward().map(amount_value),
-            "donations": economics
-                .donations()
-                .into_iter()
-                .map(|donation| json!({
-                    "address": donation.address.to_string(),
-                    "basisPoints": donation.basis_points,
-                    "purpose": donation.purpose,
-                }))
-                .collect::<Vec<_>>(),
-            "feeBurnBasisPoints": economics.fee_burn_basis_points(),
-            "minBurn": amount_value(economics.min_burn()),
-        })
-        .to_string()
+        chain::economics(&self.chain, height)
     }
 }
 
@@ -144,147 +96,5 @@ impl ChainHandle {
     /// A handle of `chain`.
     pub(crate) fn of(chain: Chain) -> ChainHandle {
         ChainHandle { chain }
-    }
-}
-
-fn rules_json(rules: &Rules) -> Value {
-    let dynamic = rules.fees.dynamic.as_ref().map(|dynamic| {
-        let addon_bytes: Map<String, Value> = dynamic
-            .addon_bytes
-            .iter()
-            .map(|(kind, bytes)| (kind.as_str().to_owned(), json!(bytes)))
-            .collect();
-        json!({
-            "enabled": dynamic.enabled,
-            "minFee": dynamic.min_fee,
-            "addonBytes": addon_bytes,
-        })
-    });
-    json!({
-        "height": rules.height,
-        "stage": rules.stage.as_str(),
-        "transfer": {
-            "minRecipients": rules.transfer.min_recipients,
-            "maxRecipients": rules.transfer.max_recipients,
-            "minAmount": amount_value(rules.transfer.min_amount),
-        },
-        "memo": { "maxBytes": rules.memo.max_bytes },
-        "vote": {
-            "minEntries": rules.vote.min_entries,
-            "maxEntries": rules.vote.max_entries,
-            "totalBasisPoints": rules.vote.total_basis_points,
-            "maxBasisPointsPerEntry": rules.vote.max_basis_points_per_entry,
-            "maxBytes": rules.vote.max_bytes,
-        },
-        "name": {
-            "minLength": rules.name.min_length,
-            "maxLength": rules.name.max_length,
-            "characters": rules.name.characters,
-        },
-        "burn": { "minAmount": amount_value(rules.burn.min_amount) },
-        "fees": {
-            "dynamic": dynamic,
-            "floorAvailable": rules.fees.floor_available,
-        },
-        "resignation": {
-            "blocksBeforeRevoke": rules.resignation.blocks_before_revoke,
-        },
-        "maxTransactionBytes": rules.max_transaction_bytes,
-        "maxAmount": amount_value(rules.max_amount),
-    })
-}
-
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-
-    pub(crate) const CONFIGURATION: &str = include_str!("../examples/devnet-configuration.json");
-
-    pub(crate) fn devnet() -> ChainHandle {
-        let profile = ProfileHandle::from_json(
-            r#"{"id":"devnet","backend":"solar-compat","api":{"relays":["http://127.0.0.1:4003/api"]},"chain":{"networkByte":90},"keyScheme":"bip32-secp256k1"}"#,
-        )
-        .unwrap();
-        ChainHandle::load(&profile, CONFIGURATION).unwrap()
-    }
-
-    #[test]
-    fn load_and_describe() {
-        let chain = devnet();
-        assert_eq!(chain.network_byte(), 90);
-        assert_eq!(chain.nethash().len(), 64);
-        let pinned: Value = serde_json::from_str(&chain.profile().to_json()).unwrap();
-        assert_eq!(pinned["chain"]["nethash"], chain.nethash());
-        let token: Value = serde_json::from_str(&chain.token()).unwrap();
-        assert_eq!(token["decimals"], 8);
-        assert_eq!(token["assetId"], "ROOT");
-        let rules: Value = serde_json::from_str(&chain.rules(2)).unwrap();
-        assert_eq!(rules["memo"]["maxBytes"], 255);
-        assert_eq!(rules["transfer"]["maxRecipients"], 256);
-        let economics: Value = serde_json::from_str(&chain.economics(2)).unwrap();
-        assert_eq!(economics["seats"], 53);
-        assert_eq!(chain.stage_at(2), "s1");
-
-        let other = ProfileHandle::from_json(
-            r#"{"id":"devnet","backend":"solar-compat","api":{"relays":[]},"chain":{"networkByte":30},"keyScheme":"bip32-secp256k1"}"#,
-        )
-        .unwrap();
-        assert_eq!(
-            ChainHandle::load(&other, CONFIGURATION).unwrap_err().code(),
-            "NetworkMismatch"
-        );
-    }
-
-    #[test]
-    fn from_the_node_client() {
-        let mut data: Value = serde_json::from_str(CONFIGURATION).unwrap();
-        let nethash = data["network"]["nethash"].clone();
-        data["genesisBlock"] = json!({ "height": 1, "payloadHash": nethash });
-        let body = json!({ "data": data }).to_string();
-        let profile = ProfileHandle::from_json(
-            r#"{"id":"devnet","backend":"solar-compat","api":{"relays":["http://127.0.0.1:4003/api"]},"chain":{"networkByte":90},"keyScheme":"bip32-secp256k1"}"#,
-        )
-        .unwrap();
-        let chain = ChainHandle::from_node(&profile, 200, "[]", body.as_bytes()).unwrap();
-        assert_eq!(chain.nethash(), devnet().nethash());
-        assert_eq!(
-            ChainHandle::from_node(&profile, 200, "", b"{}")
-                .unwrap_err()
-                .code(),
-            "BadResponse"
-        );
-        assert_eq!(
-            ChainHandle::from_node(&profile, 503, "", b"{}")
-                .unwrap_err()
-                .code(),
-            "Refused"
-        );
-
-        let node = |nethash: &str| {
-            json!({ "data": {
-                "core": { "version": "4.3.1" }, "nethash": nethash, "slip44": 1, "wif": 252,
-                "token": "dROOT", "symbol": "dRT", "explorer": "", "version": 90,
-                "constants": { "activeDelegates": 53, "blockTime": 8 },
-                "pool": { "maxTransactionsInPool": 15000, "maxTransactionsPerSender": 150,
-                          "maxTransactionsPerRequest": 40, "maxTransactionAge": 2700,
-                          "maxTransactionBytes": 2000000 }
-            } })
-            .to_string()
-        };
-        let configuration: Value = serde_json::from_str(
-            &chain
-                .check_node(200, "", node(&chain.nethash()).as_bytes())
-                .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(configuration["pool"]["maxTransactionsPerRequest"], 40);
-        assert_eq!(configuration["seats"], 53);
-        assert_eq!(
-            chain
-                .check_node(200, "", node(&"ab".repeat(32)).as_bytes())
-                .unwrap_err()
-                .code(),
-            "NetworkMismatch"
-        );
     }
 }

@@ -3,7 +3,10 @@
 //! This crate is the boundary between the SDK's Rust core (`iceroot-sdk`) and the TypeScript
 //! wrapper. It adds no logic of its own: every key, address, amount, draft, signature and rule
 //! comes from the core, and through it from `heartwood-crypto`, so the results are identical to
-//! native Rust.
+//! native Rust. Arguments are read and answers written by sdk-rust's `iceroot-sdk-bindings`, which
+//! the native Tauri plugin shares, so both implementations of the TypeScript interface read and
+//! write the same JSON; this crate adds the exports, the JavaScript values and the handles that
+//! keep the core's values in WebAssembly memory.
 //!
 //! Rules for the whole crate:
 //!
@@ -37,7 +40,6 @@ mod api;
 mod chain;
 mod draft;
 mod error;
-mod json;
 mod keys;
 mod keystore;
 mod messages;
@@ -46,7 +48,6 @@ mod phrase;
 mod profile;
 mod signin;
 mod vote;
-mod write;
 
 use wasm_bindgen::prelude::wasm_bindgen;
 use zeroize::Zeroize;
@@ -67,10 +68,7 @@ pub use crate::ownership::{SolarKeyHandle, ownership_call};
 pub use crate::phrase::{check_phrase, generate_phrase};
 pub use crate::profile::ProfileHandle;
 pub use crate::signin::{build_sign_in, parse_sign_in};
-pub use crate::vote::{
-    vote_call, vote_check, vote_evaluate, vote_rules_at, vote_select,
-    vote_snapshot_from_validators, vote_split, vote_validate, vote_validate_snapshot, vote_voter,
-};
+pub use crate::vote::{vote_call, vote_rules_at, vote_snapshot_from_validators};
 
 /// The version of these bindings.
 #[wasm_bindgen(js_name = bindingsVersion)]
@@ -105,4 +103,63 @@ pub fn wipe_stack() {
 #[wasm_bindgen(js_name = wasmMemory)]
 pub fn wasm_memory() -> wasm_bindgen::JsValue {
     wasm_bindgen::memory()
+}
+
+#[cfg(test)]
+mod tests {
+    //! The exports over the shared bindings, natively: the logic itself is tested in
+    //! `iceroot-sdk-bindings`, and every export in WebAssembly by the package's tests.
+
+    use super::*;
+    use serde_json::{Value, json};
+
+    const CONFIGURATION: &str = include_str!("../examples/devnet-configuration.json");
+    const PROFILE: &str = r#"{"id":"devnet","backend":"solar-compat","api":{"relays":["http://127.0.0.1:4003/api"]},"chain":{"networkByte":90},"keyScheme":"bip32-secp256k1"}"#;
+    const RECIPIENT: &str = "dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNF";
+
+    #[test]
+    fn a_draft_is_built_signed_and_submitted_through_the_exports() {
+        let profile = ProfileHandle::from_json(PROFILE).unwrap();
+        let chain = ChainHandle::load(&profile, CONFIGURATION).unwrap();
+        let mut key = KeyHandle::from_legacy_passphrase(&profile, "sender".to_owned()).unwrap();
+        let sender = hex::encode(key.public_key().unwrap());
+        let status = r#"{"height":"80","synced":true,"blocksBehind":"0","chainTime":"656"}"#;
+        let facts = online_facts(&chain, &sender, None, status).unwrap();
+        let request = json!({
+            "operation": { "kind": "transfer", "to": [{ "address": RECIPIENT, "amount": "150000000" }] },
+            "fee": { "kind": "exact", "amount": "1000000" },
+        });
+        let draft = DraftHandle::build(&chain, &request.to_string(), &facts).unwrap();
+        let summary: Value = serde_json::from_str(&draft.summary()).unwrap();
+        assert_eq!(summary["nonce"], "1");
+        let signed = draft.sign(&key).unwrap();
+        assert!(signed.verified());
+        let back = SignedHandle::deserialize(&signed.serialize(), &chain.profile()).unwrap();
+        assert_eq!(back.id(), signed.id());
+
+        let mut plan = SubmitPlanHandle::new(40, 2_000_000);
+        plan.add(&signed).unwrap();
+        assert_eq!(plan.plan().unwrap(), 1);
+        let call = ApiCall::prepare(53, "nodeStatus", "{}").unwrap();
+        assert!(call.request().contains("/node/status"));
+
+        key.release();
+        assert!(key.released());
+        let error = draft.sign(&key).unwrap_err();
+        assert_eq!(error.code(), "KeyReleased");
+    }
+
+    #[test]
+    fn errors_keep_their_code_and_details() {
+        let profile = ProfileHandle::from_json(PROFILE).unwrap();
+        let error = parse_address("dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNX", &profile).unwrap_err();
+        assert_eq!(error.code(), "InvalidAddress");
+        assert_eq!(error.details()["reason"], "checksum");
+        assert_eq!(
+            vote_call("nothing", "", "", "").unwrap_err().code(),
+            "InvalidArgument"
+        );
+        assert_eq!(parse_amount("1.5", 8).unwrap(), "150000000");
+        assert_eq!(keystore_armor(b"x").len(), "irks:".len() + 2);
+    }
 }

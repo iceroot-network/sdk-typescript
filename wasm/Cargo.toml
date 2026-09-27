@@ -18,25 +18,23 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # Test seam: reproducible signatures for the cross-checks against native Rust. Only the test build
 # of the package enables it; the published build never does.
-fixed-aux = ["iceroot-sdk/fixed-aux"]
+fixed-aux = ["iceroot-sdk/fixed-aux", "iceroot-sdk-bindings/fixed-aux"]
 # Test seam: the keystore vectors' own salts and nonces and their lowered parameter floor, so that
 # every keystore vector runs in WebAssembly. It turns on the keystore's test-only feature, which no
 # build that ships may enable. Only the test build of the package enables it.
-keystore-testing = ["dep:iceroot-keystore"]
+keystore-testing = ["iceroot-sdk-bindings/keystore-testing"]
 
 [dependencies]
 # The SDK's Rust core. Every key, address, signature and transaction comes from it, and through it
 # from heartwood-crypto. Until sdk-rust has a tagged release, the bindings build against a checkout
 # of sdk-rust next to this repository.
 iceroot-sdk = { path = "../../sdk-rust/crates/iceroot-sdk", features = ["serde", "keystore"] }
-# The keystore crate itself, only for the test seam above: the same crate the facade re-exports as
-# `iceroot_sdk::keystore`, with its test-only feature.
-iceroot-keystore = { path = "../../sdk-rust/crates/iceroot-keystore", optional = true, features = ["testing"] }
+# The boundary the SDK's bindings share: arguments read and answers written in the JSON forms of
+# the TypeScript API, and errors with their stable codes. The native Tauri plugin uses the same
+# crate, so both implementations of the interface read and write the same JSON.
+iceroot-sdk-bindings = { path = "../../sdk-rust/crates/iceroot-sdk-bindings", features = ["wasm-bindgen"] }
 js-sys = "0.3"
-# The `Serialize` trait of the node API client's answers, which the bindings write as JSON.
-serde = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
-sha2 = "0.11"
 wasm-bindgen = "=0.2.129"
 zeroize = "1.9"
 
@@ -48,6 +46,7 @@ secp256k1 = { version = "=0.33.1", default-features = false, features = ["std", 
 
 [dev-dependencies]
 hex = "0.4"
+sha2 = "0.11"
 
 # Prints the native Rust results that every JavaScript context must reproduce.
 [[example]]
