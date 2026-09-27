@@ -146,6 +146,12 @@ npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a 
 | Manifest V3 extension | Playwright's persistent context: the wallet page (fetch), the sandbox page (`connect-src 'none'` kept, embedded bytes) and the service worker (embedded bytes); the same extension without `'wasm-unsafe-eval'` fails in all three |
 | Tauri 2 on Linux | A Tauri application driven by `tauri-driver` and WebKitWebDriver; the same application without `'wasm-unsafe-eval'` fails |
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on pull requests to `dev` and `prod` and on pushes to `prod`. It checks out sdk-rust next to this repository at the branch the change targets, then runs every check and test above; the Tauri check runs as a job of its own. The packed tarball of each run is kept as a workflow artifact for a week.
+
+The bindings build on sdk-rust, which reads `heartwood-core` over SSH. The workflows use a read-only deploy key of `heartwood-core`, stored in this repository as the secret `HEARTWOOD_DEPLOY_KEY`; `scripts/ci/heartwood-access.sh` installs it. Pull requests from forks get no secrets, so their runs stop at that step.
+
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE). The WebAssembly module contains compiled code of Heartwood Core; see [NOTICE](NOTICE).
