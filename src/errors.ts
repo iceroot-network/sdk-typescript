@@ -4,8 +4,8 @@
  * Every error the SDK throws is an {@link IceRootError} with a stable string `code`, a human
  * `message` and structured `details`. Each code has a subclass for `instanceof` checks. The codes
  * are part of the API: apps may branch on them, and they never change meaning. They are the codes
- * of the SDK's Rust core, which the TypeScript, Rust and Go SDKs share, plus a few that only the
- * TypeScript wrapper raises (`InvalidProfile`, `InvalidArgument`, `WasmLoadFailed`).
+ * of the SDK's Rust core, which the TypeScript, Rust and Go SDKs share, plus the two that only the
+ * TypeScript wrapper raises (`InvalidArgument`, `WasmLoadFailed`).
  *
  * @module
  */
@@ -193,7 +193,7 @@ export class InvalidRequest extends IceRootError {
   }
 }
 
-/** A network profile is incomplete or malformed. */
+/** A network profile is incomplete or malformed, such as a network hash that is not 64 hex digits. */
 export class InvalidProfile extends IceRootError {
   constructor(message: string, details: ErrorDetails = {}) {
     super("InvalidProfile", message, details);
