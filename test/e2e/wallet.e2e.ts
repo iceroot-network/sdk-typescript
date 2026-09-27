@@ -7,9 +7,10 @@
 // a website after checking its message.
 //
 // Run by run.mjs against the devnet the harness started, funded by one genesis wallet
-// (ICEROOT_E2E_FUNDER, by default team-placeholder-1). A genesis validator whose key is in the
-// devnet's delegate-keys.json resigns for the check; a validator registered just before keeps the
-// seats filled.
+// (ICEROOT_E2E_FUNDER, by default team-placeholder-1). Before the votes, a validator registers
+// without running a node: it ranks within Diversity's pool, but a node refuses a vote naming it,
+// so no selection may pick it. A genesis validator whose key is in the devnet's
+// delegate-keys.json resigns for the check; the new validator keeps the seats filled.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -44,7 +45,8 @@ let url = "";
 const created = { context: undefined as BrowserContext | undefined, page: undefined as Page | undefined, address: "" };
 const restored = { context: undefined as BrowserContext | undefined, page: undefined as Page | undefined, address: "", phrase: "" };
 const errors: string[] = [];
-let validatorPhrase = "";
+/** The validator registered without a node. */
+const NODELESS = "examplewallet";
 
 /** The pages' requests to the node and their answers, printed when a test fails. */
 const traffic: string[] = [];
@@ -112,14 +114,15 @@ test.beforeAll(async () => {
   // The page and this test share the node's request allowance for one address.
   net = await sdk.connect(sdk.profiles.devnet({ relays: [env().relay] }), { rateLimit: { requests: 30, windowMs: 60_000 } });
 
-  // An 18-word account to restore, and an account that registers as a validator before one of the
-  // genesis validators resigns, so that every seat stays filled. Both are funded now.
+  // An 18-word account to restore, and an account that registers as a validator without running
+  // a node. It ranks just below the genesis validators, within Diversity's pool, but a node refuses
+  // a vote naming it; it also keeps every seat filled when a genesis validator resigns for the
+  // check. Both are funded now.
   restored.phrase = generateMnemonic(wordlist, 192);
   const restoredKey = net.keys.fromPhrase(restored.phrase, { account: 0, index: 0 });
   restored.address = restoredKey.address;
   restoredKey.release();
-  validatorPhrase = sdk.Mnemonic.generate();
-  const validator = net.keys.fromPhrase(validatorPhrase, { account: 0, index: 0 });
+  const validator = net.keys.fromPhrase(sdk.Mnemonic.generate(), { account: 0, index: 0 });
   const funder = net.keys.fromLegacyPassphrase(env().funderPassphrase);
   try {
     const funding = await net.build.transfer({
@@ -131,6 +134,8 @@ test.beforeAll(async () => {
       memo: "example wallet funding",
     });
     await confirmed(funding.sign(funder));
+    const registration = await net.build.registerValidator({ from: validator, name: NODELESS });
+    await confirmed(registration.sign(validator));
   } finally {
     funder.release();
     validator.release();
@@ -266,21 +271,26 @@ async function reviewedPicks(page: Page) {
 }
 
 /**
- * Waits until the node accepts votes for every validator it lists. Today's devnet nodes refuse a
- * vote naming a validator that is not resigned and has no announced node version (ERR_OFFLINE),
- * which a fresh devnet's validators get during their first round.
+ * Waits until the node has seen every genesis validator's node running and the validator
+ * registered without a node has a rank (ranks are set when a round starts). A node refuses a vote
+ * naming a validator that has not resigned and has no announced node version (ERR_OFFLINE), and
+ * the snapshot leaves such validators out: on a fresh devnet that is every validator until its
+ * node is seen, and the validator registered without a node for good.
  */
-async function everyValidatorVotable() {
+async function validatorsReady() {
   await expect(async () => {
     const listing = await net.validators.list({ page: 1, limit: 100 });
-    const offline = listing.items.filter((validator) => validator.status.startsWith("resigned") === false && validator.version === undefined);
-    expect(offline.map((validator) => validator.name)).toEqual([]);
+    const unseen = listing.items.filter((validator) => validator.status.startsWith("resigned") === false && validator.version === undefined);
+    expect(unseen.map((validator) => validator.name)).toEqual([NODELESS]);
+    // Within Diversity's pool by rank (the 53 seats and the next 10), so only the missing node
+    // keeps it out of a selection.
+    expect(unseen[0]?.rank ?? Infinity).toBeLessThanOrEqual(63);
   }).toPass({ timeout: 12 * 60_000, intervals: [8_000] });
 }
 
 test("votes in each of the four modes, with every pick's reasons, and a mode that tops up says so", async () => {
   test.setTimeout(25 * 60_000);
-  await everyValidatorVotable();
+  await validatorsReady();
   const page = restored.page!;
   await page.getByRole("tab", { name: "Vote" }).click();
   await expect(page.getByText(/validators at height \d+/)).toBeVisible({ timeout: 180_000 });
@@ -294,6 +304,7 @@ test("votes in each of the four modes, with every pick's reasons, and a mode tha
 
     let picks = await reviewedPicks(page);
     expect(picks).toHaveLength(20);
+    expect(picks.map((pick) => pick.validator)).not.toContain(NODELESS);
     for (const pick of picks) {
       expect(pick.share).toBe("5%");
       expect(pick.reasons.length, `${mode}: ${pick.validator}`).toBeGreaterThan(1);
@@ -310,6 +321,7 @@ test("votes in each of the four modes, with every pick's reasons, and a mode tha
         picks = await reviewedPicks(page);
         expect(picks.map((pick) => pick.validator).sort()).not.toEqual(first);
       }).toPass({ timeout: 30_000 });
+      expect(picks.map((pick) => pick.validator)).not.toContain(NODELESS);
     } else {
       // Today's devnet has no payouts, declarations or 7 days of seats: these modes top up from
       // Diversity, and the review screen says so.
@@ -337,17 +349,13 @@ test("a check flags a validator of the vote that resigned", async () => {
   ).delegates;
   const resigning = delegates.find((delegate) => vote.includes(delegate.username));
   expect(resigning, `a genesis validator among ${vote.join(", ")}`).toBeDefined();
-  // A new validator first: a resignation that would leave a seat empty is refused. It registers
-  // only now, so the vote cannot name it.
-  const validator = net.keys.fromPhrase(validatorPhrase, { account: 0, index: 0 });
+  // The validator registered without a node keeps every seat filled: a resignation that would
+  // leave a seat empty is refused.
   const key = net.keys.fromLegacyPassphrase(resigning!.passphrase);
   try {
-    const registration = await net.build.registerValidator({ from: validator, name: "examplewallet" });
-    await confirmed(registration.sign(validator));
     const resignation = await net.build.resignValidator({ from: key, resignation: "temporary" });
     await confirmed(resignation.sign(key));
   } finally {
-    validator.release();
     key.release();
   }
 

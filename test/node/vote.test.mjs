@@ -181,7 +181,7 @@ test("check reports picks that no longer meet their criteria and never changes t
   const findings = vote.check(selection, newer);
   assert.equal(findings.length, selection.entries.length);
   assert.deepEqual(findings[0].shortfalls.map((s) => s.kind), ["not-in-snapshot"]);
-  assert.equal(findings[0].why, "No longer a registered validator");
+  assert.equal(findings[0].why, "No longer among the validators a vote can name");
   const second = findings[1];
   assert.equal(second.stillMeets, false);
   assert.ok(second.shortfalls.some((s) => s.kind === "resigned" && s.status === "resigned-permanent"));
@@ -315,7 +315,10 @@ test("VoteSnapshot.fromNode reads every validator, the registrations and first f
   assert.equal(snapshot.height, 80n);
   assert.equal(snapshot.seats, 53);
   assert.equal(snapshot.blockTimeSeconds, 8);
-  assert.equal(snapshot.records.length, 56);
+  // 56 registered validators; the one that has not resigned and whose node was never seen is left
+  // out, since a node refuses a vote naming it.
+  assert.equal(snapshot.records.length, 55);
+  assert.equal(snapshot.records.find((record) => record.name === "tx1n2290"), undefined);
   vote.VoteSnapshot.validate(snapshot);
 
   const genesis5 = snapshot.records.find((record) => record.name === "genesis_5");
@@ -369,9 +372,19 @@ test("VoteSnapshot.fromValidators and a selection signed as a vote", () => {
     voters: BigInt(each.votesReceived.voters),
     production: { produced: BigInt(each.blocks.produced), missed: 0n },
     earnings: { rewards: 0n, fees: 0n, burnedFees: 0n, donations: 0n, total: 0n },
+    ...(each.version === undefined ? {} : { version: each.version }),
   }));
   const snapshot = vote.VoteSnapshot.fromValidators(chain, 80, validators, { genesis_5: { registeredHeight: 1n, firstForgedHeight: 2n } });
-  assert.equal(snapshot.records.length, validators.length);
+  // Every validator but the one without a node version that has not resigned.
+  const votable = validators.filter((each) => each.status.startsWith("resigned") || each.version !== undefined);
+  assert.equal(votable.length, validators.length - 1);
+  assert.deepEqual(
+    snapshot.records.map((record) => record.name).sort(),
+    votable.map((each) => each.name).sort(),
+  );
+  // Without versions, only the resigned validators remain.
+  const unseen = vote.VoteSnapshot.fromValidators(chain, 80, validators.map(({ version: _, ...rest }) => rest));
+  assert.ok(unseen.records.length > 0 && unseen.records.every((record) => record.status.startsWith("resigned")));
   const genesis5 = snapshot.records.find((record) => record.name === "genesis_5");
   assert.equal(genesis5.registeredHeight, 1n);
 

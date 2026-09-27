@@ -229,6 +229,11 @@ export const VoteSnapshot = Object.freeze({
    * Maximum Rewards and Support Newcomers top up from Diversity and say so, and on a young chain
    * Reliability's pool is empty until validators have 7 days of seated history. Every selection
    * records the source.
+   *
+   * The snapshot holds only validators a vote may name now. A node refuses a vote naming a
+   * validator that has not resigned and whose node it has not seen running (`ERR_OFFLINE`); the
+   * list shows such a validator without a `version`, and the snapshot leaves it out, so no
+   * selection names it and a later {@link check} reports a pick left out this way.
    */
   async fromNode(net: Network, options: SnapshotOptions = {}): Promise<VoteSnapshot> {
     const status = await net.refresh();
@@ -249,7 +254,9 @@ export const VoteSnapshot = Object.freeze({
     if (options.firstForged ?? true) {
       for (const validator of validators) {
         const produced = validator.production.produced;
-        if (produced === 0n) {
+        // A validator the snapshot leaves out (see above) needs no lookup.
+        const leftOut = !validator.status.startsWith("resigned") && validator.version === undefined;
+        if (produced === 0n || leftOut) {
           continue;
         }
         // Blocks come highest first, one per page: the page numbered by the blocks produced is the first.
@@ -275,7 +282,9 @@ export const VoteSnapshot = Object.freeze({
 
   /**
    * A snapshot of validators an app read itself (every page of `net.validators.list`) at `height`
-   * of `chain`, with what it looked up per validator name. See {@link VoteSnapshot.fromNode}.
+   * of `chain`, with what it looked up per validator name. As in {@link VoteSnapshot.fromNode}, a
+   * validator that has not resigned and has no `version` is left out: a node refuses a vote
+   * naming it.
    */
   fromValidators(
     chain: Chain,

@@ -157,9 +157,12 @@ pub fn vote_rules_at(chain: &ChainHandle, height: u32) -> String {
 /// A snapshot of a node's validator list, marked `relay-approximate`: `validators` is every
 /// registered validator as the node API client decodes them (a JSON array of validator records in
 /// the client's JSON form, of which the fields the snapshot uses are read: `name`, `address`,
-/// `rank`, `status`, `voteWeight`, `voters` and `production`), read at `height` of `chain`, whose
-/// milestone gives the seats and the block time. `lookups` (JSON) maps a validator's name to what
-/// the caller looked up: `{ registeredHeight?, firstForgedHeight? }`, heights as decimal strings.
+/// `rank`, `status`, `voteWeight`, `voters`, `production` and `version`), read at `height` of
+/// `chain`, whose milestone gives the seats and the block time. `lookups` (JSON) maps a
+/// validator's name to what the caller looked up: `{ registeredHeight?, firstForgedHeight? }`,
+/// heights as decimal strings. A validator a vote may not name now (not resigned, and listed
+/// without a node version: the node refuses a vote naming it) is left out, as
+/// `iceroot_sdk::voting::relay_validator` does.
 #[wasm_bindgen(js_name = voteSnapshotFromValidators)]
 pub fn vote_snapshot_from_validators(
     chain: &ChainHandle,
@@ -171,10 +174,11 @@ pub fn vote_snapshot_from_validators(
     let lookups = object_of(lookups, "the lookups")?;
     let mut validators = Vec::with_capacity(items.len());
     for item in &items {
-        let mut validator =
-            voting::relay_validator(&validator_info(as_object(item, "a validator")?)?);
-        apply_lookups(&mut validator, &lookups)?;
-        validators.push(validator);
+        let info = validator_info(as_object(item, "a validator")?)?;
+        if let Some(mut validator) = voting::relay_validator(&info) {
+            apply_lookups(&mut validator, &lookups)?;
+            validators.push(validator);
+        }
     }
     Ok(snapshot_json(&voting::relay_snapshot(
         chain.chain(),
@@ -378,7 +382,8 @@ fn record_from_json(record: &Map<String, Value>) -> Read<ValidatorRecord> {
 }
 
 /// A validator of the node API client's list, from its JSON form: the fields a relay snapshot
-/// reads, the others left empty.
+/// reads (its node version included, which says whether a vote may name it), the others left
+/// empty.
 fn validator_info(validator: &Map<String, Value>) -> Read<ValidatorInfo> {
     let status = match text(validator, "status")? {
         "active" => ApiStatus::Active,
@@ -410,7 +415,7 @@ fn validator_info(validator: &Map<String, Value>) -> Read<ValidatorInfo> {
             donations: 0,
             total: 0,
         },
-        version: None,
+        version: opt_text(validator, "version")?,
     })
 }
 
@@ -1106,6 +1111,21 @@ mod tests {
             "rank": 1, "status": "active", "voteWeight": "100", "voteShareBasisPoints": 1,
             "voters": "1", "production": { "produced": "5", "missed": "1" },
             "earnings": { "rewards": "0", "fees": "0", "burnedFees": "0", "donations": "0", "total": "0" },
+            "version": "4.3.1",
+        }, {
+            // Its node was never seen: a vote may not name it, so the snapshot leaves it out.
+            "name": "unseen", "address": "dUnseenValidatorAddress",
+            "publicKey": "02287bfebba4c7881a0509717e71b34b63f31e40021c321f89ae04f84be6d6ac37",
+            "rank": 2, "status": "active", "voteWeight": "50", "voteShareBasisPoints": 1,
+            "voters": "1", "production": { "produced": "0", "missed": "0" },
+            "earnings": { "rewards": "0", "fees": "0", "burnedFees": "0", "donations": "0", "total": "0" },
+        }, {
+            // Resigned: kept, so a check reports it as resigned.
+            "name": "resigned", "address": "dResignedValidatorAddress",
+            "publicKey": "02387bfebba4c7881a0509717e71b34b63f31e40021c321f89ae04f84be6d6ac37",
+            "status": "resigned-permanent", "voteWeight": "0", "voteShareBasisPoints": 0,
+            "voters": "0", "production": { "produced": "0", "missed": "0" },
+            "earnings": { "rewards": "0", "fees": "0", "burnedFees": "0", "donations": "0", "total": "0" },
         }]);
         let lookups = json!({ "genesis_1": { "registeredHeight": "1", "firstForgedHeight": "2" } });
         let snapshot: Value = serde_json::from_str(
@@ -1120,6 +1140,13 @@ mod tests {
         .unwrap();
         assert_eq!(snapshot["source"], "relay-approximate");
         assert_eq!(snapshot["seats"], 53);
+        let names: Vec<&str> = snapshot["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|record| record["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["genesis_1", "resigned"]);
         let record = &snapshot["records"][0];
         assert_eq!(record["registeredHeight"], "1");
         assert_eq!(record["production"], json!({ "forged": 5, "assigned": 6 }));

@@ -30,6 +30,7 @@ snapshot.records.length;      // every registered validator
 ```
 
 - **What it reads.** Every page of the validator list, the validator registrations (for registration heights) and, for each validator that forged, its first forged block (for its seated days, at most 30). On today's devnet that is one request per such validator; `fromNode(net, { firstForged: false, registrations: false })` reads the list alone.
+- **What a vote may name.** A validator that has not resigned and is listed without a `version` is left out: a node refuses a vote naming it until it sees the validator's node running (see [Signing the vote](#signing-the-vote)).
 - **What a node cannot give.** A node has lifetime counters only, so production is the lifetime count and the snapshot is marked `relay-approximate`, which every selection records. There are no declarations, payouts or penalty records: Diversity works on rank bands alone, Maximum Rewards and Support Newcomers top up from Diversity and say so, and on a young chain Reliability's pool is empty until validators have 7 days of seated history. An indexer supplies these figures in a later release.
 - **Offline.** `VoteSnapshot.fromValidators(chain, height, validators, lookups)` builds the same snapshot from records the app read itself. `VoteSnapshot.serialize` and `VoteSnapshot.deserialize` turn a snapshot into text and back (heights and weights as decimal strings), for a cache or a worker.
 
@@ -83,7 +84,7 @@ const signed = draft.sign(account);
 await net.submit(signed);
 ```
 
-On today's devnet a node refuses a vote that names a validator which has not resigned and whose node it has not seen running: the submission is `rejected` with reason `invalid`, node code `ERR_OFFLINE` and a message such as "genesis_7 is not operating a node on the network". That is a validator registered without a running node, and on a new devnet every validator during its first round; `net.validators.list()` shows such a validator without a `version`. The selection does not know this yet, so show the node's message and offer "Draw again" or another mode.
+A node refuses a vote that names a validator which has not resigned and whose node it has not seen running in the last rounds (node code `ERR_OFFLINE`, "genesis_7 is not operating a node on the network"): a validator registered without a node, one whose node stopped, and on a new devnet every validator until its node is seen. `net.validators.list()` shows such a validator without a `version`, and `VoteSnapshot.fromNode` and `fromValidators` leave it out of the snapshot, so no selection names it. A validator can still stop between the snapshot and the submission: show the node's message when a vote is rejected, and offer to read the validators again.
 
 ## Checking a vote later
 
@@ -101,7 +102,7 @@ for (const finding of findings.filter((each) => !each.stillMeets)) {
 }
 ```
 
-A pick from the mode is judged by the mode, a top-up by Diversity. A validator the holder put in by hand (`source: "holder"`) is judged only by whether it is still registered.
+A pick from the mode is judged by the mode, a top-up by Diversity. A validator the holder put in by hand (`source: "holder"`) is judged only by whether it is still in the snapshot and has not resigned. A pick missing from the newer snapshot is reported as "No longer among the validators a vote can name": it is no longer registered, or a node would refuse a vote naming it now.
 
 ## Manual voting
 

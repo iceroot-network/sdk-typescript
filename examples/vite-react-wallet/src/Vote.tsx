@@ -37,8 +37,12 @@ const MODE_TEXT: Record<Mode, string> = {
 function refusal(error: unknown): string {
   if (error instanceof IceRootError) {
     switch (error.code) {
-      case "NotEnoughValidators":
-        return `There are not enough eligible validators for ${String(error.details["requested"])} picks. Choose fewer.`;
+      case "NotEnoughValidators": {
+        const available = Number(error.details["available"]);
+        return available >= MIN_PICKS
+          ? `Only ${available} validators can be picked for ${String(error.details["requested"])} picks. Choose ${available} or fewer.`
+          : `Only ${available} validators can be picked now, fewer than a vote needs. Read the validators again later.`;
+      }
       case "DoesNotFit":
         return "Not enough picks fit in one vote under the network's rules.";
       case "ValidatorCannotVote":
