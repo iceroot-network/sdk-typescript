@@ -17,9 +17,9 @@
 //   <!-- sample: plain -->
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MARKER = /^<!-- sample: (pending|later|verified|plain)(?: ([0-9]+\.[0-9]+\.[0-9]+))?(?:; needs: ([^>]+?))? -->$/;
 const ANY_MARKER = /^<!-- sample:/;
 const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
@@ -29,7 +29,9 @@ const FORBIDDEN = [
   ["–", "en dash"],
 ];
 
-const args = process.argv.slice(2);
+// Run as a script; scripts/check-samples.mjs imports the parser.
+const isMain = process.argv[1] !== undefined && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+const args = isMain ? process.argv.slice(2) : [];
 const listSamples = args.includes("--list");
 const listNeeds = args.includes("--needs");
 const extractIndex = args.indexOf("--extract");
@@ -44,7 +46,7 @@ function usage(message) {
   process.exit(2);
 }
 
-async function markdownFiles() {
+export async function markdownFiles() {
   const files = [path.join(ROOT, "README.md")];
   async function walk(dir) {
     let entries;
@@ -80,7 +82,7 @@ function slugger() {
   };
 }
 
-function parse(file, text) {
+export function parse(file, text) {
   const lines = text.split("\n");
   const samples = [];
   const markers = [];
@@ -254,4 +256,4 @@ async function main() {
   process.exit(problems.length ? 1 : 0);
 }
 
-await main();
+if (isMain) await main();

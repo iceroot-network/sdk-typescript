@@ -205,12 +205,12 @@ const missed = await net.blocks.missed({ page: 1, limit: 50 });   // recent miss
 
 const validators = await net.validators.list();          // a page of ValidatorInfo in rank order, up to 100 per page
 const one = await net.validators.get(nameOrAddress);
-const voters = await net.validators.voters(name);
-const produced = await net.validators.blocks(name);
-const missedBy = await net.validators.missed(name);
+const voters = await net.validators.voters(validatorName);
+const produced = await net.validators.blocks(validatorName);
+const missedBy = await net.validators.missed(validatorName);
 
 const round = await net.rounds.validators(roundNumber); // the validators seated in a round
-const named = await net.names.resolve(name);             // today: validator names only
+const named = await net.names.resolve(validatorName);    // today: validator names only
 const fees = await net.fees.statistics();                // the node's fee figures, for display
 ```
 

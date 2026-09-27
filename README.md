@@ -41,7 +41,7 @@ The [documentation](docs/README.md) covers the API and how to wire the IceRoot a
 - Quickstarts: [Node](docs/quickstart/node.md), [Vite and React](docs/quickstart/vite-react.md), [Next.js](docs/quickstart/nextjs.md), [Manifest V3 extension](docs/quickstart/mv3-extension.md), [Tauri desktop and mobile](docs/quickstart/tauri.md), [Rust backend](docs/quickstart/rust-backend.md).
 - Integration guides: [explorer](docs/apps/explorer.md), [validators portal](docs/apps/validators.md), [desktop wallet](docs/apps/desktop-wallet.md), [mobile wallet](docs/apps/mobile-wallet.md), [browser wallet](docs/apps/browser-wallet.md).
 
-Every code sample in the documentation is marked with its verification status. `node scripts/check-docs.mjs` checks the markers and the links; `--list` shows the samples still to be verified against a build.
+Every code sample in the documentation is marked with its verification status. `node scripts/check-docs.mjs` checks the markers and the links; `--list` shows the samples still to be verified against a build. `npm run check:samples` type-checks every TypeScript sample marked verified against the build.
 
 [Contributing](https://github.com/iceroot-network/.github/blob/prod/CONTRIBUTING.md). Work on `dev`. Production changes reach `prod` through a reviewed `dev` → `prod` pull request.
 
@@ -151,6 +151,7 @@ The tests compare every environment with native Rust. `test/vectors/wasm-native.
 <!-- sample: plain -->
 ```sh
 npm run check:docs     # the documentation's sample markers, links and anchors
+npm run check:samples  # every TypeScript sample marked verified type-checks against dist/, TypeScript 7.0 and 5.7
 npm run check:rust     # rustfmt, clippy (native and wasm32) with warnings as errors
 npm run test:rust      # the bindings' unit tests in native Rust
 npm run check:vectors  # the vector file equals what native Rust produces now

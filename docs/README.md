@@ -6,7 +6,7 @@ The SDK is one Rust core with two front ends: this package, which is the core co
 
 ## Status of these pages
 
-Every code sample carries a status marker (see [Sample status](#sample-status)). The samples marked `verified 0.1.0` were checked against the build of release 0.1.0: each was type-checked against the package's declarations (the Rust samples compiled against the crates), and the quickstarts are assembled from their samples and run against a local devnet by the package's end-to-end test. The samples still marked `pending` install the release itself from its GitHub URL, which exists only once the release is published.
+Every code sample carries a status marker (see [Sample status](#sample-status)). The samples marked `verified 0.1.0` were checked against the build of release 0.1.0: each was type-checked against the package's declarations (the Rust samples compiled against the crates), and the quickstarts are assembled from their samples and run against a local devnet by the package's end-to-end test. `npm run check:samples` type-checks every TypeScript sample marked verified again on each build, so a change to the package that breaks one fails the checks. The samples still marked `pending` install the release itself from its GitHub URL, which exists only once the release is published.
 
 ## Reading order
 
