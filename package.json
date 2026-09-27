@@ -1,0 +1,68 @@
+{
+  "name": "@iceroot-network/sdk",
+  "version": "0.1.0",
+  "description": "The IceRoot SDK for TypeScript and JavaScript: the Rust core compiled to WebAssembly with a typed wrapper",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iceroot-network/sdk-typescript.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/web/index.d.ts",
+      "node": "./dist/node/index.js",
+      "default": "./dist/web/index.js"
+    },
+    "./vote": {
+      "types": "./dist/web/vote.d.ts",
+      "node": "./dist/node/vote.js",
+      "default": "./dist/web/vote.js"
+    },
+    "./iife": "./dist/iife/iceroot-sdk.js",
+    "./iife/bytes": "./dist/iife/iceroot-sdk-bytes.js",
+    "./wasm": "./dist/web/iceroot_sdk_bg.wasm",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/web/index.d.ts",
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:test": "node scripts/build.mjs --variant test",
+    "pack": "node scripts/build.mjs --pack",
+    "check": "npm run check:types && npm run check:size && npm run check:vectors",
+    "check:types": "node scripts/check-types.mjs",
+    "check:size": "node scripts/check-size.mjs",
+    "check:vectors": "node scripts/check-vectors.mjs",
+    "check:rust": "node scripts/check-rust.mjs",
+    "test": "npm run test:rust && npm run test:node && npm run test:browser",
+    "test:rust": "cargo test --manifest-path wasm/Cargo.toml --all-features",
+    "test:node": "node --test \"test/node/*.test.mjs\"",
+    "test:browser": "playwright test",
+    "test:tauri": "node test/contexts/tauri/run.mjs"
+  },
+  "devDependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@playwright/test": "1.63.0",
+    "@scure/base": "2.4.0",
+    "@types/node": "22.20.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "binaryen": "132.0.0",
+    "esbuild": "0.28.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "typescript-5": "npm:typescript@5.7.3",
+    "vite": "8.3.1"
+  }
+}
