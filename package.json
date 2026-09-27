@@ -22,6 +22,11 @@
       "node": "./dist/node/vote.js",
       "default": "./dist/web/vote.js"
     },
+    "./keystore": {
+      "types": "./dist/web/keystore.d.ts",
+      "node": "./dist/node/keystore.js",
+      "default": "./dist/web/keystore.js"
+    },
     "./iife": "./dist/iife/iceroot-sdk.js",
     "./iife/bytes": "./dist/iife/iceroot-sdk-bytes.js",
     "./wasm": "./dist/web/iceroot_sdk_bg.wasm",

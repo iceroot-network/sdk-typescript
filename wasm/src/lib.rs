@@ -8,7 +8,9 @@
 //! Rules for the whole crate:
 //!
 //! - Secret keys stay in WebAssembly memory. JavaScript receives public keys, addresses and
-//!   signatures only, and [`KeyHandle::release`] wipes a key.
+//!   signatures only, and [`KeyHandle::release`] wipes a key. Phrases and passwords given as
+//!   bytes are overwritten with zeros, and the keystore gives a decrypted phrase back as a new
+//!   byte array for the caller to wipe.
 //! - Untrusted input never causes a panic: every failure is a [`BindingError`] with the core's
 //!   stable code and details, which the wrapper turns into its typed errors.
 //! - No I/O. Requests to a node are made by the host language: the bindings build each request
@@ -35,10 +37,13 @@ mod draft;
 mod error;
 mod json;
 mod keys;
+mod keystore;
 mod messages;
 mod phrase;
 mod profile;
 mod signin;
+mod vote;
+mod write;
 
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -49,10 +54,18 @@ pub use crate::chain::ChainHandle;
 pub use crate::draft::{DraftHandle, SignedHandle, online_facts};
 pub use crate::error::BindingError;
 pub use crate::keys::KeyHandle;
+pub use crate::keystore::{
+    keystore_armor, keystore_change_password, keystore_check_params, keystore_dearmor,
+    keystore_decrypt, keystore_encrypt, keystore_inspect, keystore_is_weaker, keystore_reencrypt,
+};
 pub use crate::messages::{sha256, verify_message};
 pub use crate::phrase::{check_phrase, generate_phrase};
 pub use crate::profile::ProfileHandle;
 pub use crate::signin::{build_sign_in, parse_sign_in};
+pub use crate::vote::{
+    vote_call, vote_check, vote_evaluate, vote_rules_at, vote_select,
+    vote_snapshot_from_validators, vote_split, vote_validate, vote_validate_snapshot, vote_voter,
+};
 
 /// The version of these bindings.
 #[wasm_bindgen(js_name = bindingsVersion)]

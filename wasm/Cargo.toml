@@ -19,12 +19,19 @@ default = []
 # Test seam: reproducible signatures for the cross-checks against native Rust. Only the test build
 # of the package enables it; the published build never does.
 fixed-aux = ["iceroot-sdk/fixed-aux"]
+# Test seam: the keystore vectors' own salts and nonces and their lowered parameter floor, so that
+# every keystore vector runs in WebAssembly. It turns on the keystore's test-only feature, which no
+# build that ships may enable. Only the test build of the package enables it.
+keystore-testing = ["dep:iceroot-keystore"]
 
 [dependencies]
 # The SDK's Rust core. Every key, address, signature and transaction comes from it, and through it
 # from heartwood-crypto. Until sdk-rust has a tagged release, the bindings build against a checkout
 # of sdk-rust next to this repository.
-iceroot-sdk = { path = "../../sdk-rust/crates/iceroot-sdk", features = ["serde"] }
+iceroot-sdk = { path = "../../sdk-rust/crates/iceroot-sdk", features = ["serde", "keystore"] }
+# The keystore crate itself, only for the test seam above: the same crate the facade re-exports as
+# `iceroot_sdk::keystore`, with its test-only feature.
+iceroot-keystore = { path = "../../sdk-rust/crates/iceroot-keystore", optional = true, features = ["testing"] }
 js-sys = "0.3"
 # The `Serialize` trait of the node API client's answers, which the bindings write as JSON.
 serde = "1"

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks the size budget of the built package: the WebAssembly module at most 330 KiB (337,920
+// Checks the size budget of the built package: the WebAssembly module at most 400 KiB (409,600
 // bytes) gzipped.
 //
 //   node scripts/check-size.mjs [dist directory]
@@ -11,10 +11,15 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
-// 330 KiB. The module holds the node API client's mapping too (requests and answers are built and
-// read in Rust, so every language shares one mapping), which an earlier 300 KB estimate for keys,
-// addresses and transactions alone left out.
-const BUDGET_GZIP_BYTES = 330 * 1024;
+// 400 KiB, the budget from the vote library and the keystore on; the release with the post-quantum
+// signer has 450 KiB. The module without them measured 321,041 bytes gzipped against 330 KiB: keys,
+// addresses, transactions and the node API client's mapping (requests and answers are built and
+// read in Rust, so every language shares one mapping). The vote library adds about 43 KB gzipped
+// (the four modes, the check and the plain English reasons of every pick), the keystore about
+// 44 KB (Argon2id, XChaCha20-Poly1305, base64url and the format): 408,000 bytes in all. The
+// keystore normalizes passwords with the same ICU4X normalizer and data as recovery phrases; with
+// a second normalizer's tables the module measured 460 KB.
+const BUDGET_GZIP_BYTES = 400 * 1024;
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = resolve(root, process.argv[2] ?? "dist");

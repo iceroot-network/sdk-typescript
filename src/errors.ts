@@ -4,8 +4,12 @@
  * Every error the SDK throws is an {@link IceRootError} with a stable string `code`, a human
  * `message` and structured `details`. Each code has a subclass for `instanceof` checks. The codes
  * are part of the API: apps may branch on them, and they never change meaning. They are the codes
- * of the SDK's Rust core, which the TypeScript, Rust and Go SDKs share, plus the two that only the
- * TypeScript wrapper raises (`InvalidArgument`, `WasmLoadFailed`).
+ * of the SDK's Rust crates, which the TypeScript, Rust and Go SDKs share, plus the two that only the
+ * TypeScript wrapper raises (`InvalidArgument`, `WasmLoadFailed`). A code two crates give has the
+ * same meaning and details in both.
+ *
+ * The classes of the vote library's codes are exported by `@iceroot-network/sdk/vote`, and those
+ * of the keystore's codes by `@iceroot-network/sdk/keystore`, with the functions that raise them.
  *
  * @module
  */
@@ -54,7 +58,24 @@ export type ErrorCode =
   | "RandomnessUnavailable"
   | "SigningFailed"
   | "WrongKey"
-  | "KeyReleased";
+  | "KeyReleased"
+  // Vote selection (`@iceroot-network/sdk/vote`)
+  | "InvalidPickCount"
+  | "ValidatorCannotVote"
+  | "InvalidSnapshot"
+  | "NotEnoughValidators"
+  | "DoesNotFit"
+  | "BreaksRules"
+  // Keystore (`@iceroot-network/sdk/keystore`)
+  | "WrongPasswordOrCorrupt"
+  | "Malformed"
+  | "UnsupportedVersion"
+  | "UnsupportedKdf"
+  | "UnsupportedPayload"
+  | "ParamsOutOfRange"
+  | "InvalidPayload"
+  | "InvalidPassword"
+  | "OutOfMemory";
 
 /** Structured details of an error. */
 export type ErrorDetails = Readonly<Record<string, unknown>>;
@@ -144,7 +165,10 @@ export class TooManyRecipients extends IceRootError {
   }
 }
 
-/** A vote breaks the network's vote rules. */
+/**
+ * A vote breaks the network's vote rules, or cannot be made (a split among more than 10,000
+ * validators). `details.reason` names the rule.
+ */
 export class InvalidVote extends IceRootError {
   constructor(message: string, details: ErrorDetails = {}) {
     super("InvalidVote", message, details);
@@ -331,9 +355,9 @@ export class WasmLoadFailed extends IceRootError {
   }
 }
 
-/** No random bytes were available for signing; nothing was signed. */
+/** No random bytes were available for signing, or for a keystore's salt and nonce; nothing was made. */
 export class RandomnessUnavailable extends IceRootError {
-  constructor(message = "no random bytes are available for signing") {
+  constructor(message = "no random bytes are available") {
     super("RandomnessUnavailable", message);
   }
 }

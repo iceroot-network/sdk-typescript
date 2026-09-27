@@ -12,8 +12,9 @@
 // builder compiles the module the same way.
 //
 // The release variant writes dist/, which is what the package ships. The test variant writes
-// build/test/dist/ with the reproducible-signature seam compiled in, for the cross-checks against
-// native Rust only; it is never packed. --pack also writes the package tarball and its checksums
+// build/test/dist/ with the test seams compiled in (reproducible signatures, and the keystore
+// vectors' salts, nonces and lowered parameter floor), for the cross-checks against native Rust
+// and the vectors only; it is never packed. --pack also writes the package tarball and its checksums
 // to build/pack/.
 //
 // Builders need Rust with the wasm32-unknown-unknown target, the wasm-bindgen CLI at the exact
@@ -68,7 +69,8 @@ const OUT_NAME = "iceroot_sdk";
 const IIFE_NAME = "iceroot-sdk";
 const IIFE_GLOBAL = "IceRootSdk";
 const BYTES_GLOBAL = "IceRootSdkWasmBytes";
-const TEST_SEAM = "signMessageWithAux";
+// Exports of the test seams, which the test module must have and the release module must not.
+const TEST_SEAMS = ["signMessageWithAux", "keystoreEncryptWithSaltAndNonce"];
 
 // The features rustc enables by default for wasm32-unknown-unknown. wasm-bindgen drops the
 // target_features section, so wasm-opt is told the same set explicitly and never adds others.
@@ -184,7 +186,7 @@ function compileBindings(tools) {
     targetDir,
   ];
   if (variant === "test") {
-    args.push("--features", "fixed-aux");
+    args.push("--features", "fixed-aux,keystore-testing");
   }
   const env = { ...process.env, ...tools.compilerEnv, CARGO_ENCODED_RUSTFLAGS: rustFlags().join("\x1f") };
   delete env.RUSTFLAGS;
@@ -223,12 +225,14 @@ function optimize(tools) {
 
 function checkTestSeam() {
   const glue = readFileSync(join(wasmDir, "web", `${OUT_NAME}.js`), "utf8");
-  const present = glue.includes(TEST_SEAM);
-  if (variant === "release" && present) {
-    fail("the release module exports the reproducible-signature seam");
-  }
-  if (variant === "test" && !present) {
-    fail("the test module lacks the reproducible-signature seam");
+  for (const seam of TEST_SEAMS) {
+    const present = glue.includes(seam);
+    if (variant === "release" && present) {
+      fail(`the release module exports the test seam ${seam}`);
+    }
+    if (variant === "test" && !present) {
+      fail(`the test module lacks the test seam ${seam}`);
+    }
   }
 }
 
@@ -238,7 +242,14 @@ function entryPoints() {
   return {
     index: join(root, "src", variant === "release" ? "index.ts" : "testing.ts"),
     vote: join(root, "src", "vote.ts"),
+    keystore: join(root, "src", "keystore.ts"),
   };
+}
+
+// The classic-script build has one entry: the root with the vote library and the keystore as
+// namespaces (the test entry carries them too).
+function classicScriptEntry() {
+  return join(root, "src", variant === "release" ? "iife.ts" : "testing.ts");
 }
 
 // Resolves the loader and the glue of one target. The glue stays a separate file next to the
@@ -296,7 +307,7 @@ async function bundleClassicScript(optimized) {
   const result = await esbuild.build({
     ...common(),
     banner: {},
-    entryPoints: [entryPoints().index],
+    entryPoints: [classicScriptEntry()],
     write: false,
     format: "iife",
     globalName: "__icerootSdk",
@@ -381,6 +392,7 @@ function emitDeclarations() {
   };
   visit("index.d.ts");
   visit("vote.d.ts");
+  visit("keystore.d.ts");
   for (const file of reachable) {
     mkdirSync(dirname(join(outDir, "web", file)), { recursive: true });
     cpSync(join(types, file), join(outDir, "web", file));

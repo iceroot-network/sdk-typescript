@@ -41,6 +41,25 @@ import {
   type ErrorDetails,
   type RejectionReason,
 } from "../errors.js";
+import {
+  InvalidPassword,
+  InvalidPayload,
+  Malformed,
+  OutOfMemory,
+  ParamsOutOfRange,
+  UnsupportedKdf,
+  UnsupportedPayload,
+  UnsupportedVersion,
+  WrongPasswordOrCorrupt,
+} from "../keystore-errors.js";
+import {
+  BreaksRules,
+  DoesNotFit,
+  InvalidPickCount,
+  InvalidSnapshot,
+  NotEnoughValidators,
+  ValidatorCannotVote,
+} from "../vote-errors.js";
 
 const ADDRESS_PROBLEMS: ReadonlySet<string> = new Set(["checksum", "length", "wrong-network", "format"]);
 const REJECTION_REASONS: ReadonlySet<string> = new Set([
@@ -86,6 +105,23 @@ const PLAIN: Readonly<Record<string, Plain>> = {
   FeeUnavailable,
   SigningFailed,
   WrongKey,
+  // The vote library.
+  InvalidPickCount,
+  ValidatorCannotVote,
+  InvalidSnapshot,
+  NotEnoughValidators,
+  DoesNotFit,
+  BreaksRules,
+  // The keystore.
+  WrongPasswordOrCorrupt,
+  Malformed,
+  UnsupportedVersion,
+  UnsupportedKdf,
+  UnsupportedPayload,
+  ParamsOutOfRange,
+  InvalidPayload,
+  InvalidPassword,
+  OutOfMemory,
 };
 
 /** The SDK error of a code, message and details, as the Rust core reports them. */

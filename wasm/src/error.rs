@@ -1,11 +1,11 @@
 //! Errors that cross the boundary.
 //!
 //! A [`BindingError`] becomes a JavaScript `Error` whose `name` is the error code and whose
-//! `details` object carries the structured fields. Errors of the core keep the core's code and
-//! details exactly; the bindings add only `InvalidArgument`, for a call whose arguments do not
-//! have the documented shape, and raise the core's `InvalidProfile` for a profile they cannot
-//! read. The TypeScript wrapper maps every code to its own error classes, so the codes are part of
-//! the contract between the two halves.
+//! `details` object carries the structured fields. Errors of the core, the vote library and the
+//! keystore keep their crate's code and details exactly; the bindings add only `InvalidArgument`,
+//! for a call whose arguments do not have the documented shape, and raise the core's
+//! `InvalidProfile` for a profile they cannot read. The TypeScript wrapper maps every code to its
+//! own error classes, so the codes are part of the contract between the two halves.
 
 use iceroot_sdk::Error;
 use serde_json::{Value, json};
@@ -26,6 +26,19 @@ impl BindingError {
             code,
             message: message.into(),
             details: json!({}),
+        }
+    }
+
+    /// An error of another crate of the SDK, with its stable code and structured details.
+    pub(crate) fn with_details(
+        code: &'static str,
+        message: impl Into<String>,
+        details: Value,
+    ) -> BindingError {
+        BindingError {
+            code,
+            message: message.into(),
+            details,
         }
     }
 
