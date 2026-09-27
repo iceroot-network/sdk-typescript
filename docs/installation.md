@@ -64,7 +64,8 @@ Replace the version in both places of the URL and run `npm install` again. Read 
 | `@iceroot-network/sdk` | Everything. Node picks the Node build through the `node` export condition; browsers and bundlers get the web build |
 | `@iceroot-network/sdk/vote` | The vote selection library: the four vote modes, `check`, `split` and `validateVote` ([Vote selection](vote.md)) |
 | `@iceroot-network/sdk/keystore` | The keystore: a recovery phrase encrypted under a password ([Keystore](keystore.md)) |
-| `@iceroot-network/sdk/iife` | A classic script for pages without a bundler. It defines the global `IceRootSdk`, with the vote library and the keystore as its namespaces `vote` and `keystore` |
+| `@iceroot-network/sdk/ownership` | Ownership proofs of Solar addresses, for the Legacy Signer and the services that check its proofs ([Ownership proofs](ownership.md)) |
+| `@iceroot-network/sdk/iife` | A classic script for pages without a bundler. It defines the global `IceRootSdk`, with the vote library, the keystore and the ownership proofs as its namespaces `vote`, `keystore` and `ownership` |
 | `@iceroot-network/sdk/iife/bytes` | The WebAssembly module as an embedded byte array (global `IceRootSdkWasmBytes`), for contexts that cannot fetch a file: a Manifest V3 sandbox page or service worker |
 | `@iceroot-network/sdk/wasm` | The `.wasm` file of the web build, for hosts that serve it from their own location and pass its URL to `init` |
 | `@iceroot-network/sdk/tauri` | The same interface backed by the native Tauri plugin (a later release) |

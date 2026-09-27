@@ -12,7 +12,7 @@ Every code sample carries a status marker (see [Sample status](#sample-status)).
 
 1. [Installation](installation.md): get the package from a GitHub release.
 2. [Concepts](concepts.md): the API in one page, from loading the module to errors.
-3. [Vote selection](vote.md) and the [keystore](keystore.md), for wallets.
+3. [Vote selection](vote.md) and the [keystore](keystore.md), for wallets; [ownership proofs](ownership.md) of Solar addresses, for the Legacy Signer and the services that check its proofs.
 4. [Rules apps must never get wrong](rules.md): the checklist every app follows.
 5. [Devnet](devnet.md): the network to develop against, and its profile.
 6. The quickstart for your app type:
@@ -46,6 +46,7 @@ Each integration guide lists what can be wired with release 0.1.0 and what waits
 | Message signing, sign-in challenge format | Yes | Post-quantum message signatures |
 | Vote selection library (Diversity, Reliability, Maximum Rewards, Support Newcomers), `check`, manual votes | Yes, on the node's validator list | Windowed figures, declarations and payouts from an indexer |
 | Keystore format: a recovery phrase encrypted under a password | Yes, in WebAssembly | Run natively by the Tauri plugin; the post-quantum key seed as a payload |
+| Ownership proofs of Solar addresses (version 1, the Legacy Signer's format) | Yes | A separate legacy package once IceRoot's own formats replace today's |
 | Native Tauri plugin (keys and signing in Rust) | | A later release |
 
 ## Sample status

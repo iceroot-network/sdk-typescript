@@ -2,7 +2,7 @@
 
 The IceRoot SDK for TypeScript and JavaScript: the Rust core compiled to WebAssembly with a thin, typed wrapper. It runs in browsers, Next.js, Vite and React, Tauri webviews and Manifest V3 extensions.
 
-The SDK is in early development and not yet published to a public registry. Today the package loads the WebAssembly module in every supported environment and offers, for today's devnet: `connect` with a pinned network identity, the network's rules and economics, every read of the node API as typed records, builders that read a draft's facts from the node and default to the exact fee floor, submission within the pool's limits, waiting for inclusion and watching by polling; recovery phrases and accounts, the legacy passphrase import, addresses, exact amounts, drafts of every operation with review summaries, signing in the same or another context, message signatures and the sign-in message; the vote library, which fills a vote in one of four modes and explains every pick (`@iceroot-network/sdk/vote`); and the keystore, a recovery phrase encrypted under a password (`@iceroot-network/sdk/keystore`).
+The SDK is in early development and not yet published to a public registry. Today the package loads the WebAssembly module in every supported environment and offers, for today's devnet: `connect` with a pinned network identity, the network's rules and economics, every read of the node API as typed records, builders that read a draft's facts from the node and default to the exact fee floor, submission within the pool's limits, waiting for inclusion and watching by polling; recovery phrases and accounts, the legacy passphrase import, addresses, exact amounts, drafts of every operation with review summaries, signing in the same or another context, message signatures and the sign-in message; the vote library, which fills a vote in one of four modes and explains every pick (`@iceroot-network/sdk/vote`); the keystore, a recovery phrase encrypted under a password (`@iceroot-network/sdk/keystore`); and ownership proofs of Solar addresses in the Legacy Signer's format (`@iceroot-network/sdk/ownership`).
 
 ## Install
 
@@ -38,6 +38,7 @@ The [documentation](docs/README.md) covers the API and how to wire the IceRoot a
 - [Concepts](docs/concepts.md): profiles and networks, keys and recovery phrases, addresses, amounts, reads, transactions and drafts, message signing and sign-in, errors.
 - [Vote selection](docs/vote.md): the four vote modes, the review screen's reasons, checking a vote later, manual votes.
 - [Keystore](docs/keystore.md): a recovery phrase encrypted under a password, the presets per platform, opening and changing it.
+- [Ownership proofs](docs/ownership.md): proofs that a holder controls a Solar address, in the Legacy Signer's format.
 - [Rules apps must never get wrong](docs/rules.md), with security notes and a review checklist.
 - [Devnet](docs/devnet.md): the network to develop against.
 - Quickstarts: [Node](docs/quickstart/node.md), [Vite and React](docs/quickstart/vite-react.md), [Next.js](docs/quickstart/nextjs.md), [Manifest V3 extension](docs/quickstart/mv3-extension.md), [Tauri desktop and mobile](docs/quickstart/tauri.md), [Rust backend](docs/quickstart/rust-backend.md).
@@ -110,8 +111,8 @@ Every error is an `IceRootError` with a stable `code` shared with the Rust core 
 |---|---|---|
 | `@iceroot-network/sdk` in Node 22 | `dist/node` | Synchronously, when imported |
 | `@iceroot-network/sdk` in browsers and bundlers | `dist/web` | `await init()` fetches `iceroot_sdk_bg.wasm` next to the build; `init(source)` takes a URL, a `Response` or bytes instead |
-| `@iceroot-network/sdk/vote`, `@iceroot-network/sdk/keystore` | `dist/node`, `dist/web` | The vote library and the keystore, as the root entry loads; they share its module |
-| `@iceroot-network/sdk/iife` | `dist/iife/iceroot-sdk.js` | A classic script that defines one global, `IceRootSdk`, with the vote library and the keystore as `IceRootSdk.vote` and `IceRootSdk.keystore`; `IceRootSdk.init()` fetches `iceroot-sdk_bg.wasm` next to the script |
+| `@iceroot-network/sdk/vote`, `@iceroot-network/sdk/keystore`, `@iceroot-network/sdk/ownership` | `dist/node`, `dist/web` | The vote library, the keystore and the ownership proofs, as the root entry loads; they share its module |
+| `@iceroot-network/sdk/iife` | `dist/iife/iceroot-sdk.js` | A classic script that defines one global, `IceRootSdk`, with the vote library, the keystore and the ownership proofs as `IceRootSdk.vote`, `IceRootSdk.keystore` and `IceRootSdk.ownership`; `IceRootSdk.init()` fetches `iceroot-sdk_bg.wasm` next to the script |
 | `@iceroot-network/sdk/iife/bytes` | `dist/iife/iceroot-sdk-bytes.js` | A classic script that defines `IceRootSdkWasmBytes`, the module as bytes, for `IceRootSdk.initSync(IceRootSdkWasmBytes)` where fetching is not possible |
 | `@iceroot-network/sdk/wasm` | `dist/web/iceroot_sdk_bg.wasm` | The module itself, for hosts that serve it elsewhere |
 

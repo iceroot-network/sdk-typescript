@@ -47,6 +47,16 @@ declare function showRetry(message: string): void;
 declare const snapshot: import("@iceroot-network/sdk/vote").VoteSnapshot;
 declare const selection: import("@iceroot-network/sdk/vote").Selection;
 
+// A Solar wallet's passphrase and an IceRoot account the holder typed, a Ledger's answer and a
+// proof pasted into a checker, for the ownership proofs.
+declare const solarPassphrase: string;
+declare const typedAccount: string;
+declare const ledgerPublicKey: string;
+declare const ledgerSignature: string;
+declare const pastedProof: string;
+declare function showForReview(message: string): void;
+declare function copyToClipboard(text: string): void;
+
 // A keystore the app stored, and passwords the holder typed.
 declare const stored: Uint8Array;
 declare const password: Uint8Array;

@@ -401,6 +401,7 @@ Every SDK error is an `IceRootError` with a stable `code`, a readable `message` 
 | Support | `UnsupportedOnNetwork` (with `capability`), `SdkNotInitialized`, `WasmLoadFailed` |
 | Crypto | `RandomnessUnavailable`, `SigningFailed`, `WrongKey`, `KeyReleased` |
 | Vote selection | `InvalidPickCount`, `ValidatorCannotVote`, `InvalidSnapshot`, `NotEnoughValidators`, `DoesNotFit`, `BreaksRules`; classes in `@iceroot-network/sdk/vote` ([Vote selection](vote.md#errors)) |
+| Ownership proofs | `InvalidProof` (with `reason`); class in `@iceroot-network/sdk/ownership` ([Ownership proofs](ownership.md#errors)) |
 | Keystore | `WrongPasswordOrCorrupt`, `Malformed`, `UnsupportedVersion`, `UnsupportedKdf`, `UnsupportedPayload`, `ParamsOutOfRange`, `InvalidPayload`, `InvalidPassword`, `OutOfMemory`; classes in `@iceroot-network/sdk/keystore` ([Keystore](keystore.md#errors)) |
 
 <!-- sample: verified 0.1.0 -->
