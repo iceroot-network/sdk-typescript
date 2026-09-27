@@ -29,10 +29,14 @@ async function report(page: Page, path: string): Promise<Record<string, unknown>
   return JSON.parse(text ?? "{}") as Record<string, unknown>;
 }
 
+const selections = vectors.vote.selections.length;
+
 test("the published browser build matches native Rust", async ({ page }) => {
   const result = await report(page, "/test/contexts/chromium/index.html");
   expect(result["failures"]).toEqual([]);
   expect(result["ok"]).toBe(true);
+  expect(result["voteSelections"]).toBe(selections);
+  expect(result["keystoresOpened"]).toBe(1);
   expect(result["hasFixedAux"]).toBe(false);
   expect(result["verifiedSignatures"]).toBe(25);
   expect(result["verifiedTransactions"]).toBe(transactions);
@@ -44,6 +48,8 @@ test("the test browser build signs byte for byte as native Rust", async ({ page 
   const result = await report(page, "/test/contexts/chromium/index.html?build=test");
   expect(result["failures"]).toEqual([]);
   expect(result["ok"]).toBe(true);
+  expect(result["voteSelections"]).toBe(selections);
+  expect(result["keystoresOpened"]).toBe(1);
   expect(result["fixedAuxSignatures"]).toBe(25);
   expect(result["fixedAuxTransactions"]).toBe(transactions);
 });

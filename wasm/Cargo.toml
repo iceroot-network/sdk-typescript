@@ -59,6 +59,11 @@ required-features = ["fixed-aux"]
 name = "differential"
 required-features = ["fixed-aux"]
 
+# The native side of the vote library's differential test (scripts/check-differential.mjs).
+[[example]]
+name = "vote_differential"
+required-features = ["fixed-aux"]
+
 [lints.rust]
 missing_docs = "warn"
 unused_must_use = "deny"

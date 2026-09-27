@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // The differential test: 10,000 random cases through the bindings compiled natively and through
 // the WebAssembly build behind the TypeScript wrapper, which must give the same results byte for
-// byte, errors (code and details) included.
+// byte, errors (code and details) included; then 10,000 random vote snapshots through the vote
+// library the same way.
 //
-//   node scripts/check-differential.mjs [--cases N] [--seed TEXT]
+//   node scripts/check-differential.mjs [--cases N] [--vote-cases N] [--seed TEXT]
 //
 // The cases are recovery phrases of every length (valid, too short or with a bad checksum) with
 // passphrases and hardened paths; legacy passphrase keys with message signatures; amounts parsed
@@ -13,11 +14,18 @@
 // bytes. The native side is wasm/examples/differential.rs; the WebAssembly side is the test build
 // (npm run build:test), which can sign with chosen auxiliary bytes.
 //
+// The vote cases are snapshots of 1 to 120 validators with random ranks, seats, statuses,
+// production, penalties, declarations, payouts and heights (a few of them inconsistent, which the
+// library refuses), each with a selection request in a random mode, number of picks, draw and vote
+// rules; the selection is then checked against a changed snapshot, the snapshot evaluated by a
+// random mode, a vote validated and names split. Every result is compared as canonical JSON, the
+// reasons' sentences included. The native side is wasm/examples/vote_differential.rs.
+//
 // The cases come from a SHA-256 counter stream of the seed, so a run is reproducible.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -26,9 +34,14 @@ import { wordlist } from "@scure/bip39/wordlists/english.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { values: options } = parseArgs({
-  options: { cases: { type: "string", default: "10000" }, seed: { type: "string", default: "iceroot-sdk differential" } },
+  options: {
+    cases: { type: "string", default: "10000" },
+    "vote-cases": { type: "string", default: "10000" },
+    seed: { type: "string", default: "iceroot-sdk differential" },
+  },
 });
 const TOTAL = Number(options.cases);
+const VOTE_TOTAL = Number(options["vote-cases"]);
 const RELAY = "http://127.0.0.1:4003/api";
 
 const sdk = await import(join(root, "build", "test", "dist", "node", "index.js"));
@@ -331,3 +344,246 @@ if (failures.length > 0) {
   fail(`${failures.length} of ${cases.length} cases differ between native Rust and WebAssembly`);
 }
 console.log("check-differential: native Rust and WebAssembly agree on every case");
+
+// ---- the vote library ------------------------------------------------------------------------------
+
+const vote = sdk.vote;
+const LETTERS = "abcdefghijklmnopqrstuvwxyz";
+const OPERATORS = ["Acme Nodes", "Blue Hosting", "Coldstake", "Delta Ops", "\u202eevil\u202c", "quote \"op\""];
+const HOSTS = ["Metalbox", "Hostco", "Cloudia", "Home"];
+const COUNTRIES = ["DE", "NL", "US", "BR", "JP", "AU", "ZA", "IN", "FI", "SG", "XX", "de", ""];
+
+function voteName(style, i) {
+  if (style === "solar") {
+    return pick([`genesis_${i + 1}`, `v${i}`, `node.${i}`, `a${i}b`]);
+  }
+  let name = "";
+  let n = i + 1;
+  while (n > 0) {
+    name += LETTERS[n % 26];
+    n = Math.floor(n / 26);
+  }
+  return `${pick(["val", "node", "x", LETTERS.slice(0, 1 + int(12))])}${name}`.slice(0, 20);
+}
+
+function maybe(percent, make) {
+  return chance(percent) ? make() : null;
+}
+
+function voteSnapshot() {
+  const size = chance(15) ? 1 + int(40) : chance(70) ? 40 + int(41) : 80 + int(41);
+  const seats = chance(80) ? 53 : pick([5, 11, 21, 60]);
+  const height = chance(90) ? bigint(chance(50) ? 24 : 40) + 1n : bigint(64);
+  const style = chance(65) ? "letters" : "solar";
+  const ranks = Array.from({ length: size }, (_, i) => i + 1);
+  for (let i = ranks.length - 1; i > 0; i--) {
+    const j = int(i + 1);
+    [ranks[i], ranks[j]] = [ranks[j], ranks[i]];
+  }
+  const records = ranks.map((rank, i) => {
+    const resigned = chance(6) ? pick(["resigned-temporary", "resigned-permanent"]) : null;
+    const ranked = resigned === null && !chance(3);
+    const seated = ranked && rank <= seats;
+    const assigned = int(20_000);
+    return {
+      name: voteName(style, i),
+      address: `addr-${i}-${int(1000)}`,
+      rank: ranked ? rank : null,
+      seated,
+      status: resigned ?? (seated ? "active" : "standby"),
+      registeredHeight: maybe(85, () => String(bigint(64) % (height + 1n))),
+      seatedDaysInWindow: maybe(85, () => int(31)),
+      voteWeight: String(bigint(chance(10) ? 100 : 60)),
+      voters: int(5000),
+      production: maybe(85, () => ({
+        forged: assigned - int(Math.max(1, Math.floor(assigned / (chance(80) ? 50 : 5)))),
+        assigned,
+      })),
+      penalties: maybe(70, () => ({ jailedInWindow: chance(5), equivocationInWindow: chance(3), ever: chance(10) })),
+      declarations: maybe(70, () => ({
+        operator: maybe(80, () => (chance(30) ? `${pick(OPERATORS)} ${i}` : pick(OPERATORS))),
+        hosting: maybe(80, () => pick(HOSTS)),
+        country: maybe(80, () => pick(COUNTRIES)),
+        complete: chance(70),
+      })),
+      payouts: maybe(60, () => ({ perUnitWeight: String(bigint(chance(5) ? 110 : 20)), intervals: int(40) })),
+      selfFundedWeightBp: maybe(60, () => int(10_001)),
+    };
+  });
+  const snapshot = {
+    height: String(height),
+    windowDays: 30,
+    seats,
+    blockTimeSeconds: pick([8, 8, 8, 3, 60]),
+    source: pick(["indexer", "relay-approximate"]),
+    records,
+  };
+  // One snapshot in twenty has one problem, which the library refuses.
+  if (chance(5)) {
+    const record = pick(records);
+    const other = records.length > 1 ? records[(records.indexOf(record) + 1) % records.length] : record;
+    const problem = int(10);
+    if (problem === 0) record.production = { forged: 11, assigned: 10 };
+    if (problem === 1) record.seatedDaysInWindow = 31;
+    if (problem === 2) record.registeredHeight = String(height + 1n);
+    if (problem === 3) record.selfFundedWeightBp = 10_001;
+    if (problem === 4) Object.assign(record, { status: "resigned-temporary", seated: true });
+    if (problem === 5) other.name = record.name;
+    if (problem === 6) other.address = record.address;
+    if (problem === 7) snapshot.windowDays = 7;
+    if (problem === 8) snapshot.blockTimeSeconds = 0;
+    if (problem === 9) record.name = "Upper_Case";
+  }
+  return snapshot;
+}
+
+function voteRules(style) {
+  const iceroot = style === undefined ? chance(50) : chance(85) === (style === "letters");
+  const base = iceroot ? vote.VoteRules.ICEROOT : vote.VoteRules.SOLAR_COMPATIBLE;
+  if (chance(70)) {
+    return { ...base };
+  }
+  return {
+    ...base,
+    minEntries: pick([base.minEntries, 1, 20, 25]),
+    maxEntries: pick([base.maxEntries, 30, 53]),
+    maxEntryBasisPoints: pick([base.maxEntryBasisPoints, 188, 500, 10_000]),
+    maxBytes: pick([base.maxBytes, 400, 700, 1024, 1280]),
+  };
+}
+
+function changed(snapshot) {
+  const records = snapshot.records
+    .filter(() => !chance(4))
+    .map((record) => {
+      if (chance(5)) {
+        return { ...record, status: "resigned-permanent", seated: false, rank: null };
+      }
+      if (chance(5) && record.penalties !== null) {
+        return { ...record, penalties: { ...record.penalties, jailedInWindow: true } };
+      }
+      if (chance(5) && record.production !== null) {
+        return { ...record, production: { forged: 0, assigned: record.production.assigned } };
+      }
+      return record;
+    });
+  return { ...snapshot, records };
+}
+
+function snapshotCase() {
+  const snapshot = voteSnapshot();
+  const names = snapshot.records.map((record) => record.name);
+  const accounts = ["holder-a", "holder-b", "dZ1W1GsDCSyhR148oMhuHy3PkhnnSGCqVn", snapshot.records[0]?.address ?? "x"];
+  const request = {
+    mode: pick(vote.MODES),
+    account: chance(95) ? pick(accounts.slice(0, 3)) : accounts[3],
+    count: chance(70) ? 20 : chance(95) ? 20 + int(34) : pick([0, 19, 54, 255]),
+    draw: chance(70) ? 0 : int(4),
+    rules: voteRules(snapshot.records.some((record) => record.name.includes("_") || /[0-9.]/.test(record.name)) ? "solar" : "letters"),
+  };
+  const chosen = names.filter(() => chance(40)).slice(0, chance(90) ? 53 : 60);
+  const entries = chance(80)
+    ? chosen.map((validator, i) => ({ validator, basisPoints: Math.trunc(10_000 / chosen.length) + (i < 10_000 % chosen.length ? 1 : 0) }))
+    : chosen.map((validator) => ({ validator, basisPoints: int(chance(50) ? 600 : 10_001) }));
+  return {
+    snapshot,
+    request,
+    newer: changed(snapshot),
+    evaluate: pick(vote.MODES),
+    validate: { entries, rules: voteRules(), voter: pick(["ordinary", "validator"]) },
+    split: chance(95) ? names.slice(0, int(names.length + 1)) : Array.from({ length: 10_001 }, (_, i) => `n${i}`),
+  };
+}
+
+/** Canonical JSON: object keys sorted, bigints as decimal strings, as the native side writes it. */
+function canonical(value) {
+  if (typeof value === "bigint") {
+    return JSON.stringify(value.toString());
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonical).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+const digest = (value) => sha256(canonical(value));
+
+function voteOutcome(fn) {
+  try {
+    return fn();
+  } catch (error) {
+    if (!(error instanceof sdk.IceRootError)) {
+      throw error;
+    }
+    return { error: { code: error.code, details: { ...error.details } } };
+  }
+}
+
+function wasmVoteResult(c) {
+  const snapshot = vote.VoteSnapshot.deserialize(JSON.stringify(c.snapshot));
+  const selection = voteOutcome(() => {
+    const { vote: _entries, ...rest } = vote.select(snapshot, c.request);
+    return rest;
+  });
+  const checked =
+    selection.error === undefined
+      ? voteOutcome(() => vote.check(selection, vote.VoteSnapshot.deserialize(JSON.stringify(c.newer))))
+      : null;
+  return {
+    select: selection.error?.code ?? "ok",
+    selection: digest(selection),
+    check: digest(checked),
+    evaluate: digest(voteOutcome(() => vote.evaluate(snapshot, c.evaluate))),
+    validate: digest(voteOutcome(() => vote.validateVote(c.validate.entries, c.validate.rules, c.validate.voter))),
+    split: digest(voteOutcome(() => vote.split(c.split))),
+  };
+}
+
+const voteCases = Array.from({ length: VOTE_TOTAL }, snapshotCase);
+// In batches: the cases of 10,000 snapshots are more text than one JavaScript string may hold.
+const BATCH = 1000;
+const voteNative = [];
+for (let start = 0; start < voteCases.length; start += BATCH) {
+  const batch = voteCases.slice(start, start + BATCH);
+  const lines = execFileSync(
+    "cargo",
+    ["run", "--quiet", "--locked", "--release", "--example", "vote_differential", "--features", "fixed-aux"],
+    {
+      cwd: join(root, "wasm"),
+      input: `${batch.map((c) => JSON.stringify(c)).join("\n")}\n`,
+      encoding: "utf8",
+      maxBuffer: 1 << 28,
+      stdio: ["pipe", "pipe", "inherit"],
+    },
+  )
+    .trimEnd()
+    .split("\n");
+  voteNative.push(...lines);
+}
+if (voteNative.length !== voteCases.length) {
+  fail(`native Rust answered ${voteNative.length} of ${voteCases.length} vote cases`);
+}
+const voteFailures = [];
+const voteTally = {};
+for (const [i, c] of voteCases.entries()) {
+  const ours = wasmVoteResult(c);
+  voteTally[ours.select] = (voteTally[ours.select] ?? 0) + 1;
+  if (JSON.stringify(ours) !== voteNative[i]) {
+    voteFailures.push({ case: i, native: voteNative[i], webassembly: JSON.stringify(ours) });
+    if (process.env.DIFFERENTIAL_DUMP !== undefined && voteFailures.length === 1) {
+      writeFileSync(process.env.DIFFERENTIAL_DUMP, JSON.stringify(c));
+    }
+  }
+}
+console.log(`check-differential: ${voteCases.length} vote snapshots, selections: ${JSON.stringify(voteTally)}`);
+if (voteFailures.length > 0) {
+  for (const failure of voteFailures.slice(0, 5)) {
+    console.error(JSON.stringify(failure, null, 2));
+  }
+  fail(`${voteFailures.length} of ${voteCases.length} vote cases differ between native Rust and WebAssembly`);
+}
+console.log("check-differential: native Rust and WebAssembly agree on every vote case");

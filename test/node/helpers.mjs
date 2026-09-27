@@ -12,8 +12,11 @@ export const testDist = join(root, "build", "test", "dist");
 export const vectors = JSON.parse(readFileSync(join(root, "test", "vectors", "wasm-native.json"), "utf8"));
 export const checks = globalThis.IceRootVectorChecks;
 
-/** Fails the test with the report's failures when the checks did not all pass. */
-export function assertReport(assert, report, { fixedAux }) {
+/**
+ * Fails the test with the report's failures when the checks did not all pass. With
+ * `voteAndKeystore`, the vote library's selections and the keystore were checked too.
+ */
+export function assertReport(assert, report, { fixedAux, voteAndKeystore = false }) {
   assert.equal(report.failures.length, 0, JSON.stringify(report.failures.slice(0, 5), null, 2));
   assert.ok(report.ok);
   const signatures = vectors.keys.reduce((sum, key) => sum + key.signatures.length, 0);
@@ -25,4 +28,6 @@ export function assertReport(assert, report, { fixedAux }) {
   assert.equal(report.freshTransactions, transactions);
   assert.equal(report.fixedAuxTransactions, fixedAux ? transactions : 0);
   assert.equal(report.phraseAccounts, vectors.phraseAccounts.length);
+  assert.equal(report.voteSelections, voteAndKeystore ? vectors.vote.selections.length : 0);
+  assert.equal(report.keystoresOpened, voteAndKeystore ? 1 : 0);
 }

@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import * as sdk from "../../dist/web/index.js";
+import * as keystore from "../../dist/web/keystore.js";
+import * as vote from "../../dist/web/vote.js";
 import { assertReport, checks, dist, vectors } from "./helpers.mjs";
 
 const devnet = sdk.profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] });
@@ -40,5 +42,5 @@ test("init(bytes) loads the module, once", async () => {
 });
 
 test("the browser build matches native Rust", () => {
-  assertReport(assert, checks.run(sdk, vectors, "node-web"), { fixedAux: false });
+  assertReport(assert, checks.run({ ...sdk, vote, keystore }, vectors, "node-web"), { fixedAux: false, voteAndKeystore: true });
 });

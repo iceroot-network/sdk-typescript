@@ -5,6 +5,9 @@
 // run(sdk, vectors, context) returns a report instead of throwing, so each context can send the
 // report back to the test.
 //
+// When the context passes the vote library and the keystore too (sdk.vote and sdk.keystore, as the
+// classic-script build's global has them), their selections and keystore are checked as well.
+//
 // With a test build (sdk.testing present), signatures and signed transactions are also compared
 // byte for byte, because the test build can sign with the vectors' fixed auxiliary bytes. With the
 // published build, the vectors' signatures and transactions must verify, tampered signatures must
@@ -50,6 +53,8 @@
       fixedAuxTransactions: 0,
       verifiedTransactions: 0,
       freshTransactions: 0,
+      voteSelections: 0,
+      keystoresOpened: 0,
       hasFixedAux: Boolean(sdk.testing && sdk.testing.hasFixedAux()),
     };
 
@@ -229,8 +234,90 @@
       checkTransactions(sdk, vectors.transactions, report, check, attempt, profile(90));
     }
 
+    if (sdk.vote && vectors.vote) {
+      checkVote(sdk, vectors.vote, check, attempt, report);
+    }
+    if (sdk.keystore && vectors.keystore) {
+      checkKeystore(sdk, vectors.keystore, check, attempt, report);
+    }
     report.ok = report.failures.length === 0 && report.checks > 0;
     return report;
+  }
+
+  function checkVote(sdk, cases, check, attempt, report) {
+    var vote = sdk.vote;
+    var snapshot;
+    attempt("vote snapshot", function () {
+      snapshot = vote.VoteSnapshot.deserialize(JSON.stringify(cases.snapshot));
+      check("vote snapshot height", cases.snapshot.height, snapshot.height.toString());
+    });
+    if (snapshot === undefined) {
+      return;
+    }
+    cases.selections.forEach(function (expected, index) {
+      var name = "vote " + index + " " + expected.mode;
+      attempt(name, function () {
+        var selection = vote.select(snapshot, {
+          mode: expected.mode,
+          account: expected.account,
+          draw: expected.draw,
+          rules: cases.rules,
+        });
+        check(name + " seed", expected.seed, selection.seed);
+        check(name + " pool", expected.pool, selection.pool);
+        check(name + " topped up", expected.toppedUp, selection.toppedUp);
+        check(name + " top-up notice", expected.topUpNotice, selection.topUpNotice);
+        var entries = selection.entries.map(function (pick) {
+          return [pick.validator, pick.basisPoints];
+        });
+        check(name + " entries", JSON.stringify(expected.entries), JSON.stringify(entries));
+        selection.entries.forEach(function (pick) {
+          check(name + " reasons", true, pick.reasons.length > 0 && pick.reasons.every(function (reason) {
+            return typeof reason.kind === "string" && reason.text.length > 0;
+          }));
+        });
+        check(name + " valid vote", 0, vote.validateVote(selection.vote, cases.rules).length);
+        check(name + " still meets", true, vote.check(selection, snapshot).every(function (finding) {
+          return finding.stillMeets;
+        }));
+        report.voteSelections += 1;
+      });
+    });
+    attempt("vote refusal", function () {
+      try {
+        vote.select(snapshot, { mode: "diversity", account: "holder", count: 19, rules: cases.rules });
+        check("vote refusal", "InvalidPickCount", "no error");
+      } catch (error) {
+        check("vote refusal", "InvalidPickCount", error.code);
+        check("vote refusal class", true, error instanceof vote.InvalidPickCount);
+      }
+    });
+  }
+
+  function checkKeystore(sdk, expected, check, attempt, report) {
+    var keystore = sdk.keystore;
+    var decoder = new TextDecoder();
+    attempt("keystore", function () {
+      var password = new TextEncoder().encode(expected.password);
+      var opened = keystore.decrypt(hexToBytes(expected.keystore), password);
+      check("keystore phrase", expected.phrase, decoder.decode(opened.phrase));
+      check("keystore words", expected.words, opened.words);
+      check("keystore password wiped", true, password.every(function (b) { return b === 0; }));
+      check("keystore text", expected.text, keystore.armor(hexToBytes(expected.keystore)));
+      check("keystore from text", expected.phrase, decoder.decode(keystore.decrypt(expected.text, expected.password).phrase));
+      try {
+        keystore.decrypt(expected.text, "wrong " + expected.password);
+        check("keystore wrong password", "WrongPasswordOrCorrupt", "no error");
+      } catch (error) {
+        check("keystore wrong password", "WrongPasswordOrCorrupt", error.code);
+      }
+      // A new keystore at the lowest parameters, read back.
+      var low = { memoryKib: 19456, iterations: 2, parallelism: 1 };
+      var fresh = keystore.encrypt(expected.phrase, "fresh password", low);
+      check("keystore fresh header", 19456, keystore.inspect(fresh).memoryKib);
+      check("keystore fresh phrase", expected.phrase, decoder.decode(keystore.decrypt(fresh, "fresh password").phrase));
+      report.keystoresOpened += 1;
+    });
   }
 
   function signer(sdk, description, profile) {

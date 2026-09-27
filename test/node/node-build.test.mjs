@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import * as sdk from "../../dist/node/index.js";
+import * as keystore from "../../dist/node/keystore.js";
+import * as vote from "../../dist/node/vote.js";
 import * as testSdk from "../../build/test/dist/node/index.js";
 import { assertReport, checks, vectors } from "./helpers.mjs";
 
@@ -16,15 +18,22 @@ test("the Node build loads on import", async () => {
 });
 
 test("the published Node build matches native Rust", () => {
-  const report = checks.run(sdk, vectors, "node");
+  const report = checks.run({ ...sdk, vote, keystore }, vectors, "node");
   assert.equal(report.hasFixedAux, false);
-  assertReport(assert, report, { fixedAux: false });
+  assertReport(assert, report, { fixedAux: false, voteAndKeystore: true });
 });
 
 test("the test Node build signs byte for byte as native Rust", () => {
+  // The test build carries the vote library and the keystore as namespaces of its root.
   const report = checks.run(testSdk, vectors, "node-test");
   assert.equal(report.hasFixedAux, true);
-  assertReport(assert, report, { fixedAux: true });
+  assertReport(assert, report, { fixedAux: true, voteAndKeystore: true });
+});
+
+test("the published build has no keystore seam and no vote test helpers", () => {
+  assert.equal("vote" in sdk, false);
+  assert.equal("keystore" in sdk, false);
+  assert.equal(testSdk.testing.hasKeystoreSeam(), true);
 });
 
 test("the published build has no way to choose the signature randomness", () => {

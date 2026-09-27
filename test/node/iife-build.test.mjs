@@ -39,19 +39,21 @@ test("the embedded bytes are the shipped module", () => {
   assert.match(sums, new RegExp(`^${digest}  iife/iceroot-sdk_bg.wasm$`, "m"));
 });
 
-test("the classic-script build adds one global and loads synchronously from the bytes", () => {
+test("the classic-script build adds one global, with the vote library and the keystore, and loads synchronously from the bytes", () => {
   const context = loadClassicScripts(dist);
   const sdk = context.IceRootSdk;
   assert.equal(typeof sdk.initSync, "function");
   assert.equal("wasm_bindgen" in context, false);
   assert.equal(sdk.isInitialized(), false);
   sdk.initSync(context.IceRootSdkWasmBytes);
-  assertReport(assert, context.IceRootVectorChecks.run(sdk, vectors, "node-iife"), { fixedAux: false });
+  assert.equal(typeof sdk.vote.select, "function");
+  assert.equal(typeof sdk.keystore.decrypt, "function");
+  assertReport(assert, context.IceRootVectorChecks.run(sdk, vectors, "node-iife"), { fixedAux: false, voteAndKeystore: true });
 });
 
 test("the test classic-script build signs byte for byte as native Rust", () => {
   const context = loadClassicScripts(testDist);
   const sdk = context.IceRootSdk;
   sdk.initSync(context.IceRootSdkWasmBytes);
-  assertReport(assert, context.IceRootVectorChecks.run(sdk, vectors, "node-iife-test"), { fixedAux: true });
+  assertReport(assert, context.IceRootVectorChecks.run(sdk, vectors, "node-iife-test"), { fixedAux: true, voteAndKeystore: true });
 });

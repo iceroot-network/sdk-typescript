@@ -1449,5 +1449,1695 @@
         "signedSha256": "4c54bdecb0d5358309a0c1f9c4ef8562f9d16895dfea545018de18848c8d9755"
       }
     ]
+  },
+  "vote": {
+    "snapshot": {
+      "height": "5000000",
+      "windowDays": 30,
+      "seats": 26,
+      "blockTimeSeconds": 8,
+      "source": "indexer",
+      "records": [
+        {
+          "name": "valaa",
+          "address": "addr-0",
+          "rank": 1,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "0",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "1000000",
+          "voters": 10,
+          "production": {
+            "forged": 9000,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": true
+          },
+          "declarations": {
+            "operator": "Acme 0",
+            "hosting": "host 0",
+            "country": "DE",
+            "complete": false
+          },
+          "payouts": {
+            "perUnitWeight": "100",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 0
+        },
+        {
+          "name": "valba",
+          "address": "addr-1",
+          "rank": 2,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "1000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "999000",
+          "voters": 11,
+          "production": {
+            "forged": 8970,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Birch Ops 1",
+            "hosting": "host 1",
+            "country": "NL",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "107",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 50
+        },
+        {
+          "name": "valca",
+          "address": "addr-2",
+          "rank": 3,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "2000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "998000",
+          "voters": 12,
+          "production": {
+            "forged": 8940,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Cedar 2",
+            "hosting": "host 2",
+            "country": "US",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "114",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 100
+        },
+        {
+          "name": "valda",
+          "address": "addr-3",
+          "rank": 4,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "3000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "997000",
+          "voters": 13,
+          "production": {
+            "forged": 8910,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": null,
+          "payouts": {
+            "perUnitWeight": "121",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 150
+        },
+        {
+          "name": "valea",
+          "address": "addr-4",
+          "rank": 5,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "4000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "996000",
+          "voters": 14,
+          "production": {
+            "forged": 8880,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Elm Hosting 4",
+            "hosting": "host 1",
+            "country": "JP",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "128",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 200
+        },
+        {
+          "name": "valfa",
+          "address": "addr-5",
+          "rank": 6,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "5000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "995000",
+          "voters": 15,
+          "production": {
+            "forged": 8850,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": true,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Acme 5",
+            "hosting": "host 2",
+            "country": "ZA",
+            "complete": false
+          },
+          "payouts": {
+            "perUnitWeight": "135",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 250
+        },
+        {
+          "name": "valga",
+          "address": "addr-6",
+          "rank": 7,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "6000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "994000",
+          "voters": 16,
+          "production": {
+            "forged": 8820,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Birch Ops 6",
+            "hosting": "host 0",
+            "country": "DE",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "142",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 300
+        },
+        {
+          "name": "valha",
+          "address": "addr-7",
+          "rank": 8,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "7000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "993000",
+          "voters": 17,
+          "production": {
+            "forged": 9000,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": null,
+          "payouts": {
+            "perUnitWeight": "149",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 350
+        },
+        {
+          "name": "valia",
+          "address": "addr-8",
+          "rank": 9,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "8000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "992000",
+          "voters": 18,
+          "production": {
+            "forged": 8970,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Dune 8",
+            "hosting": "host 2",
+            "country": "US",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "156",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 400
+        },
+        {
+          "name": "valja",
+          "address": "addr-9",
+          "rank": 10,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "9000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "991000",
+          "voters": 19,
+          "production": {
+            "forged": 8940,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Elm Hosting 9",
+            "hosting": "host 0",
+            "country": "BR",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "163",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 450
+        },
+        {
+          "name": "valka",
+          "address": "addr-10",
+          "rank": 11,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "10000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "990000",
+          "voters": 20,
+          "production": {
+            "forged": 8910,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Acme 10",
+            "hosting": "host 1",
+            "country": "JP",
+            "complete": false
+          },
+          "payouts": {
+            "perUnitWeight": "170",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 500
+        },
+        {
+          "name": "valla",
+          "address": "addr-11",
+          "rank": 12,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "11000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "989000",
+          "voters": 21,
+          "production": {
+            "forged": 8880,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": true
+          },
+          "declarations": null,
+          "payouts": {
+            "perUnitWeight": "177",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 550
+        },
+        {
+          "name": "valma",
+          "address": "addr-12",
+          "rank": 13,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "12000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "988000",
+          "voters": 22,
+          "production": {
+            "forged": 8850,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Cedar 12",
+            "hosting": "host 0",
+            "country": "DE",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "184",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 600
+        },
+        {
+          "name": "valna",
+          "address": "addr-13",
+          "rank": 14,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "13000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "987000",
+          "voters": 23,
+          "production": {
+            "forged": 8820,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Dune 13",
+            "hosting": "host 1",
+            "country": "NL",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "191",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 650
+        },
+        {
+          "name": "valoa",
+          "address": "addr-14",
+          "rank": 15,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "14000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "986000",
+          "voters": 24,
+          "production": {
+            "forged": 9000,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Elm Hosting 14",
+            "hosting": "host 2",
+            "country": "US",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "198",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 700
+        },
+        {
+          "name": "valpa",
+          "address": "addr-15",
+          "rank": 16,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "15000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "985000",
+          "voters": 25,
+          "production": {
+            "forged": 8970,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": null,
+          "payouts": {
+            "perUnitWeight": "205",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 750
+        },
+        {
+          "name": "valqa",
+          "address": "addr-16",
+          "rank": 17,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "16000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "984000",
+          "voters": 26,
+          "production": {
+            "forged": 8940,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Birch Ops 0",
+            "hosting": "host 1",
+            "country": "JP",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "212",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 800
+        },
+        {
+          "name": "valra",
+          "address": "addr-17",
+          "rank": 18,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "17000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "983000",
+          "voters": 27,
+          "production": {
+            "forged": 8910,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Cedar 1",
+            "hosting": "host 2",
+            "country": "ZA",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "219",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 850
+        },
+        {
+          "name": "valsa",
+          "address": "addr-18",
+          "rank": 19,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "18000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "982000",
+          "voters": 28,
+          "production": {
+            "forged": 8880,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Dune 2",
+            "hosting": "host 0",
+            "country": "DE",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "226",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 900
+        },
+        {
+          "name": "valta",
+          "address": "addr-19",
+          "rank": 20,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "19000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "981000",
+          "voters": 29,
+          "production": {
+            "forged": 8850,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": null,
+          "payouts": {
+            "perUnitWeight": "233",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 950
+        },
+        {
+          "name": "valua",
+          "address": "addr-20",
+          "rank": 21,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "20000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "980000",
+          "voters": 30,
+          "production": {
+            "forged": 8820,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Acme 4",
+            "hosting": "host 2",
+            "country": "US",
+            "complete": false
+          },
+          "payouts": {
+            "perUnitWeight": "240",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 1000
+        },
+        {
+          "name": "valva",
+          "address": "addr-21",
+          "rank": 22,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "21000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "979000",
+          "voters": 31,
+          "production": {
+            "forged": 9000,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Birch Ops 5",
+            "hosting": "host 0",
+            "country": "BR",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "247",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 1050
+        },
+        {
+          "name": "valwa",
+          "address": "addr-22",
+          "rank": 23,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "22000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "978000",
+          "voters": 32,
+          "production": {
+            "forged": 8970,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": true
+          },
+          "declarations": {
+            "operator": "Cedar 6",
+            "hosting": "host 1",
+            "country": "JP",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "254",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 1100
+        },
+        {
+          "name": "valxa",
+          "address": "addr-23",
+          "rank": 24,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "23000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "977000",
+          "voters": 33,
+          "production": {
+            "forged": 8940,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": null,
+          "payouts": {
+            "perUnitWeight": "261",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 1150
+        },
+        {
+          "name": "valya",
+          "address": "addr-24",
+          "rank": 25,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "24000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "976000",
+          "voters": 34,
+          "production": {
+            "forged": 8910,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Elm Hosting 8",
+            "hosting": "host 0",
+            "country": "DE",
+            "complete": true
+          },
+          "payouts": {
+            "perUnitWeight": "268",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 1200
+        },
+        {
+          "name": "valza",
+          "address": "addr-25",
+          "rank": 26,
+          "seated": true,
+          "status": "active",
+          "registeredHeight": "25000",
+          "seatedDaysInWindow": 30,
+          "voteWeight": "975000",
+          "voters": 35,
+          "production": {
+            "forged": 8880,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Acme 9",
+            "hosting": "host 1",
+            "country": "NL",
+            "complete": false
+          },
+          "payouts": {
+            "perUnitWeight": "275",
+            "intervals": 30
+          },
+          "selfFundedWeightBp": 1250
+        },
+        {
+          "name": "valab",
+          "address": "addr-26",
+          "rank": 27,
+          "seated": false,
+          "status": "standby",
+          "registeredHeight": "26000",
+          "seatedDaysInWindow": 2,
+          "voteWeight": "974000",
+          "voters": 36,
+          "production": {
+            "forged": 8850,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Birch Ops 10",
+            "hosting": "host 2",
+            "country": "US",
+            "complete": true
+          },
+          "payouts": null,
+          "selfFundedWeightBp": 1300
+        },
+        {
+          "name": "valbb",
+          "address": "addr-27",
+          "rank": 28,
+          "seated": false,
+          "status": "standby",
+          "registeredHeight": "27000",
+          "seatedDaysInWindow": 3,
+          "voteWeight": "973000",
+          "voters": 37,
+          "production": {
+            "forged": 8820,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": null,
+          "payouts": null,
+          "selfFundedWeightBp": 1350
+        },
+        {
+          "name": "valcb",
+          "address": "addr-28",
+          "rank": 29,
+          "seated": false,
+          "status": "standby",
+          "registeredHeight": "28000",
+          "seatedDaysInWindow": 4,
+          "voteWeight": "972000",
+          "voters": 38,
+          "production": {
+            "forged": 9000,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Dune 12",
+            "hosting": "host 1",
+            "country": "JP",
+            "complete": true
+          },
+          "payouts": null,
+          "selfFundedWeightBp": 1400
+        },
+        {
+          "name": "valdb",
+          "address": "addr-29",
+          "rank": 30,
+          "seated": false,
+          "status": "standby",
+          "registeredHeight": "29000",
+          "seatedDaysInWindow": 5,
+          "voteWeight": "971000",
+          "voters": 39,
+          "production": {
+            "forged": 8970,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Elm Hosting 13",
+            "hosting": "host 2",
+            "country": "ZA",
+            "complete": true
+          },
+          "payouts": null,
+          "selfFundedWeightBp": 1450
+        },
+        {
+          "name": "valeb",
+          "address": "addr-30",
+          "rank": 31,
+          "seated": false,
+          "status": "standby",
+          "registeredHeight": "30000",
+          "seatedDaysInWindow": 6,
+          "voteWeight": "970000",
+          "voters": 40,
+          "production": {
+            "forged": 8940,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": {
+            "operator": "Acme 14",
+            "hosting": "host 0",
+            "country": "DE",
+            "complete": false
+          },
+          "payouts": null,
+          "selfFundedWeightBp": 1500
+        },
+        {
+          "name": "valfb",
+          "address": "addr-31",
+          "rank": 32,
+          "seated": false,
+          "status": "standby",
+          "registeredHeight": "31000",
+          "seatedDaysInWindow": 7,
+          "voteWeight": "969000",
+          "voters": 41,
+          "production": {
+            "forged": 8910,
+            "assigned": 9000
+          },
+          "penalties": {
+            "jailedInWindow": false,
+            "equivocationInWindow": false,
+            "ever": false
+          },
+          "declarations": null,
+          "payouts": null,
+          "selfFundedWeightBp": 1550
+        }
+      ]
+    },
+    "rules": {
+      "minEntries": 20,
+      "maxEntries": 53,
+      "maxEntryBasisPoints": 500,
+      "maxBytes": 1280,
+      "names": "lowercase-letters",
+      "validatorsMayVote": false
+    },
+    "selections": [
+      {
+        "mode": "diversity",
+        "account": "holder-a",
+        "draw": 0,
+        "seed": "e52d7853f99e70009c21f43d906885aa8d917e6fe9aeb19b3ee37529f138c30f",
+        "pool": 31,
+        "toppedUp": 0,
+        "entries": [
+          [
+            "valab",
+            500
+          ],
+          [
+            "valbb",
+            500
+          ],
+          [
+            "valdb",
+            500
+          ],
+          [
+            "valea",
+            500
+          ],
+          [
+            "valeb",
+            500
+          ],
+          [
+            "valfb",
+            500
+          ],
+          [
+            "valga",
+            500
+          ],
+          [
+            "valha",
+            500
+          ],
+          [
+            "valja",
+            500
+          ],
+          [
+            "valka",
+            500
+          ],
+          [
+            "valma",
+            500
+          ],
+          [
+            "valoa",
+            500
+          ],
+          [
+            "valqa",
+            500
+          ],
+          [
+            "valra",
+            500
+          ],
+          [
+            "valta",
+            500
+          ],
+          [
+            "valua",
+            500
+          ],
+          [
+            "valva",
+            500
+          ],
+          [
+            "valwa",
+            500
+          ],
+          [
+            "valxa",
+            500
+          ],
+          [
+            "valya",
+            500
+          ]
+        ],
+        "topUpNotice": null
+      },
+      {
+        "mode": "diversity",
+        "account": "holder-b",
+        "draw": 2,
+        "seed": "406f710b5819af816fb1afd289bbe98d9351447b365b74e2f398853e2d7ebea3",
+        "pool": 31,
+        "toppedUp": 0,
+        "entries": [
+          [
+            "valaa",
+            500
+          ],
+          [
+            "valab",
+            500
+          ],
+          [
+            "valba",
+            500
+          ],
+          [
+            "valbb",
+            500
+          ],
+          [
+            "valca",
+            500
+          ],
+          [
+            "valcb",
+            500
+          ],
+          [
+            "valda",
+            500
+          ],
+          [
+            "valdb",
+            500
+          ],
+          [
+            "valga",
+            500
+          ],
+          [
+            "valia",
+            500
+          ],
+          [
+            "valja",
+            500
+          ],
+          [
+            "valna",
+            500
+          ],
+          [
+            "valpa",
+            500
+          ],
+          [
+            "valqa",
+            500
+          ],
+          [
+            "valsa",
+            500
+          ],
+          [
+            "valta",
+            500
+          ],
+          [
+            "valva",
+            500
+          ],
+          [
+            "valxa",
+            500
+          ],
+          [
+            "valya",
+            500
+          ],
+          [
+            "valza",
+            500
+          ]
+        ],
+        "topUpNotice": null
+      },
+      {
+        "mode": "reliability",
+        "account": "holder-a",
+        "draw": 0,
+        "seed": "72b6bf5c786849608c7e91a0f1066332d51e863743d1f8f5da94fb5a7c5fb18b",
+        "pool": 26,
+        "toppedUp": 0,
+        "entries": [
+          [
+            "valaa",
+            500
+          ],
+          [
+            "valba",
+            500
+          ],
+          [
+            "valca",
+            500
+          ],
+          [
+            "valda",
+            500
+          ],
+          [
+            "valga",
+            500
+          ],
+          [
+            "valha",
+            500
+          ],
+          [
+            "valia",
+            500
+          ],
+          [
+            "valja",
+            500
+          ],
+          [
+            "valma",
+            500
+          ],
+          [
+            "valoa",
+            500
+          ],
+          [
+            "valpa",
+            500
+          ],
+          [
+            "valqa",
+            500
+          ],
+          [
+            "valra",
+            500
+          ],
+          [
+            "valsa",
+            500
+          ],
+          [
+            "valta",
+            500
+          ],
+          [
+            "valua",
+            500
+          ],
+          [
+            "valva",
+            500
+          ],
+          [
+            "valwa",
+            500
+          ],
+          [
+            "valya",
+            500
+          ],
+          [
+            "valza",
+            500
+          ]
+        ],
+        "topUpNotice": null
+      },
+      {
+        "mode": "reliability",
+        "account": "holder-b",
+        "draw": 2,
+        "seed": "2317b392f2cefdacb24c161b702aa0434d1e9dacc9e5689cd04cc440c38bde1c",
+        "pool": 26,
+        "toppedUp": 0,
+        "entries": [
+          [
+            "valaa",
+            500
+          ],
+          [
+            "valba",
+            500
+          ],
+          [
+            "valca",
+            500
+          ],
+          [
+            "valda",
+            500
+          ],
+          [
+            "valfb",
+            500
+          ],
+          [
+            "valha",
+            500
+          ],
+          [
+            "valia",
+            500
+          ],
+          [
+            "valja",
+            500
+          ],
+          [
+            "valka",
+            500
+          ],
+          [
+            "valla",
+            500
+          ],
+          [
+            "valma",
+            500
+          ],
+          [
+            "valna",
+            500
+          ],
+          [
+            "valoa",
+            500
+          ],
+          [
+            "valpa",
+            500
+          ],
+          [
+            "valsa",
+            500
+          ],
+          [
+            "valta",
+            500
+          ],
+          [
+            "valua",
+            500
+          ],
+          [
+            "valva",
+            500
+          ],
+          [
+            "valwa",
+            500
+          ],
+          [
+            "valxa",
+            500
+          ]
+        ],
+        "topUpNotice": null
+      },
+      {
+        "mode": "maximum-rewards",
+        "account": "holder-a",
+        "draw": 0,
+        "seed": "80483885b196fc29016136f471a4b768fc4ae3f822f242314107aa2e996158eb",
+        "pool": 25,
+        "toppedUp": 0,
+        "entries": [
+          [
+            "valaa",
+            500
+          ],
+          [
+            "valba",
+            500
+          ],
+          [
+            "valca",
+            500
+          ],
+          [
+            "valga",
+            500
+          ],
+          [
+            "valia",
+            500
+          ],
+          [
+            "valja",
+            500
+          ],
+          [
+            "valka",
+            500
+          ],
+          [
+            "valma",
+            500
+          ],
+          [
+            "valna",
+            500
+          ],
+          [
+            "valoa",
+            500
+          ],
+          [
+            "valpa",
+            500
+          ],
+          [
+            "valqa",
+            500
+          ],
+          [
+            "valra",
+            500
+          ],
+          [
+            "valsa",
+            500
+          ],
+          [
+            "valta",
+            500
+          ],
+          [
+            "valua",
+            500
+          ],
+          [
+            "valva",
+            500
+          ],
+          [
+            "valwa",
+            500
+          ],
+          [
+            "valya",
+            500
+          ],
+          [
+            "valza",
+            500
+          ]
+        ],
+        "topUpNotice": null
+      },
+      {
+        "mode": "maximum-rewards",
+        "account": "holder-b",
+        "draw": 2,
+        "seed": "fcee8ddc384b4599c55a350dcdbe2481cef75e9667a42bb92fd8dbb9cd138823",
+        "pool": 25,
+        "toppedUp": 0,
+        "entries": [
+          [
+            "valaa",
+            500
+          ],
+          [
+            "valba",
+            500
+          ],
+          [
+            "valca",
+            500
+          ],
+          [
+            "valea",
+            500
+          ],
+          [
+            "valga",
+            500
+          ],
+          [
+            "valja",
+            500
+          ],
+          [
+            "valka",
+            500
+          ],
+          [
+            "valma",
+            500
+          ],
+          [
+            "valna",
+            500
+          ],
+          [
+            "valoa",
+            500
+          ],
+          [
+            "valqa",
+            500
+          ],
+          [
+            "valra",
+            500
+          ],
+          [
+            "valsa",
+            500
+          ],
+          [
+            "valta",
+            500
+          ],
+          [
+            "valua",
+            500
+          ],
+          [
+            "valva",
+            500
+          ],
+          [
+            "valwa",
+            500
+          ],
+          [
+            "valxa",
+            500
+          ],
+          [
+            "valya",
+            500
+          ],
+          [
+            "valza",
+            500
+          ]
+        ],
+        "topUpNotice": null
+      },
+      {
+        "mode": "support-newcomers",
+        "account": "holder-a",
+        "draw": 0,
+        "seed": "063da3c72f052744c114178997599c8d1cc91dff839d28e13055c62f472d66fd",
+        "pool": 8,
+        "toppedUp": 12,
+        "entries": [
+          [
+            "valab",
+            500
+          ],
+          [
+            "valba",
+            500
+          ],
+          [
+            "valcb",
+            500
+          ],
+          [
+            "valdb",
+            500
+          ],
+          [
+            "valea",
+            500
+          ],
+          [
+            "valfb",
+            500
+          ],
+          [
+            "valga",
+            500
+          ],
+          [
+            "valha",
+            500
+          ],
+          [
+            "valia",
+            500
+          ],
+          [
+            "valja",
+            500
+          ],
+          [
+            "valla",
+            500
+          ],
+          [
+            "valma",
+            500
+          ],
+          [
+            "valna",
+            500
+          ],
+          [
+            "valqa",
+            500
+          ],
+          [
+            "valra",
+            500
+          ],
+          [
+            "valsa",
+            500
+          ],
+          [
+            "valva",
+            500
+          ],
+          [
+            "valwa",
+            500
+          ],
+          [
+            "valya",
+            500
+          ],
+          [
+            "valza",
+            500
+          ]
+        ],
+        "topUpNotice": "8 validators meet the Support Newcomers criteria, so 8 picks come from Support Newcomers and 12 from Diversity"
+      },
+      {
+        "mode": "support-newcomers",
+        "account": "holder-b",
+        "draw": 2,
+        "seed": "240d5c5b05925692cdae7cf585426bebef995187e50874a2202c354f68cddbb3",
+        "pool": 8,
+        "toppedUp": 12,
+        "entries": [
+          [
+            "valab",
+            500
+          ],
+          [
+            "valbb",
+            500
+          ],
+          [
+            "valca",
+            500
+          ],
+          [
+            "valcb",
+            500
+          ],
+          [
+            "valdb",
+            500
+          ],
+          [
+            "valea",
+            500
+          ],
+          [
+            "valeb",
+            500
+          ],
+          [
+            "valja",
+            500
+          ],
+          [
+            "valka",
+            500
+          ],
+          [
+            "valla",
+            500
+          ],
+          [
+            "valna",
+            500
+          ],
+          [
+            "valoa",
+            500
+          ],
+          [
+            "valqa",
+            500
+          ],
+          [
+            "valra",
+            500
+          ],
+          [
+            "valsa",
+            500
+          ],
+          [
+            "valua",
+            500
+          ],
+          [
+            "valva",
+            500
+          ],
+          [
+            "valxa",
+            500
+          ],
+          [
+            "valya",
+            500
+          ],
+          [
+            "valza",
+            500
+          ]
+        ],
+        "topUpNotice": "8 validators meet the Support Newcomers criteria, so 8 picks come from Support Newcomers and 12 from Diversity"
+      }
+    ]
+  },
+  "keystore": {
+    "keystore": "49524b53010100004c00000000020000000170f62182150c3608f44f682cf9ff1c1ef5c7a6694367b32d50602925e882b0ba2c5e9e87ecedb4050120e746a9701e95cdca7cec909c35e1cdad53b64c3a364429bd1fa3ad58ea324ca2ccd4686d4fd08466663786eec431306c",
+    "text": "irks:SVJLUwEBAABMAAAAAAIAAAABcPYhghUMNgj0T2gs-f8cHvXHpmlDZ7MtUGApJeiCsLosXp6H7O20BQEg50apcB6Vzcp87JCcNeHNrVO2TDo2RCm9H6OtWOoyTKLM1GhtT9CEZmY3hu7EMTBs",
+    "password": "correct horse battery staple",
+    "phrase": "ghost mesh twelve swing hire save lab turtle oppose volcano universe stomach ski thing sauce tower cause best trap race across renew birth either",
+    "words": 24
   }
 }

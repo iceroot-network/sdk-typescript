@@ -43,7 +43,19 @@ import {
   type WatchedAccount,
   type WatchEvent,
 } from "@iceroot-network/sdk";
-import type { Mode, Selection, VoteSnapshot } from "@iceroot-network/sdk/vote";
+import {
+  BreaksRules,
+  VoteRules,
+  VoteSnapshot,
+  check,
+  select,
+  split,
+  validateVote,
+  type Mode,
+  type Reason,
+  Selection,
+} from "@iceroot-network/sdk/vote";
+import * as keystore from "@iceroot-network/sdk/keystore";
 
 export async function example(bytes: Uint8Array, transport: Transport): Promise<string> {
   await init();
@@ -176,3 +188,43 @@ export async function client(transport: Transport, account: Account): Promise<st
 }
 
 export type Uses = [Draft, Mode, Selection, VoteSnapshot];
+
+export async function voting(net: Network, account: Account, saved: string): Promise<string> {
+  const snapshot: VoteSnapshot = await VoteSnapshot.fromNode(net, { firstForged: true });
+  const mode: Mode = "diversity";
+  const rules: VoteRules = VoteRules.of(net);
+  let selection: Selection;
+  try {
+    selection = select(snapshot, { mode, account: account.address, rules, count: 20, draw: 0 });
+  } catch (error) {
+    if (error instanceof BreaksRules) {
+      return error.problems.map((problem) => problem.reason).join(", ");
+    }
+    throw error;
+  }
+  const lines: string[] = selection.entries.flatMap((pick) => pick.reasons.map((reason: Reason) => reason.text));
+  const drawn = selection.entries[0]?.reasons.find((reason) => reason.kind === "drawn");
+  const weight: bigint | undefined = drawn?.kind === "drawn" ? drawn.totalWeight : undefined;
+  const findings = check(Selection.deserialize(saved), snapshot);
+  const problems = validateVote(split(["genesis_1", "genesis_2"]), rules, "ordinary");
+  const draft = await net.build.vote({ from: account, entries: selection.vote });
+  return `${lines.length} ${weight} ${findings.length} ${problems.length} ${draft.summary.fee.amount} ${Selection.serialize(selection).length}`;
+}
+
+export function keys(phrase: string, password: Uint8Array, stored: Uint8Array | string): string {
+  const bytes: Uint8Array = keystore.encrypt(phrase, password, "web");
+  const header: keystore.KeystoreHeader = keystore.inspect(bytes);
+  const opened: keystore.DecryptedPhrase = keystore.decrypt(stored, password, { maxMemoryKib: 65_536 });
+  const words: 18 | 21 | 24 = opened.words;
+  opened.phrase.fill(0);
+  const upgrade: boolean = keystore.isWeakerThan(header, keystore.PRESETS.web);
+  const text: string = keystore.armor(keystore.reencrypt(bytes, password, "web"));
+  try {
+    keystore.decrypt(text, "wrong");
+  } catch (error) {
+    if (error instanceof keystore.WrongPasswordOrCorrupt || error instanceof keystore.Malformed) {
+      return error.code;
+    }
+  }
+  return `${words} ${upgrade} ${text.length}`;
+}
