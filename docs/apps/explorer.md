@@ -172,6 +172,7 @@ Every response carries `meta`. Today it says `mode: "demo"`. For live data:
 - No Content Security Policy or `next.config.ts` change: the browser loads no SDK and no WebAssembly.
 - `components/ExplorerController.jsx`: the snapshot now holds a window of recent blocks, not a whole ledger. Load older blocks, account history and search results from the resource endpoints (`/api/v1/blocks?offset=...`, `/api/v1/accounts/{id}`, `/api/v1/search?q=...`) instead of from the snapshot.
 - Show the network name ("Devnet") wherever the demo label is shown today.
+- Show chain text safely. A memo, a validator's name, a `details.name` and an address in a record are chosen by strangers, and none of them is escaped by the API. A control character or a bidirectional formatting character (U+202E, for example) reorders or splits what the reader sees, so a memo can make one address look like another. React escapes HTML, not these. Write those characters as `\uXXXX` and a backslash as `\\` before the text is shown, in one function used by every component that prints chain text (the [reference desktop wallet](desktop-wallet.md)'s `safeText` in `src/walletData.ts` is one, and [rule 16](../rules.md) says what it must cover). Do it in the frontend, so the API still returns the chain's exact text, and use the exact text for copying an id or an address only after checking it is what the reader expects. Search matches the exact text the reader typed against the chain, never the escaped form.
 - Show amounts with the asset's decimals from the API (8 for ROOT on today's devnet). Keep the exact integer arithmetic.
 - Hide asset pages other than ROOT, and the migration and route views, while the API reports the capability as absent. Add `capabilities` to `/api/v1/status` from `net.chain.profile().capabilities()` so the frontend can decide.
 
@@ -203,9 +204,11 @@ The explorer shows each round's forging order. The order is shuffled per round b
 - Amounts stay exact: integers in base units in the backend, decimal strings in JSON ([rule 2](../rules.md)).
 - Say "confirmed" and show confirmations; never "final" on today's devnet ([rule 5](../rules.md)).
 - Parse addresses against the devnet profile ([rule 4](../rules.md)).
+- Chain text (memos, validator names, addresses in records) is shown with control and bidirectional characters written out ([rule 16](../rules.md)).
 
 ## Tests to add
 
 - API tests against recorded devnet responses: the SDK's mappers are tested upstream, so the explorer's tests check its own cache, pagination, filters and error handling.
+- A test that a memo with U+202E or a line break is shown escaped and do not reorder the row.
 - A test that the API answers `503`, and never sample data, when the relay is unreachable.
 - One end-to-end run against a local devnet: the latest block and a known transfer appear in the frontend.
