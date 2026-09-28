@@ -94,25 +94,32 @@ export async function openNetwork(relay: string, nethash?: string): Promise<Netw
 }
 ```
 
-Every call that computes returns a promise; await it. Values that need no call stay synchronous: profiles, a draft's summary and fee, an account's address and public key, `net.rules`, `net.economics` and `net.stage` at the next block, and the text forms of snapshots and selections. Code that awaits every SDK call runs unchanged on either entry: the error codes, the checks of `connect`'s options and the skipping of a relay that answers with a redirect are the same. What differs through the plugin:
+The draft needs no key: build it from the wallet's public key or address, show the review, and open the key only to sign. Every call that computes returns a promise; await it. Values that need no call stay synchronous: profiles, a draft's summary and fee, an account's address and public key, `net.rules`, `net.economics` and `net.stage` at the next block, and the text forms of snapshots and selections. Code that awaits every SDK call runs unchanged on either entry: the error codes, the checks of `connect`'s options and the skipping of a relay that answers with a redirect are the same. What differs through the plugin:
 
 - `init()` also rejects with `SdkNotInitialized` when the plugin is not of the package's release (0.1.x with 0.1.x). There is no `initSync`.
 - `net.watch` with an address that is not valid on the network reports an `error` event (with that `InvalidAddress`) and ends the watch; the WebAssembly entry throws `InvalidAddress` at once.
 - `NodeUnavailable` and `Timeout` carry no `details.url`: the WebAssembly entry names the relay's URL there, and the plugin names none (its `NodeUnavailable` has `details.reason` instead). Branch on the error's class or `code`.
-- `connect` takes no `transport`: the plugin makes every request, through a proxy only when the app's environment names one (`HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY`).
+- `connect` takes no `transport`: the plugin makes every request, through a proxy only when the app's environment names one (`HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY`). It does take `headers`, checked as on the WebAssembly entry: a name that is not an HTTP token, or a value with anything but visible ASCII, spaces and tabs (a token pasted with a line break), throws `InvalidArgument`.
 - Error messages are worded differently in places; the codes and the documented details are the interface.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/send.ts
-import { Address, Amount, type Account, type Network } from "@iceroot-network/sdk/tauri";
+import { Address, Amount, type Account, type Draft, type Network } from "@iceroot-network/sdk/tauri";
 
-export async function sendRoot(net: Network, account: Account, to: string, amount: string) {
-  const draft = await net.build.transfer({
-    from: account,
+/**
+ * Builds the draft with no key open. `from` is the wallet's saved public key, or its address once
+ * the account has sent a transaction (for a new account an address throws InvalidArgument).
+ */
+export async function prepareRoot(net: Network, from: string, to: string, amount: string) {
+  return net.build.transfer({
+    from,
     to: [{ address: await Address.parse(to.trim(), net), amount: await Amount.parse(amount, net.token.decimals) }],
   });
-  // The review screen shows draft.summary; then the plugin signs what it reads from the draft's bytes.
+}
+
+/** After the review screen has shown draft.summary and draft.fee: the plugin signs what it reads from the draft's bytes. */
+export async function sendReviewed(net: Network, draft: Draft, account: Account) {
   const signed = await draft.sign(account);
   const result = await net.submit(signed);
   if (result.status !== "accepted") return { state: "rejected" as const, reason: result.reason };
@@ -137,12 +144,18 @@ export async function createWallet(password: string, preset: "desktop" | "mobile
   return { phrase, keystore: await armor(stored) };
 }
 
-/** Unlocks the wallet's first account. */
-export function unlock(net: Network, keystore: string, password: string): Promise<Account> {
-  return net.keys.fromKeystore(keystore, password, { account: 0, index: 0 });
+/** Unlocks the wallet's first account, and refuses a key of any address but the saved one. */
+export async function unlock(net: Network, keystore: string, password: string, savedAddress: string): Promise<Account> {
+  const account = await net.keys.fromKeystore(keystore, password, { account: 0, index: 0 });
+  if (account.address !== savedAddress) {
+    await account.release();
+    throw new Error("This keystore belongs to another wallet.");
+  }
+  return account;
 }
 ```
 
+- Store the address and the public key with the keystore when the wallet is created (`account.address`, `account.publicKey`), and compare the derived address with the saved one on every unlock, as `unlock` does.
 - `account.release()` wipes the key in the plugin. The plugin also wipes every key a page opened when the webview loads another page or its window closes, so lock by releasing and, if the product wants, by reloading the page. In a window with several webviews (Tauri's `unstable` multi-webview windows), closing one webview while the window stays open wipes nothing: release its keys first.
 - A key belongs to the webview that opened it; another window of the app cannot use its handle.
 - A phrase or password the page sends crosses Tauri's IPC, which nothing can wipe. Pass passwords as `Uint8Array` where the app can (the SDK overwrites them with zeros), and use `decrypt` only to show a phrase for a backup; an app that never does can deny it in its capability (`iceroot:deny-keystore-decrypt`).
