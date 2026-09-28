@@ -1,4 +1,4 @@
-// The package installed from its tarball into a Vite and React page, in Chromium: the production
+// The package installed from its tarball into a Vite and React page: the production
 // build under the page policy script-src 'self' 'wasm-unsafe-eval', and the development server.
 
 import { join } from "node:path";

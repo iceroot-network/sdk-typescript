@@ -1,4 +1,4 @@
-// The browser build in Chromium under the page policy script-src 'self' 'wasm-unsafe-eval'.
+// The browser build under the page policy script-src 'self' 'wasm-unsafe-eval'.
 
 import { readFileSync } from "node:fs";
 
@@ -56,7 +56,7 @@ test("the test browser build signs byte for byte as native Rust", async ({ page 
   expect(result["fixedAuxTransactions"]).toBe(transactions);
 });
 
-test("every ownership proof vector runs in Chromium", async ({ page }) => {
+test("every ownership proof vector runs in the browser", async ({ page }) => {
   // sdk-rust's vectors, from the checkout next to this repository.
   const vectors = readFileSync(new URL("../../../sdk-rust/vectors/sdk/S08-ownership-proofs.jsonl", import.meta.url), "utf8");
   await page.route("**/vectors/S08-ownership-proofs.jsonl", (route) => route.fulfill({ body: vectors, contentType: "text/plain" }));

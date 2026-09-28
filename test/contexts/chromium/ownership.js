@@ -1,5 +1,5 @@
-// Runs the ownership proof vectors in Chromium: every record through the published browser build's
-// ownership entry point, and the signing records through the test build's seam for fixed
+// Runs the ownership proof vectors in the browser: every record through the published browser
+// build's ownership entry point, and the signing records through the test build's seam for fixed
 // auxiliary bytes. The test serves the vectors at /vectors/S08-ownership-proofs.jsonl.
 
 const output = document.getElementById("report");
