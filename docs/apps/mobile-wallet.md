@@ -16,7 +16,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 | Create and import, with the phrase kept as a keystore (mobile preset) in the platform's secure storage | Wire now, after the architecture document's review of the plugin as the vault | |
 | Signing and submitting transfers and votes | Wire now | |
 | Vote modes with reasons | Wire now with the [vote library](../vote.md) (`@iceroot-network/sdk/tauri/vote`) | Indexer figures for Reliability, Maximum Rewards and Support Newcomers |
-| Android and iOS builds | The plugin builds for Android (`aarch64-linux-android`) with the NDK | An iOS build, which needs a macOS machine with Xcode |
+| Android and iOS builds | The plugin builds for Android (`aarch64-linux-android`) with the NDK | A first run on an Android device or emulator; an iOS build, which needs a macOS machine with Xcode |
 | Names, assets other than ROOT, swaps, time locks, finality, migrations | Hide | The capabilities of later networks |
 
 ## The current sample-data layer
@@ -57,7 +57,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 1. Install the SDK tarball ([Installation](../installation.md)). The Tauri entry loads no WebAssembly: no `optimizeDeps` setting and no CSP change.
 2. Add `tauri-plugin-iceroot` to `src-tauri/Cargo.toml` and register `tauri_plugin_iceroot::init()` in the builder of `src-tauri/src/lib.rs` ([Tauri quickstart, step 1](../quickstart/tauri.md#1-add-the-plugin)).
 3. Create `src-tauri/capabilities/main.json` granting `iceroot:default` and allowing the hosted devnet relay in the `allow` scope of `iceroot:allow-net-connect`, and list it in `app.security.capabilities`, which is empty today ([Tauri quickstart, step 2](../quickstart/tauri.md#2-grant-the-plugin-and-the-relays)).
-4. Connect to the hosted HTTPS devnet endpoint (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). The plugin's requests leave from Rust, so the platforms' cleartext rules do not apply to them, but a remote devnet is reached over HTTPS. Keep the endpoint's token out of the repository: the holder enters it in the app's settings, and the app stores it with its preferences.
+4. Connect to the hosted HTTPS devnet endpoint (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). The plugin's requests leave from Rust, so the platforms' cleartext rules do not apply to them, but a remote devnet is reached over HTTPS. On Android the plugin checks the endpoint's certificate against the Mozilla root certificates built into it, not the device's store, so the endpoint needs a certificate from a public authority. Keep the endpoint's token out of the repository: the holder enters it in the app's settings, and the app stores it with its preferences.
 5. Android builds need the Android NDK for the plugin's C code (libsecp256k1, and aws-lc through the HTTP client's TLS); `tauri android build` finds it through `NDK_HOME`. iOS builds need a Mac with Xcode.
 
 ### 2. The domain layer on the SDK

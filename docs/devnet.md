@@ -70,5 +70,5 @@ const net = await connect(
 
 ## Emulators and simulators
 
-- **Android emulator.** The host machine is `10.0.2.2` from inside the emulator. A page's own requests to it over plain HTTP are refused unless the app allows cleartext for that host; the Tauri plugin's requests leave from Rust and are not subject to that rule, but its capability must allow the relay. Prefer the hosted HTTPS endpoint.
+- **Android emulator.** The host machine is `10.0.2.2` from inside the emulator. A page's own requests to it over plain HTTP are refused unless the app allows cleartext for that host; the Tauri plugin's requests leave from Rust and are not subject to that rule, but its capability must allow the relay. Prefer the hosted HTTPS endpoint; the plugin checks its certificate against the Mozilla root certificates built into it.
 - **iOS simulator.** The simulator shares the host's network, so `127.0.0.1` reaches a local devnet, and App Transport Security allows plain HTTP to localhost only. A physical iPhone needs the HTTPS endpoint.

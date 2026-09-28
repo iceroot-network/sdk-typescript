@@ -39,7 +39,7 @@ pub fn run() {
 
 ## 2. Grant the plugin and the relays
 
-The app's capability grants the plugin's commands (`iceroot:default`) and names the relays the plugin may reach, as the `allow` scope of `iceroot:allow-net-connect`. No relay is reachable until an entry names it. An entry is a relay URL with its API base path; `*` matches any run of characters other than `/`.
+The app's capability grants the plugin's commands (`iceroot:default`, every command but `net_connect`) and names the relays the plugin may reach, as the `allow` scope of `iceroot:allow-net-connect`. The page needs no other permission for the SDK; add Tauri's own (`core:default` and the like) only for what the page uses itself. No relay is reachable until an entry names it. An entry is a relay URL with its API base path; `*` matches any run of characters other than `/`. The plugin follows no redirect: a relay that answers with one counts as unavailable, and the next relay is tried.
 
 <!-- sample: plain -->
 ```json
@@ -47,7 +47,6 @@ The app's capability grants the plugin's commands (`iceroot:default`) and names 
   "identifier": "main",
   "windows": ["main"],
   "permissions": [
-    "core:default",
     "iceroot:default",
     {
       "identifier": "iceroot:allow-net-connect",
@@ -60,7 +59,7 @@ The app's capability grants the plugin's commands (`iceroot:default`) and names 
 }
 ```
 
-List the capability in `app.security.capabilities` of `tauri.conf.json` (a mobile app without a capabilities file adds one now). A relay the capability does not allow is refused with `InvalidProfile` (`details.reason: "not-allowed"`) before any request.
+List the capability in `app.security.capabilities` of `tauri.conf.json` (a mobile app without a capabilities file adds one now). A relay the capability does not allow is refused with `InvalidProfile` (`details.reason: "not-allowed"`) before any request. A capability without `iceroot:allow-net-connect` makes Tauri refuse `connect` itself, which the page sees as `SdkNotInitialized`. Never grant `iceroot` permissions in a capability with a `remote` entry: the plugin's handles are safe only when every page and frame of the webview is the app's own code.
 
 ## 3. Keep the content security policy strict
 
@@ -95,7 +94,7 @@ export async function openNetwork(relay: string, nethash?: string): Promise<Netw
 }
 ```
 
-Every call that computes returns a promise; await it. Values that need no call stay synchronous: profiles, a draft's summary and fee, an account's address and public key, `net.rules`, `net.economics` and `net.stage` at the next block, and the text forms of snapshots and selections. Code that awaits every SDK call runs unchanged on either entry.
+Every call that computes returns a promise; await it. Values that need no call stay synchronous: profiles, a draft's summary and fee, an account's address and public key, `net.rules`, `net.economics` and `net.stage` at the next block, and the text forms of snapshots and selections. Code that awaits every SDK call runs unchanged on either entry, with two differences to know: `net.watch` with an address that is not valid on the network throws `InvalidAddress` at once on the WebAssembly entry, while through the plugin it reports an `error` event (with that `InvalidAddress`) and ends the watch; and `init()` rejects when the plugin is not of the package's release (0.1.x with 0.1.x).
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -138,7 +137,7 @@ export function unlock(net: Network, keystore: string, password: string): Promis
 }
 ```
 
-- `account.release()` wipes the key in the plugin. The plugin also wipes every key a page opened when the webview loads another page or closes, so lock by releasing and, if the product wants, by reloading the page.
+- `account.release()` wipes the key in the plugin. The plugin also wipes every key a page opened when the webview loads another page or its window closes, so lock by releasing and, if the product wants, by reloading the page. In a window with several webviews (Tauri's `unstable` multi-webview windows), closing one webview while the window stays open wipes nothing: release its keys first.
 - A key belongs to the webview that opened it; another window of the app cannot use its handle.
 - A phrase or password the page sends crosses Tauri's IPC, which nothing can wipe. Pass passwords as `Uint8Array` where the app can (the SDK overwrites them with zeros), and use `decrypt` only to show a phrase for a backup; an app that never does can deny it in its capability (`iceroot:deny-keystore-decrypt`).
 - The vote library and the ownership proofs have their Tauri entries too: `@iceroot-network/sdk/tauri/vote` and `@iceroot-network/sdk/tauri/ownership`.
@@ -151,8 +150,9 @@ export function unlock(net: Network, keystore: string, password: string): Promis
 ## 7. Mobile
 
 - **Relays.** Requests leave from the plugin's own HTTP client, so Android's cleartext rule and iOS App Transport Security, which govern the platform's HTTP stacks, do not stop plain HTTP; use the hosted devnet endpoint over HTTPS anyway for anything beyond a local emulator (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). The Android emulator reaches the host machine at `10.0.2.2`, the iOS simulator at `127.0.0.1`; allow those relay URLs in the capability.
+- **TLS on Android.** On Android the plugin verifies HTTPS relays against the Mozilla root certificates built into it, not the device's certificate store, since the platform's verifier needs the app's Java environment. A relay with a certificate from a public authority works; one from a private or user-installed authority is refused.
 - **Keys.** The plugin is the native boundary the mobile wallet's architecture requires before create and import controls exist. Use the `"mobile"` keystore preset and the platform's secure storage for the keystore text.
-- **Builds.** The plugin builds for Android (`aarch64-linux-android`) with the Android NDK. An iOS build needs a macOS machine with Xcode.
+- **Builds.** The plugin builds for Android (`aarch64-linux-android`) with the Android NDK; it has not been run on a device or an emulator yet. An iOS build needs a macOS machine with Xcode.
 
 ## The WebAssembly path
 
