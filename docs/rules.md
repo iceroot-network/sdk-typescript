@@ -17,7 +17,7 @@ Every IceRoot app follows these rules. The SDK enforces what it can; the rest is
 | 11 | Follow the hash time lock order in cross-chain swaps; warn that a signed swap offer can be taken by anyone who holds it until it lapses | `Htlc.checkLockOrder`; offer drafts carry `expiresAtHeight` (assets and swaps release) |
 | 12 | Never store a phrase or key in `localStorage`, `sessionStorage`, IndexedDB or an unencrypted file. Accept only 18 words or more for new keys | Keys are opaque handles; `PhraseTooShort`; the [keystore](keystore.md), whose bytes may be stored where the platform keeps secrets |
 | 13 | Never show sample, cached or substitute data as if it were current. An unavailable node is an error state with a retry, not an empty list | Reads throw `NodeUnavailable`, `Timeout` or `BadResponse`; nothing is swallowed |
-| 14 | Never switch networks silently. A changed chain identity is a new chain; ask the holder before pinning it | `connect` throws `NetworkMismatch` |
+| 14 | Never switch networks silently. A changed chain identity is a new chain; ask the holder before pinning it | `connect` throws `NetworkMismatch`, and a relay of another chain in the profile is never used |
 | 15 | Show exactly what will be signed, from the draft, on the review screen, and sign nothing the holder did not review | `draft.summary`; a deserialized draft recomputes its summary from its fields |
 
 ## Notes on the rules

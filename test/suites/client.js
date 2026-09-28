@@ -420,6 +420,56 @@ export default function suite(test, env) {
     assert.ok(Date.now() - started < 2_000);
   });
 
+  test("a relay is asked for its chain's identity before its first answer is used", async () => {
+    // The plugin's requests are made in Rust; this is the WebAssembly entry's transport.
+    if (!env.wasm) {
+      return;
+    }
+    const status = JSON.parse((await fixture("node-status")).body);
+    const other = JSON.parse((await fixture("node-configuration")).body);
+    other.data.nethash = "cd".repeat(32);
+    const primary = await env.node();
+    const hosts = {
+      "primary.example": primary,
+      // Serves another chain: its identity differs, and its height is far ahead.
+      "other.example": await env.node({
+        "GET /node/configuration": json(200, other),
+        "GET /node/status": json(200, { ...status, data: { ...status.data, now: 5000 } }, { "x-block-height": "5000" }),
+      }),
+      // Serves the same chain.
+      "same.example": await env.node(),
+    };
+    let primaryDown = false;
+    const transport = async (url, init) => {
+      const host = new URL(url).host;
+      if (host === "primary.example" && primaryDown) {
+        throw new TypeError("fetch failed");
+      }
+      return hosts[host].options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+    };
+    const profile = (second) => sdk.profiles.devnet({ relays: ["http://primary.example/api", `http://${second}/api`] });
+
+    primaryDown = false;
+    const mixed = await sdk.connect(profile("other.example"), { transport, rateLimit: false });
+    assert.equal(mixed.height, 80n);
+    primaryDown = true;
+    await assert.rejects(mixed.node.status(), sdk.NetworkMismatch);
+    await assert.rejects(mixed.accounts.get(GENESIS_1), sdk.NetworkMismatch);
+    assert.equal(mixed.height, 80n);
+    // The relay of the other chain was asked for its identity once, and never for anything else.
+    const asked = (await hosts["other.example"].requests()).map((request) => request.path);
+    assert.deepEqual(asked, ["/node/configuration"]);
+
+    primaryDown = false;
+    const same = await sdk.connect(profile("same.example"), { transport, rateLimit: false });
+    primaryDown = true;
+    assert.equal((await same.node.status()).height, 80n);
+    assert.deepEqual(
+      (await hosts["same.example"].requests()).map((request) => request.path),
+      ["/node/configuration", "/node/status"],
+    );
+  });
+
   test("a relay that answers with a redirect is skipped, and the redirect is never followed", async () => {
     const relays = await env.relays();
     const net = await sdk.connect(sdk.profiles.devnet({ relays: [relays.moved, relays.working] }), { ...relays.options, rateLimit: false });

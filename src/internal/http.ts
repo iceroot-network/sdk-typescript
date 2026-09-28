@@ -182,6 +182,9 @@ function retryAfterMs(error: IceRootError): number | undefined {
   return typeof seconds === "number" ? seconds * 1000 : undefined;
 }
 
+/** One relay's attempt at a request: the value, or the error that skips the relay. */
+type Attempt<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: unknown };
+
 /** Sends requests to a network's relays. */
 export class Relays {
   readonly #relays: readonly string[];
@@ -189,6 +192,16 @@ export class Relays {
   readonly #headers: Readonly<Record<string, string>>;
   readonly #timeoutMs: number;
   readonly #budget: RequestBudgetHandle | undefined;
+  /** Checks a relay's chain identity, once {@link Relays.requireIdentity} set it. */
+  #identify: ((relay: string) => Promise<void>) | undefined;
+  /** Relays whose identity was checked. */
+  readonly #identified = new Set<string>();
+  /** Relays found to serve another chain, with the error that says so. */
+  readonly #refused = new Map<string, unknown>();
+  /** Identity checks under way, so concurrent requests make one. */
+  readonly #checking = new Map<string, Promise<void>>();
+  /** The relay whose answer was used last. */
+  #answered: string | undefined;
   /** The highest block height a node reported in an answer's `X-Block-Height`. */
   latestHeight: bigint | undefined;
 
@@ -217,54 +230,134 @@ export class Relays {
     return this.#relays;
   }
 
+  /** The relay whose answer was used last. */
+  get answered(): string | undefined {
+    return this.#answered;
+  }
+
+  /**
+   * From now on, every relay is asked for its chain's identity with `identify` before the first
+   * answer from it is used, except `known`, the relay the chain was read from. A relay that fails
+   * the check with `NetworkMismatch` is never asked again, and its error stands for it; one that
+   * fails it otherwise (for example, it cannot be reached) is skipped and checked again later.
+   */
+  requireIdentity(known: string | undefined, identify: (relay: string) => Promise<void>): void {
+    if (known !== undefined) {
+      this.#identified.add(known);
+    }
+    this.#identify = identify;
+  }
+
   /**
    * Sends `request` and decodes the answer with `decode`. Relays are tried in order: one that
    * cannot be reached, times out, answers with a server error, answers with a redirect or answers
-   * with more than 4 MiB is skipped. HTTP 429 is retried on the same relay after the backoff, or
-   * after the node's `Retry-After` when it is longer, up to 30 seconds; a relay that asks for
-   * longer is skipped. When the retries are spent, or no other relay answers, the error is
-   * `RateLimited`.
+   * with more than 4 MiB is skipped, and so is one whose chain identity differs or cannot be
+   * checked (see {@link Relays.requireIdentity}). HTTP 429 is retried on the same relay after the
+   * backoff, or after the node's `Retry-After` when it is longer, up to 30 seconds; a relay that
+   * asks for longer is skipped. When the retries are spent, or no other relay answers, the error
+   * is `RateLimited`.
    */
   async send<T>(request: RequestJson, decode: (answer: Answer) => T): Promise<T> {
     let last: unknown = new NodeUnavailable("no relay was tried");
     for (const relay of this.#relays) {
-      for (let attempt = 0; ; attempt += 1) {
-        await this.#spend();
-        let answer: Answer;
-        try {
-          answer = await this.#fetch(relay, request);
-        } catch (error) {
-          last = error;
-          break;
-        }
-        try {
-          return decode(answer);
-        } catch (error) {
-          if (error instanceof IceRootError && error.code === "RateLimited") {
-            const wait = retryAfterMs(error);
-            if (wait !== undefined && wait > MAX_RETRY_WAIT_MS) {
-              last = error;
-              break;
-            }
-            const delay = call((module) => module.backoffDelay(attempt, wait));
-            if (delay === undefined) {
-              throw error;
-            }
-            this.#budget?.blockFor(now(), delay);
-            if (this.#budget === undefined) {
-              await sleep(delay);
-            }
-            continue;
-          }
-          if (isServerError(error)) {
-            last = error;
-            break;
-          }
-          throw error;
-        }
+      const refused = this.#refused.get(relay);
+      if (refused !== undefined) {
+        last = refused;
+        continue;
       }
+      try {
+        await this.#identity(relay);
+      } catch (error) {
+        last = error;
+        continue;
+      }
+      const attempt = await this.#attempt(relay, request, decode);
+      if (attempt.ok) {
+        return attempt.value;
+      }
+      last = attempt.error;
     }
     throw last;
+  }
+
+  /** Sends `request` to `relay` alone, as {@link Relays.send} would; throws what would skip it. */
+  async sendTo<T>(relay: string, request: RequestJson, decode: (answer: Answer) => T): Promise<T> {
+    const attempt = await this.#attempt(relay, request, decode);
+    if (attempt.ok) {
+      return attempt.value;
+    }
+    throw attempt.error;
+  }
+
+  /** Checks `relay`'s chain identity, once, when checks are required. */
+  #identity(relay: string): Promise<void> {
+    const identify = this.#identify;
+    if (identify === undefined || this.#identified.has(relay)) {
+      return Promise.resolve();
+    }
+    let pending = this.#checking.get(relay);
+    if (pending === undefined) {
+      pending = identify(relay)
+        .then(
+          () => {
+            this.#identified.add(relay);
+          },
+          (error: unknown) => {
+            if (error instanceof IceRootError && error.code === "NetworkMismatch") {
+              this.#refused.set(relay, error);
+            }
+            throw error;
+          },
+        )
+        .finally(() => {
+          this.#checking.delete(relay);
+        });
+      this.#checking.set(relay, pending);
+    }
+    return pending;
+  }
+
+  /**
+   * One relay's attempt at `request`, with the retries of HTTP 429. An error that skips the relay
+   * is returned; any other error of `decode` is thrown.
+   */
+  async #attempt<T>(relay: string, request: RequestJson, decode: (answer: Answer) => T): Promise<Attempt<T>> {
+    for (let attempt = 0; ; attempt += 1) {
+      await this.#spend();
+      let answer: Answer & { readonly height: string | null };
+      try {
+        answer = await this.#fetch(relay, request);
+      } catch (error) {
+        return { ok: false, error };
+      }
+      let value: T;
+      try {
+        value = decode(answer);
+      } catch (error) {
+        if (error instanceof IceRootError && error.code === "RateLimited") {
+          const wait = retryAfterMs(error);
+          if (wait !== undefined && wait > MAX_RETRY_WAIT_MS) {
+            return { ok: false, error };
+          }
+          const delay = call((module) => module.backoffDelay(attempt, wait));
+          if (delay === undefined) {
+            throw error;
+          }
+          this.#budget?.blockFor(now(), delay);
+          if (this.#budget === undefined) {
+            await sleep(delay);
+          }
+          continue;
+        }
+        if (isServerError(error)) {
+          return { ok: false, error };
+        }
+        throw error;
+      }
+      this.#answered = relay;
+      this.#note(answer.height);
+      return { ok: true, value };
+    }
   }
 
   async #spend(): Promise<void> {
@@ -281,7 +374,7 @@ export class Relays {
     }
   }
 
-  async #fetch(relay: string, request: RequestJson): Promise<Answer> {
+  async #fetch(relay: string, request: RequestJson): Promise<Answer & { readonly height: string | null }> {
     const headers: Record<string, string> = { ...this.#headers };
     for (const [name, value] of request.headers) {
       headers[name] = value;
@@ -323,8 +416,7 @@ export class Relays {
           pairs.push([name, value]);
         }
       }
-      this.#note(response.headers.get("x-block-height"));
-      return { status: response.status, headers: JSON.stringify(pairs), body };
+      return { status: response.status, headers: JSON.stringify(pairs), body, height: response.headers.get("x-block-height") };
     } catch (error) {
       if (error instanceof IceRootError) {
         throw error;

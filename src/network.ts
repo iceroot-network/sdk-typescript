@@ -223,7 +223,9 @@ function defaultTransport(): Transport {
 /**
  * Connects to the network of `profile`: reads the chain its first answering relay serves, checks
  * the chain's identity against the profile (a devnet profile without a pinned network hash is
- * pinned now; keep {@link Network.profile}), and reads the node's configuration and status.
+ * pinned now; keep {@link Network.profile}), and reads the node's configuration and status. Any
+ * other relay of the profile is asked for its chain's identity before the first answer from it is
+ * used, and a relay of another chain is never used.
  *
  * Throws `NetworkMismatch` when the node serves another chain, `UnsupportedOnNetwork` for a
  * profile the SDK cannot connect to yet, `InvalidArgument` for options it cannot use (see
@@ -251,6 +253,14 @@ export async function connect(profile: NetworkProfile, options: ConnectOptions =
     ),
   );
   const chain = Chain.fromHandle(chainHandle);
+  // Every other relay answers only once it showed the same chain's identity.
+  relays.requireIdentity(relays.answered, (relay) =>
+    withCall(0, "nodeConfiguration", {}, (prepared) =>
+      relays.sendTo(relay, requestOf(prepared), (answer) => {
+        call(() => chainHandle.checkNode(answer.status, answer.headers, answer.body));
+      }),
+    ),
+  );
   const configuration = records.nodeConfiguration(
     parse<Json<NodeConfiguration>>(
       await withCall(0, "nodeConfiguration", {}, (prepared) =>
