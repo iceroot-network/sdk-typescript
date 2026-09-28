@@ -97,6 +97,7 @@ async function main() {
   await bundle("web", optimized);
   await bundle("node", optimized);
   await bundleClassicScript(optimized);
+  await bundleTauri();
   writeEmbeddedBytes(optimized);
   if (variant === "release") {
     emitDeclarations();
@@ -337,6 +338,43 @@ async function bundleClassicScript(optimized) {
   cpSync(optimized, join(dir, `${IIFE_NAME}_bg.wasm`));
 }
 
+// The Tauri entry: the same interface, backed by the native plugin (tauri-plugin-iceroot). It loads
+// no WebAssembly module and none of the glue, which the bundle is checked for.
+async function bundleTauri() {
+  step("bundling the Tauri entry");
+  const dir = join(outDir, "tauri");
+  await esbuild.build({
+    ...common(),
+    entryPoints: {
+      index: join(root, "src", "tauri", variant === "release" ? "index.ts" : "testing.ts"),
+      vote: join(root, "src", "tauri", "vote.ts"),
+      keystore: join(root, "src", "tauri", "keystore.ts"),
+      ownership: join(root, "src", "tauri", "ownership.ts"),
+    },
+    outdir: dir,
+    format: "esm",
+    platform: "neutral",
+    splitting: true,
+    chunkNames: "chunks/[name]-[hash]",
+    plugins: [
+      {
+        name: "iceroot-tauri",
+        setup(build) {
+          build.onResolve({ filter: /^#glue\// }, (args) => {
+            throw new Error(`the Tauri entry imports the WebAssembly glue (${args.importer})`);
+          });
+        },
+      },
+    ],
+  });
+  for (const file of listFiles(dir)) {
+    const text = readFileSync(join(dir, file), "utf8");
+    if (text.includes(OUT_NAME) || text.includes("wasm-bindgen") || text.includes("WebAssembly.")) {
+      fail(`the Tauri entry's ${file} refers to the WebAssembly module`);
+    }
+  }
+}
+
 // The module as a classic script that defines one global, for the Manifest V3 sandbox page (whose
 // connect-src 'none' blocks fetching it) and service worker: initSync(IceRootSdkWasmBytes).
 function writeEmbeddedBytes(optimized) {
@@ -395,6 +433,10 @@ function emitDeclarations() {
   visit("vote.d.ts");
   visit("keystore.d.ts");
   visit("ownership.d.ts");
+  visit("tauri/index.d.ts");
+  visit("tauri/vote.d.ts");
+  visit("tauri/keystore.d.ts");
+  visit("tauri/ownership.d.ts");
   for (const file of reachable) {
     mkdirSync(dirname(join(outDir, "web", file)), { recursive: true });
     cpSync(join(types, file), join(outDir, "web", file));

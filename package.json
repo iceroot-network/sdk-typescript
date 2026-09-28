@@ -32,6 +32,22 @@
       "node": "./dist/node/ownership.js",
       "default": "./dist/web/ownership.js"
     },
+    "./tauri": {
+      "types": "./dist/web/tauri/index.d.ts",
+      "default": "./dist/tauri/index.js"
+    },
+    "./tauri/vote": {
+      "types": "./dist/web/tauri/vote.d.ts",
+      "default": "./dist/tauri/vote.js"
+    },
+    "./tauri/keystore": {
+      "types": "./dist/web/tauri/keystore.d.ts",
+      "default": "./dist/tauri/keystore.js"
+    },
+    "./tauri/ownership": {
+      "types": "./dist/web/tauri/ownership.d.ts",
+      "default": "./dist/tauri/ownership.js"
+    },
     "./iife": "./dist/iife/iceroot-sdk.js",
     "./iife/bytes": "./dist/iife/iceroot-sdk-bytes.js",
     "./wasm": "./dist/web/iceroot_sdk_bg.wasm",
