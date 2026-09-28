@@ -50,6 +50,12 @@ A local devnet runs on the machine that starts it and is the default for develop
 - **Keep chains short.** Stop a test devnet after a few rounds (a round is 53 blocks, about 7 minutes). Long chains make tests slow and gain nothing.
 - **Rate limit.** The API allows about 100 requests per minute per client address. A local devnet shares that budget between the app, the tests and any scripts on the same machine. `connect` keeps each network to that budget by default; pass `rateLimit` when a node allows more.
 
+## A new devnet and its first round
+
+- **No vote is accepted at first.** A node refuses a vote that names a validator whose node it has not seen running (node code `ERR_OFFLINE`, [Vote selection](vote.md)). On a new devnet that is every validator until its node has been seen producing during the first round, which is 53 blocks, about 7 minutes. `net.validators.list()` shows such a validator without a `version`, and the vote library's snapshot leaves it out. An app that must vote early, such as a test, waits until enough validators have a `version` (at least the network's minimum number of entries), and stops waiting after a bounded number of blocks, for example twice the seats. A wallet shows the node's message when a vote is refused and offers a retry later. It never treats the refusal as a fault of the wallet.
+- **The vote snapshot is slow.** `VoteSnapshot.fromNode` reads one request for each validator that has forged, on top of the list and the registrations, and the node allows about 100 requests per minute per client address. With the other reads of a screen in the same minute the SDK waits for budget, so the read can take a minute or more. Read it once per visit of the vote page, show that the read is going on, and reuse it for the redraws of a selection. `fromNode(net, { firstForged: false, registrations: false })` reads the list alone when the modes that need the rest are not offered.
+- **A reset is a new chain.** A devnet that was reset gets a new identity, and `connect` throws `NetworkMismatch` for the pinned one ([Profile](#profile)).
+
 ## The hosted devnet endpoint
 
 Integrators who cannot run a local devnet, and phones, use a hosted devnet endpoint over HTTPS. Android and iOS refuse plain HTTP to a remote host from their own HTTP stacks, so a phone or emulator on the WebAssembly entry needs this endpoint; the Tauri plugin's requests leave from Rust and are not subject to that rule, but a remote devnet is still reached over HTTPS. It needs an access token, sent as a request header; the URL, the header name and the token are handed out with access to the endpoint.
@@ -67,7 +73,10 @@ const net = await connect(
 - A Rust backend passes the header in `HttpOptions::headers` and builds its client with `HttpClient::with_options` (see the documentation of `iceroot_sdk::api::HttpOptions`).
 - Never commit the token. Read it from the environment in scripts, and from the app's settings in apps.
 - The endpoint answers CORS preflight requests without the token, so browser pages and webviews can call it directly when their CSP allows the origin.
+- `connect` checks the headers before it sends anything. A name must be an HTTP token, and a value must be visible ASCII, spaces and tabs. Anything else, such as a token pasted with a line break, throws `InvalidArgument` that names the header and never shows the value. Trim the token when the holder enters it.
+- Both entries send the headers: the WebAssembly entry through its transport, and the Tauri plugin's entry from Rust (its `connect` takes the same `headers`).
 - The token goes to the relays only: neither entry follows a redirect, and a relay that answers with one is skipped. A custom transport must honour `redirect: "manual"` for that to hold.
+- A custom transport is a function with the signature of `fetch`. Do not pass the built-in `fetch` itself: the SDK calls the transport as a method, so a browser throws `Illegal invocation`. Pass `(input, init) => fetch(input, init)`, or nothing ([Concepts](concepts.md#networks-profiles-and-connect)).
 
 ## Emulators and simulators
 

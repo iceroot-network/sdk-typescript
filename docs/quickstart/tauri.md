@@ -173,10 +173,13 @@ import { init, connect, profiles, type Network } from "@iceroot-network/sdk";
 
 export async function openNetwork(relay: string, nethash?: string): Promise<Network> {
   await init();
-  return connect(profiles.devnet({ relays: [relay], nethash }), {
-    transport: isTauri() ? tauriFetch : globalThis.fetch,   // the browser preview uses the webview's fetch
-  });
+  const profile = profiles.devnet({ relays: [relay], nethash });
+  // Inside Tauri the HTTP plugin's fetch is a plain function and works as it is.
+  // In the browser preview pass no transport: the default wraps the page's own fetch.
+  return isTauri() ? connect(profile, { transport: tauriFetch }) : connect(profile);
 }
 ```
+
+Never pass `globalThis.fetch` or `window.fetch` as the transport. The SDK calls the transport as a method of its own client, so the built-in `fetch` runs with the wrong `this` and Chromium throws `TypeError: Illegal invocation`. Leave the option out, or wrap the call: `(input, init) => fetch(input, init)`.
 
 Keys then live in WebAssembly memory inside the webview. The desktop and mobile wallets use the plugin: moving from this path changes the imports, adds `await` where the plugin returns promises, and removes `'wasm-unsafe-eval'` and the HTTP plugin if nothing else uses them.
