@@ -8,7 +8,7 @@ What it does, and where:
 |---|---|---|
 | Create | A new 24-word recovery phrase, confirmed by two of its words | `src/Setup.tsx` |
 | Restore | An 18-, 21- or 24-word phrase; shorter phrases are refused | `src/Setup.tsx` |
-| Keep and unlock | The phrase's entropy encrypted under the holder's password with the keystore's `web` preset, kept in the browser; unlocking opens it again, and a wrong password is refused | `src/Setup.tsx`, `src/Unlock.tsx`, `src/storage.ts` |
+| Keep and unlock | The phrase's entropy encrypted under the holder's password with the keystore's `web` preset, kept in the browser; unlocking opens the account straight from it, so the phrase never reaches JavaScript, and a wrong password is refused | `src/Setup.tsx`, `src/Unlock.tsx`, `src/storage.ts` |
 | Overview | The balance, the current vote and the history | `src/Overview.tsx` |
 | Send | One transaction to one or more recipients with a memo, through a review screen that shows exactly what is signed | `src/Send.tsx`, `src/submit.ts` |
 | Vote | A selection in any of the four modes (Diversity, Reliability, Maximum Rewards, Support Newcomers), a review screen with every pick's reasons and the notice of a mode that topped up from Diversity, "Draw again", the vote signed as reviewed, and a check of the kept selection that reports picks that no longer meet their criteria, such as a validator that resigned | `src/Vote.tsx` |

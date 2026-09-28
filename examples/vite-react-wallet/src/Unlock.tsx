@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { Account } from "@iceroot-network/sdk";
-import { WrongPasswordOrCorrupt, decrypt } from "@iceroot-network/sdk/keystore";
+import { WrongPasswordOrCorrupt } from "@iceroot-network/sdk/keystore";
 
 import { afterPaint, problem } from "./format";
 import { useNetwork } from "./network";
@@ -18,9 +18,9 @@ export function Unlock({ wallet, onUnlocked, onRemove }: { wallet: StoredWallet;
     setMessage("");
     setWorking(true);
     afterPaint(() => {
-      // The keystore gives back the phrase as bytes; fromPhrase overwrites them with zeros.
-      const opened = decrypt(wallet.keystore, password);
-      const account = net.keys.fromPhrase(opened.phrase, { account: 0, index: 0 });
+      // The account opens straight from the keystore: the phrase never reaches JavaScript, and the
+      // password's bytes are overwritten with zeros once read.
+      const account = net.keys.fromKeystore(wallet.keystore, new TextEncoder().encode(password), { account: 0, index: 0 });
       if (account.address !== wallet.address) {
         account.release();
         throw new Error("the keystore holds another account");
