@@ -12,7 +12,7 @@ import { assertReport, checks, dist, vectors } from "./helpers.mjs";
 
 const devnet = sdk.profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] });
 
-test("every entry point refuses to run before initialization", () => {
+test("every entry point refuses to run before initialization", async () => {
   assert.equal(sdk.isInitialized(), false);
   assert.throws(() => sdk.Keys.fromLegacyPassphrase("x", devnet), sdk.SdkNotInitialized);
   assert.throws(() => sdk.Address.parse("dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNF", devnet), (error) => {
@@ -41,6 +41,6 @@ test("init(bytes) loads the module, once", async () => {
   sdk.initSync(new Uint8Array(0));
 });
 
-test("the browser build matches native Rust", () => {
-  assertReport(assert, checks.run({ ...sdk, vote, keystore }, vectors, "node-web"), { fixedAux: false, voteAndKeystore: true });
+test("the browser build matches native Rust", async () => {
+  assertReport(assert, await checks.run({ ...sdk, vote, keystore }, vectors, "node-web"), { fixedAux: false, voteAndKeystore: true });
 });

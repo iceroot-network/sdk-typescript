@@ -20,10 +20,15 @@ try {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.type === "run") {
-    sendResponse(
-      loadError === undefined
-        ? IceRootVectorChecks.run(IceRootSdk, IceRootVectors, "mv3-service-worker")
-        : { ok: false, loadError },
+    if (loadError !== undefined) {
+      sendResponse({ ok: false, loadError });
+      return false;
+    }
+    IceRootVectorChecks.run(IceRootSdk, IceRootVectors, "mv3-service-worker").then(sendResponse, (error) =>
+      sendResponse({ ok: false, error: String(error) }),
     );
+    // The answer comes once the checks settle.
+    return true;
   }
+  return false;
 });

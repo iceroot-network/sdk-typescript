@@ -4,7 +4,7 @@
 // exceed 2^53 as a decimal string. `Json<T>` is the shape of `T` in that form, so the compiler
 // checks that each converter turns every such string into a `bigint` and leaves nothing out.
 
-import type { AssetId } from "../amount.js";
+import { AssetId } from "../amount.js";
 import type {
   AccountInfo,
   BlockInfo,
@@ -239,4 +239,9 @@ export function submitReport(json: Json<SubmitReport>): SubmitReport {
 /** `convert`, or `null` for the JSON `null` of a lookup that found nothing. */
 export function orNull<W, T>(convert: (json: W) => T): (json: W | null) => T | null {
   return (json) => (json === null ? null : convert(json));
+}
+
+/** The balance of `asset` (ROOT unless given) in an account the node reported; 0 when it holds none. */
+export function balanceOf(account: AccountInfo, asset: AssetId = AssetId.ROOT): bigint {
+  return account.balances.find((balance) => balance.asset === asset)?.amount ?? 0n;
 }

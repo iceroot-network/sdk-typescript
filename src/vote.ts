@@ -31,35 +31,30 @@ import { handleOf as chainHandleOf, type Chain } from "./chain.js";
 import type { Page, ValidatorInfo } from "./client.js";
 import { InvalidArgument } from "./errors.js";
 import { call, parse } from "./internal/bindings.js";
+import {
+  DEFAULT_PICKS,
+  RULE_PRESETS,
+  candidateFromWire,
+  decode,
+  findingFromWire,
+  selectionFromWire,
+  selectWire,
+  snapshotFromWire,
+  snapshotHeight,
+  snapshotInputs,
+  toWire,
+  type Wire,
+} from "./internal/vote-wire.js";
 import type { Network } from "./network.js";
 
 export type { VoteEntry } from "./build.js";
 export * from "./vote-errors.js";
+export { DEFAULT_PICKS, LIBRARY_VERSION, MAX_PICKS, MIN_PICKS, MODE_NAMES, MODES } from "./internal/vote-wire.js";
 
 // ---- modes, rules and snapshots -------------------------------------------------------------
 
 /** A vote mode: the preference an automatic selection follows. */
 export type Mode = "diversity" | "reliability" | "maximum-rewards" | "support-newcomers";
-
-/** Every mode, Diversity (the recommended default) first. */
-export const MODES: readonly Mode[] = Object.freeze(["diversity", "reliability", "maximum-rewards", "support-newcomers"]);
-
-/** Each mode's name as wallets show it. */
-export const MODE_NAMES: Readonly<Record<Mode, string>> = Object.freeze({
-  diversity: "Diversity",
-  reliability: "Reliability",
-  "maximum-rewards": "Maximum Rewards",
-  "support-newcomers": "Support Newcomers",
-});
-
-/** The version of the selection rules, which every selection records. */
-export const LIBRARY_VERSION = "iceroot-vote/1";
-/** The fewest picks of a selection. */
-export const MIN_PICKS = 20;
-/** The most picks of a selection, as many as a vote can name. */
-export const MAX_PICKS = 53;
-/** The default number of picks: 500 basis points each. */
-export const DEFAULT_PICKS = 20;
 
 /** Which names a network accepts for validators. */
 export type NameRule =
@@ -87,24 +82,10 @@ export interface VoteRules {
 /** The vote rules of a network. */
 export const VoteRules = Object.freeze({
   /** IceRoot from its genesis: 20 to 53 entries of at most 500 basis points each, 1,280 bytes, lowercase names, no vote from a validator's account. */
-  ICEROOT: Object.freeze({
-    minEntries: 20,
-    maxEntries: 53,
-    maxEntryBasisPoints: 500,
-    maxBytes: 1280,
-    names: "lowercase-letters",
-    validatorsMayVote: false,
-  }) as VoteRules,
+  ICEROOT: RULE_PRESETS.ICEROOT,
 
   /** Today's devnet formats: 1 to 53 entries, any share, 1,024 bytes, the devnet's names, and validators may vote. */
-  SOLAR_COMPATIBLE: Object.freeze({
-    minEntries: 1,
-    maxEntries: 53,
-    maxEntryBasisPoints: 10_000,
-    maxBytes: 1024,
-    names: "solar-compatible",
-    validatorsMayVote: true,
-  }) as VoteRules,
+  SOLAR_COMPATIBLE: RULE_PRESETS.SOLAR_COMPATIBLE,
 
   /**
    * The vote rules in force on a network: at the next block of `net`, or at `height` of `chain`.
@@ -236,45 +217,11 @@ export const VoteSnapshot = Object.freeze({
    * selection names it and a later {@link check} reports a pick left out this way.
    */
   async fromNode(net: Network, options: SnapshotOptions = {}): Promise<VoteSnapshot> {
-    const status = await net.refresh();
-    const validators = await allPages((page) => net.validators.list({ page, limit: 100 }));
-    const lookups: Record<string, { registeredHeight?: string; firstForgedHeight?: string }> = {};
-    const entry = (name: string) => (lookups[name] ??= {});
-    if (options.registrations ?? true) {
-      const registrations = await allPages((page) =>
-        net.transactions.list({ kind: "register-validator", oldestFirst: true, page, limit: 100 }),
-      );
-      for (const record of registrations) {
-        const details = record.details;
-        if (record.block !== undefined && details.kind === "register-validator") {
-          entry(details.name).registeredHeight ??= String(record.block.height);
-        }
-      }
-    }
-    if (options.firstForged ?? true) {
-      for (const validator of validators) {
-        const produced = validator.production.produced;
-        // A validator the snapshot leaves out (see above) needs no lookup.
-        const leftOut = !validator.status.startsWith("resigned") && validator.version === undefined;
-        if (produced === 0n || leftOut) {
-          continue;
-        }
-        // Blocks come highest first, one per page: the page numbered by the blocks produced is the first.
-        let page = await net.validators.blocks(validator.name, { page: Number(produced), limit: 1 });
-        if (page.items.length === 0 && page.pageCount > 0) {
-          page = await net.validators.blocks(validator.name, { page: page.pageCount, limit: 1 });
-        }
-        const first = page.items[0];
-        if (first !== undefined) {
-          entry(validator.name).firstForgedHeight = String(first.height);
-        }
-      }
-    }
-    const height = status.height > 0xffffffffn ? 0xffffffff : Math.max(1, Number(status.height));
+    const inputs = await snapshotInputs(net, options);
     return snapshotFromWire(
       parse<Wire>(
         call((module) =>
-          module.voteSnapshotFromValidators(chainHandleOf(net.chain), height, toWire(validators), toWire(lookups)),
+          module.voteSnapshotFromValidators(chainHandleOf(net.chain), inputs.height, inputs.validators, inputs.lookups),
         ),
       ),
     );
@@ -292,10 +239,7 @@ export const VoteSnapshot = Object.freeze({
     validators: readonly ValidatorInfo[],
     lookups: Readonly<Record<string, ValidatorLookup>> = {},
   ): VoteSnapshot {
-    const at = typeof height === "bigint" ? Number(height) : height;
-    if (!Number.isInteger(at) || at < 1 || at > 0xffffffff) {
-      throw new InvalidArgument("a height is an integer from 1 to 4294967295", { height: String(height) });
-    }
+    const at = snapshotHeight(height);
     const handle = chainHandleOf(chain);
     return snapshotFromWire(
       parse<Wire>(
@@ -466,14 +410,7 @@ export interface SelectRequest {
  * minimum fit the rules) or `BreaksRules` (the rules do not fit the snapshot's names or shares).
  */
 export function select(snapshot: VoteSnapshot, request: SelectRequest): Selection {
-  const wire = {
-    mode: request.mode,
-    account: request.account,
-    count: request.count ?? DEFAULT_PICKS,
-    draw: request.draw ?? 0,
-    rules: request.rules,
-  };
-  return selectionFromWire(parse<Wire>(voteCall("select", toWire(snapshot), toWire(wire))));
+  return selectionFromWire(parse<Wire>(voteCall("select", toWire(snapshot), selectWire(request, DEFAULT_PICKS))));
 }
 
 /** One validator judged by one mode. */
@@ -572,131 +509,9 @@ export const Selection = Object.freeze({
   },
 });
 
-// ---- the JSON the module reads and writes ---------------------------------------------------
-
-type Wire = Record<string, unknown>;
+// ---- the module ------------------------------------------------------------------------------
 
 /** One of the vote library's functions in the module, which share one export. */
 function voteCall(operation: string, first: string, second = "", third = ""): string {
   return call((module) => module.voteCall(operation, first, second, third));
-}
-
-/** JSON text of `value`, `bigint`s as decimal strings, as the module reads it. */
-function toWire(value: unknown): string {
-  try {
-    return JSON.stringify(value, (_key, item: unknown) => (typeof item === "bigint" ? item.toString() : item));
-  } catch (error) {
-    throw new InvalidArgument(`the value cannot be passed to the vote library: ${String(error)}`);
-  }
-}
-
-function big(value: unknown, what: string): bigint {
-  if (typeof value !== "string" || !/^[0-9]+$/.test(value)) {
-    throw new InvalidArgument(`${what} is not a decimal integer`);
-  }
-  return BigInt(value);
-}
-
-function optionalBig(value: unknown, what: string): bigint | null {
-  return value === null || value === undefined ? null : big(value, what);
-}
-
-function records(value: unknown, what: string): Wire[] {
-  if (!Array.isArray(value)) {
-    throw new InvalidArgument(`${what} is not a list`);
-  }
-  return value as Wire[];
-}
-
-function decode<T>(text: string, what: string, convert: (wire: Wire) => T): T {
-  let wire: unknown;
-  try {
-    wire = JSON.parse(text);
-  } catch {
-    throw new InvalidArgument(`the text is not ${what} in JSON`);
-  }
-  if (typeof wire !== "object" || wire === null) {
-    throw new InvalidArgument(`the text is not ${what} in JSON`);
-  }
-  return convert(wire as Wire);
-}
-
-function snapshotFromWire(wire: Wire): VoteSnapshot {
-  return {
-    ...(wire as unknown as VoteSnapshot),
-    height: big(wire["height"], "height"),
-    records: records(wire["records"], "records").map((record) => {
-      const payouts = record["payouts"] as Wire | null | undefined;
-      return {
-        ...(record as unknown as ValidatorRecord),
-        registeredHeight: optionalBig(record["registeredHeight"], "registeredHeight"),
-        voteWeight: big(record["voteWeight"], "voteWeight"),
-        payouts:
-          payouts === null || payouts === undefined
-            ? null
-            : { ...(payouts as unknown as { intervals: number }), perUnitWeight: big(payouts["perUnitWeight"], "perUnitWeight") },
-      };
-    }),
-  };
-}
-
-/** A reason or shortfall, its 64- and 128-bit values as `bigint`. */
-function reasonFromWire<T extends { readonly kind: string }>(wire: Wire): T {
-  switch (wire["kind"]) {
-    case "drawn":
-      return { ...wire, weight: big(wire["weight"], "weight"), totalWeight: big(wire["totalWeight"], "totalWeight") } as unknown as T;
-    case "measured-payouts":
-      return { ...wire, perUnitWeight: big(wire["perUnitWeight"], "perUnitWeight") } as unknown as T;
-    case "registered-days":
-    case "registered-too-recently":
-      return { ...wire, days: optionalBig(wire["days"], "days") } as unknown as T;
-    default:
-      return wire as unknown as T;
-  }
-}
-
-function reasons(value: unknown): Reason[] {
-  return records(value, "reasons").map((reason) => reasonFromWire<Reason>(reason));
-}
-
-function shortfalls(value: unknown): Shortfall[] {
-  return records(value, "shortfalls").map((shortfall) => reasonFromWire<Shortfall>(shortfall));
-}
-
-function selectionFromWire(wire: Wire): Selection {
-  const entries: Pick[] = records(wire["entries"], "entries").map((pick) => ({
-    ...(pick as unknown as Pick),
-    reasons: reasons(pick["reasons"]),
-  }));
-  return {
-    ...(wire as unknown as Selection),
-    snapshotHeight: big(wire["snapshotHeight"], "snapshotHeight"),
-    entries,
-    // The entries come in the protocol's canonical order, so their names and shares are the vote.
-    vote: entries.map(({ validator, basisPoints }) => ({ validator, basisPoints })),
-  };
-}
-
-function candidateFromWire(wire: Wire): Candidate {
-  return {
-    ...(wire as unknown as Candidate),
-    weight: big(wire["weight"], "weight"),
-    reasons: reasons(wire["reasons"]),
-    shortfalls: shortfalls(wire["shortfalls"]),
-  };
-}
-
-function findingFromWire(wire: Wire): Finding {
-  return { ...(wire as unknown as Finding), reasons: reasons(wire["reasons"]), shortfalls: shortfalls(wire["shortfalls"]) };
-}
-
-async function allPages<T>(read: (page: number) => Promise<Page<T>>): Promise<T[]> {
-  const items: T[] = [];
-  for (let page = 1; ; page += 1) {
-    const listing = await read(page);
-    items.push(...listing.items);
-    if (!listing.hasNext || listing.items.length === 0) {
-      return items;
-    }
-  }
 }

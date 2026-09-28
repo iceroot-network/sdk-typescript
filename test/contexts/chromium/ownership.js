@@ -16,7 +16,7 @@ async function main() {
     .split("\n")
     .map((line) => JSON.parse(line))
     .filter((record) => record.op !== "meta");
-  const report = globalThis.IceRootOwnershipChecks.run(ownership, { ...testSdk.testing, ownership: testSdk.ownership }, records);
+  const report = await globalThis.IceRootOwnershipChecks.run(ownership, { ...testSdk.testing, ownership: testSdk.ownership }, records);
   return { ...report, records: records.length };
 }
 

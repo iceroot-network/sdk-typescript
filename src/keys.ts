@@ -13,8 +13,9 @@
  * @module
  */
 
-import { InvalidArgument, KeyReleased } from "./errors.js";
+import { KeyReleased } from "./errors.js";
 import { call, parse, type KeyHandle } from "./internal/bindings.js";
+import { pathNumber } from "./internal/key-args.js";
 import { fromHex, toHex } from "./internal/hex.js";
 import { profileHandleOf, profileOf, type NetworkProfile, type ProfileSource } from "./profiles.js";
 import type { Algorithm, Hex } from "./types.js";
@@ -107,16 +108,6 @@ export interface AccountOptions {
   readonly index?: number;
   /** The optional BIP39 passphrase. A different passphrase gives unrelated keys. */
   readonly passphrase?: string;
-}
-
-function pathNumber(value: number | undefined, name: string): number {
-  if (value === undefined) {
-    return 0;
-  }
-  if (!Number.isInteger(value) || value < 0 || value > 0x7fffffff) {
-    throw new InvalidArgument(`the ${name} is an integer from 0 to 2147483647`, { [name]: value });
-  }
-  return value;
 }
 
 /** Creating and importing accounts. */

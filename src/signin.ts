@@ -9,8 +9,8 @@
  * @module
  */
 
-import { InvalidArgument } from "./errors.js";
-import { call, parse } from "./internal/bindings.js";
+import { call } from "./internal/bindings.js";
+import { expectedWire, fieldsFromWire, requestWire } from "./internal/signin-args.js";
 import { profileHandleOf, type ProfileSource } from "./profiles.js";
 import type { Hex } from "./types.js";
 
@@ -64,28 +64,12 @@ export interface SignInExpectations {
   readonly now: Date;
 }
 
-const EXPECTED_FIELDS = ["origin", "address", "publicKey"] as const;
-
-function seconds(date: Date, name: string): number {
-  const time = date instanceof Date ? date.getTime() : Number.NaN;
-  if (!Number.isFinite(time)) {
-    throw new InvalidArgument(`${name} is not a valid date`);
-  }
-  return Math.floor(time / 1000);
-}
-
 /** Building and checking sign-in challenges. */
 export const SignIn = {
   /** The twelve-line sign-in message of `request` on the network of `source`, for a server. */
   build(request: SignInRequest, source: ProfileSource): string {
     const profile = profileHandleOf(source);
-    const json = JSON.stringify({
-      origin: request.origin,
-      publicKey: request.publicKey,
-      nonce: request.nonce,
-      issuedAt: seconds(request.issuedAt, "issuedAt"),
-      expiresAt: seconds(request.expiresAt, "expiresAt"),
-    });
+    const json = requestWire(request);
     return call((module) => module.buildSignIn(profile, json));
   },
 
@@ -98,25 +82,7 @@ export const SignIn = {
    */
   parse(message: string, source: ProfileSource, expected: SignInExpectations): SignInFields {
     const profile = profileHandleOf(source);
-    for (const name of EXPECTED_FIELDS) {
-      const value: unknown = expected[name];
-      if (typeof value !== "string" || value === "") {
-        throw new InvalidArgument(`the expected ${name} is required`, { field: name });
-      }
-    }
-    const now = expected.now instanceof Date ? expected.now.getTime() : Number.NaN;
-    if (!Number.isFinite(now)) {
-      throw new InvalidArgument("now is not a valid date");
-    }
-    const json = JSON.stringify({
-      origin: expected.origin,
-      publicKey: expected.publicKey,
-      address: expected.address,
-    });
-    const fields = parse<Omit<SignInFields, "issuedAt" | "expiresAt"> & { issuedAtMs: number; expiresAtMs: number }>(
-      call((module) => module.parseSignIn(profile, message, json, now)),
-    );
-    const { issuedAtMs, expiresAtMs, ...rest } = fields;
-    return Object.freeze({ ...rest, issuedAt: new Date(issuedAtMs), expiresAt: new Date(expiresAtMs) });
+    const { json, now } = expectedWire(expected);
+    return fieldsFromWire(call((module) => module.parseSignIn(profile, message, json, now)));
   },
 } as const;

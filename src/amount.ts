@@ -7,7 +7,7 @@
  * @module
  */
 
-import { InvalidAmount, InvalidArgument } from "./errors.js";
+import { checkDecimals, formatArgs } from "./internal/amount-args.js";
 import { call } from "./internal/bindings.js";
 import type { BaseUnits } from "./types.js";
 
@@ -51,15 +51,6 @@ export const AssetId = Object.freeze({
   ROOT: "ROOT" as AssetId,
 });
 
-const MAX_DECIMALS = 38;
-const MAX_UNITS = (1n << 128n) - 1n;
-
-function checkDecimals(decimals: Decimals): number {
-  if (!Number.isInteger(decimals) || decimals < 0 || decimals > MAX_DECIMALS) {
-    throw new InvalidArgument(`decimals are an integer from 0 to ${MAX_DECIMALS}`, { decimals });
-  }
-  return decimals;
-}
 
 /** Exact amounts: decimal text to base units and back. */
 export const Amount = {
@@ -75,14 +66,7 @@ export const Amount = {
 
   /** `units` base units as decimal text with `decimals` fraction digits, such as `"1.5"`. */
   format(units: BaseUnits, decimals: Decimals, options: AmountFormatOptions = {}): string {
-    const places = checkDecimals(decimals);
-    if (typeof units !== "bigint" || units < 0n || units > MAX_UNITS) {
-      throw new InvalidAmount("an amount is a bigint from 0 to 2^128 - 1", { units: String(units) });
-    }
-    const maxFraction = options.maxFraction;
-    if (maxFraction !== undefined && (!Number.isInteger(maxFraction) || maxFraction < 0 || maxFraction > 255)) {
-      throw new InvalidArgument("maxFraction is an integer from 0 to 255", { maxFraction });
-    }
-    return call((module) => module.formatAmount(units.toString(), places, maxFraction, options.grouping ?? false));
+    const args = formatArgs(units, decimals, options);
+    return call((module) => module.formatAmount(args.units, args.decimals, args.maxFraction, args.grouping));
   },
 } as const;

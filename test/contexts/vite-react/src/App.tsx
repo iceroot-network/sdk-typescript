@@ -1,12 +1,12 @@
 import * as sdk from "@iceroot-network/sdk";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import vectors from "../../../vectors/wasm-native.json";
 import "../../../shared/vector-checks.js";
 
 declare global {
   var IceRootVectorChecks: {
-    run(module: typeof sdk, data: typeof vectors, context: string): { ok: boolean };
+    run(module: typeof sdk, data: typeof vectors, context: string): Promise<{ ok: boolean }>;
   };
 }
 
@@ -20,7 +20,12 @@ export function App() {
   const [error, setError] = useState("");
 
   // The same vector checks as every other context, run once in this page.
-  const report = useMemo(() => globalThis.IceRootVectorChecks.run(sdk, vectors, "vite-react"), []);
+  const [report, setReport] = useState<{ ok: boolean; error?: string } | null>(null);
+  useEffect(() => {
+    globalThis.IceRootVectorChecks.run(sdk, vectors, "vite-react").then(setReport, (cause: unknown) =>
+      setReport({ ok: false, error: String(cause) }),
+    );
+  }, []);
 
   // Wipe the key when the account changes or the page unmounts.
   useEffect(() => () => account?.release(), [account]);
@@ -76,8 +81,8 @@ export function App() {
           )}
         </section>
       )}
-      <pre id="report" data-ok={String(report.ok)}>
-        {JSON.stringify(report, null, 2)}
+      <pre id="report" data-ok={String(report?.ok)}>
+        {JSON.stringify(report ?? {}, null, 2)}
       </pre>
     </main>
   );

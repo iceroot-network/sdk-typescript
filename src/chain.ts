@@ -13,9 +13,10 @@
  * @module
  */
 
-import type { AssetId, TokenInfo } from "./amount.js";
+import type { TokenInfo } from "./amount.js";
 import { InvalidArgument } from "./errors.js";
-import { call, parse, type ChainHandle } from "./internal/bindings.js";
+import { call, type ChainHandle } from "./internal/bindings.js";
+import { checkHeight, economicsFromJson, rulesFromJson, tokenFromJson } from "./internal/chain-json.js";
 import {
   capabilitiesOf,
   profileFromHandle,
@@ -107,18 +108,6 @@ export interface Economics {
   readonly minBurn: BaseUnits;
 }
 
-interface RulesJson extends Omit<Rules, "transfer" | "burn" | "maxAmount"> {
-  readonly transfer: Omit<Rules["transfer"], "minAmount"> & { readonly minAmount: string };
-  readonly burn: { readonly minAmount: string };
-  readonly maxAmount: string;
-}
-
-interface EconomicsJson extends Omit<Economics, "rewardsByRank" | "secondaryReward" | "minBurn"> {
-  readonly rewardsByRank: readonly { readonly rank: number; readonly reward: string | null }[];
-  readonly secondaryReward: string | null;
-  readonly minBurn: string;
-}
-
 const chains = new WeakMap<Chain, ChainHandle>();
 
 /** A network's loaded configuration, bound to a profile. */
@@ -137,8 +126,7 @@ export class Chain {
     this.profile = profileFromHandle(handle.profile());
     this.nethash = handle.nethash();
     this.networkByte = handle.networkByte();
-    const token = parse<{ assetId: string; name: string; symbol: string; decimals: number }>(handle.token());
-    this.token = Object.freeze({ ...token, assetId: token.assetId as AssetId });
+    this.token = tokenFromJson(handle.token());
   }
 
   /**
@@ -168,27 +156,12 @@ export class Chain {
 
   /** The rules in force at `height`: pass the next block's height. */
   rules(height: number): Rules {
-    const json = parse<RulesJson>(call(() => handleOf(this).rules(checkHeight(height))));
-    return {
-      ...json,
-      transfer: { ...json.transfer, minAmount: BigInt(json.transfer.minAmount) },
-      burn: { minAmount: BigInt(json.burn.minAmount) },
-      maxAmount: BigInt(json.maxAmount),
-    };
+    return rulesFromJson(call(() => handleOf(this).rules(checkHeight(height))));
   }
 
   /** The economics in force at `height`. */
   economics(height: number): Economics {
-    const json = parse<EconomicsJson>(call(() => handleOf(this).economics(checkHeight(height))));
-    return {
-      ...json,
-      rewardsByRank: json.rewardsByRank.map(({ rank, reward }) => ({
-        rank,
-        reward: reward === null ? null : BigInt(reward),
-      })),
-      secondaryReward: json.secondaryReward === null ? null : BigInt(json.secondaryReward),
-      minBurn: BigInt(json.minBurn),
-    };
+    return economicsFromJson(call(() => handleOf(this).economics(checkHeight(height))));
   }
 }
 
@@ -210,9 +183,4 @@ export function handleOf(chain: Chain): ChainHandle {
  *
  * @internal
  */
-export function checkHeight(height: number): number {
-  if (!Number.isInteger(height) || height < 1 || height > 0xffffffff) {
-    throw new InvalidArgument("a height is an integer from 1 to 4294967295", { height });
-  }
-  return height;
-}
+export { checkHeight };

@@ -29,7 +29,7 @@ function loadClassicScripts(dir) {
   return context;
 }
 
-test("the embedded bytes are the shipped module", () => {
+test("the embedded bytes are the shipped module", async () => {
   const context = loadClassicScripts(dist);
   const embedded = Buffer.from(context.IceRootSdkWasmBytes);
   const module = readFileSync(join(dist, "iife", "iceroot-sdk_bg.wasm"));
@@ -39,7 +39,7 @@ test("the embedded bytes are the shipped module", () => {
   assert.match(sums, new RegExp(`^${digest}  iife/iceroot-sdk_bg.wasm$`, "m"));
 });
 
-test("the classic-script build adds one global, with the vote library and the keystore, and loads synchronously from the bytes", () => {
+test("the classic-script build adds one global, with the vote library and the keystore, and loads synchronously from the bytes", async () => {
   const context = loadClassicScripts(dist);
   const sdk = context.IceRootSdk;
   assert.equal(typeof sdk.initSync, "function");
@@ -48,12 +48,12 @@ test("the classic-script build adds one global, with the vote library and the ke
   sdk.initSync(context.IceRootSdkWasmBytes);
   assert.equal(typeof sdk.vote.select, "function");
   assert.equal(typeof sdk.keystore.decrypt, "function");
-  assertReport(assert, context.IceRootVectorChecks.run(sdk, vectors, "node-iife"), { fixedAux: false, voteAndKeystore: true });
+  assertReport(assert, await context.IceRootVectorChecks.run(sdk, vectors, "node-iife"), { fixedAux: false, voteAndKeystore: true });
 });
 
-test("the test classic-script build signs byte for byte as native Rust", () => {
+test("the test classic-script build signs byte for byte as native Rust", async () => {
   const context = loadClassicScripts(testDist);
   const sdk = context.IceRootSdk;
   sdk.initSync(context.IceRootSdkWasmBytes);
-  assertReport(assert, context.IceRootVectorChecks.run(sdk, vectors, "node-iife-test"), { fixedAux: true, voteAndKeystore: true });
+  assertReport(assert, await context.IceRootVectorChecks.run(sdk, vectors, "node-iife-test"), { fixedAux: true, voteAndKeystore: true });
 });

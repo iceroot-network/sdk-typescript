@@ -20,6 +20,15 @@ import { Chain, checkHeight, handleOf as chainHandleOf, type OperationKind } fro
 import type { SubmitOutcome } from "./client.js";
 import { InvalidArgument } from "./errors.js";
 import { call, parse, type DraftHandle, type SignedHandle } from "./internal/bindings.js";
+import {
+  checkNonce,
+  factsJson,
+  requestJson,
+  signedSummaryFromJson,
+  summaryFromJson,
+  type DraftSummaryJson,
+  type SignedSummaryJson,
+} from "./internal/drafts.js";
 import { fromHex } from "./internal/hex.js";
 import { keyHandleOf, type Account } from "./keys.js";
 import { profileHandleOf, type ProfileSource } from "./profiles.js";
@@ -166,156 +175,6 @@ export interface SignOptions {
   readonly secondKey?: Account;
 }
 
-type OperationJson =
-  | { kind: "transfer"; to: { address: string; amount: string }[] }
-  | { kind: "vote"; entries: { validator: string; basisPoints: number }[] }
-  | { kind: "burn"; amount: string }
-  | { kind: "register-second-key"; publicKey: string }
-  | { kind: "register-validator"; name: string }
-  | { kind: "resign-validator"; resignation: Resignation };
-
-interface DraftSummaryJson {
-  profile: string;
-  networkByte: number;
-  nethash: string;
-  height: number;
-  kind: OperationKind;
-  operation: OperationJson;
-  from: string;
-  publicKey: string;
-  nonce: string;
-  fee: { amount: string; source: FeeSource; floor: string | null };
-  memo: string | null;
-  amount: string;
-  size: number;
-  secondSignature: boolean;
-}
-
-function units(value: BaseUnits, name: string): string {
-  if (typeof value !== "bigint" || value < 0n) {
-    throw new InvalidArgument(`${name} is a bigint of base units, not negative`, { [name]: String(value) });
-  }
-  return value.toString();
-}
-
-function operationJson(operation: Operation): OperationJson {
-  switch (operation.kind) {
-    case "transfer":
-      return {
-        kind: "transfer",
-        to: operation.to.map((recipient, index) => ({
-          address: String(recipient.address),
-          amount: units(recipient.amount, `to[${index}].amount`),
-        })),
-      };
-    case "vote":
-      return {
-        kind: "vote",
-        entries: operation.entries.map(({ validator, basisPoints }) => ({ validator, basisPoints })),
-      };
-    case "burn":
-      return { kind: "burn", amount: units(operation.amount, "amount") };
-    case "register-second-key":
-      return { kind: "register-second-key", publicKey: operation.publicKey };
-    case "register-validator":
-      return { kind: "register-validator", name: operation.name };
-    case "resign-validator":
-      return { kind: "resign-validator", resignation: operation.resignation };
-    default:
-      throw new InvalidArgument(`no operation is ${JSON.stringify((operation as { kind?: unknown }).kind)}`);
-  }
-}
-
-function operationFromJson(json: OperationJson): OperationSummary {
-  switch (json.kind) {
-    case "transfer":
-      return {
-        kind: "transfer",
-        to: json.to.map(({ address, amount }) => ({ address, amount: BigInt(amount) })),
-      };
-    case "burn":
-      return { kind: "burn", amount: BigInt(json.amount) };
-    default:
-      return json;
-  }
-}
-
-function feeJson(fee: FeeChoice | undefined): object {
-  if (fee === undefined || fee === "minimum") {
-    return { kind: "minimum" };
-  }
-  if (typeof fee === "bigint") {
-    return { kind: "exact", amount: units(fee, "fee") };
-  }
-  const basisPoints = fee.multiplierBasisPoints;
-  if (!Number.isInteger(basisPoints) || basisPoints < 0 || basisPoints > 0xffffffff) {
-    throw new InvalidArgument("multiplierBasisPoints is an integer", { multiplierBasisPoints: basisPoints });
-  }
-  return { kind: "multiplier", basisPoints };
-}
-
-function basisPointsText(basisPoints: number): string {
-  const whole = Math.trunc(basisPoints / 100);
-  const fraction = basisPoints % 100;
-  return fraction === 0 ? `${whole}%` : `${whole}.${String(fraction).padStart(2, "0").replace(/0$/, "")}%`;
-}
-
-/** Control characters (C0, DEL, C1), line and paragraph separators, bidirectional formatting characters and the backslash. */
-const UNSAFE_TEXT = /[\\\p{Cc}\p{Zl}\p{Zp}\p{Bidi_Control}]/gu;
-
-/**
- * `text` safe for one line of a review screen: every character of {@link UNSAFE_TEXT} is written as
- * a `\uXXXX` escape, and a backslash as `\\`, so the escapes cannot be mistaken for text.
- */
-function displayText(text: string): string {
-  return text.replace(UNSAFE_TEXT, (char) =>
-    char === "\\" ? "\\\\" : `\\u${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`,
-  );
-}
-
-function lines(summary: Omit<DraftSummary, "lines">, symbol: string, decimals: number): string[] {
-  const amount = (value: BaseUnits) => `${Amount.format(value, decimals)} ${symbol}`;
-  const operation = summary.operation;
-  const out: string[] = [];
-  switch (operation.kind) {
-    case "transfer":
-      for (const recipient of operation.to) {
-        out.push(`Send ${amount(recipient.amount)} to ${String(recipient.address)}`);
-      }
-      break;
-    case "vote":
-      if (operation.entries.length === 0) {
-        out.push("Withdraw the current vote");
-      }
-      for (const entry of operation.entries) {
-        out.push(`Vote ${basisPointsText(entry.basisPoints)} for ${entry.validator}`);
-      }
-      break;
-    case "burn":
-      out.push(`Burn ${amount(operation.amount)}`);
-      break;
-    case "register-second-key":
-      out.push(`Register the second key ${operation.publicKey}`);
-      break;
-    case "register-validator":
-      out.push(`Register as the validator ${operation.name}`);
-      break;
-    case "resign-validator":
-      out.push(
-        operation.resignation === "revoke"
-          ? "Revoke the temporary validator resignation"
-          : `Resign as a validator (${operation.resignation})`,
-      );
-      break;
-  }
-  if (summary.memo !== undefined) {
-    out.push(`Memo: ${summary.memo}`);
-  }
-  out.push(`Fee ${amount(summary.fee.amount)}`);
-  // The memo, names, addresses and the token symbol all come from the transaction or the network.
-  return out.map(displayText);
-}
-
 const drafts = new WeakMap<Draft, DraftHandle>();
 
 /** A transaction built and checked against the rules in force at its height, ready to sign. */
@@ -328,34 +187,10 @@ export class Draft {
   private constructor(handle: DraftHandle, chain: Chain) {
     drafts.set(this, handle);
     this.chain = chain;
-    const json = parse<DraftSummaryJson>(handle.summary());
-    const amount = BigInt(json.amount);
-    const fee: DraftFee = {
-      amount: BigInt(json.fee.amount),
-      source: json.fee.source,
-      ...(json.fee.floor === null ? {} : { floor: BigInt(json.fee.floor) }),
-    };
-    const summary: Omit<DraftSummary, "lines"> = {
-      profile: json.profile,
-      networkByte: json.networkByte,
-      nethash: json.nethash,
-      height: json.height,
-      kind: json.kind,
-      operation: operationFromJson(json.operation),
-      from: json.from,
-      publicKey: json.publicKey,
-      nonce: BigInt(json.nonce),
-      fee,
-      ...(json.memo === null ? {} : { memo: json.memo }),
-      amount,
-      total: amount + fee.amount,
-      size: json.size,
-      secondSignature: json.secondSignature,
-    };
-    this.summary = Object.freeze({
-      ...summary,
-      lines: Object.freeze(lines(summary, chain.token.symbol, chain.token.decimals)),
-    });
+    const decimals = chain.token.decimals;
+    this.summary = summaryFromJson(parse<DraftSummaryJson>(handle.summary()), chain.token.symbol, (units) =>
+      Amount.format(units, decimals),
+    );
   }
 
   /**
@@ -365,23 +200,10 @@ export class Draft {
    */
   static build(chain: Chain, request: DraftRequest, facts: OnlineFacts): Draft {
     const sender = typeof facts.sender === "string" ? facts.sender : facts.sender.publicKey;
-    if (typeof facts.nonce !== "bigint" || facts.nonce < 0n) {
-      throw new InvalidArgument("the nonce is a bigint, not negative", { nonce: String(facts.nonce) });
-    }
-    const requestJson = JSON.stringify({
-      operation: operationJson(request.operation),
-      memo: request.memo ?? null,
-      fee: feeJson(request.fee),
-    });
-    const factsJson = JSON.stringify({
-      sender,
-      nonce: facts.nonce.toString(),
-      height: checkHeight(facts.height),
-      secondKey: facts.secondKey ?? null,
-    });
-    const handle = call((module) =>
-      module.DraftHandle.build(chainHandleOf(chain), requestJson, factsJson),
-    );
+    checkNonce(facts);
+    const request_ = requestJson(request);
+    const facts_ = factsJson(facts, sender);
+    const handle = call((module) => module.DraftHandle.build(chainHandleOf(chain), request_, facts_));
     return new Draft(handle, chain);
   }
 
@@ -498,14 +320,6 @@ export interface SignedSummary {
   readonly secondSignature: boolean;
 }
 
-interface SignedSummaryJson extends Omit<SignedSummary, "operation" | "nonce" | "fee" | "amount" | "memo"> {
-  readonly operation: OperationJson;
-  readonly nonce: string;
-  readonly fee: string;
-  readonly amount: string;
-  readonly memo: string | null;
-}
-
 const signedHandles = new WeakMap<SignedTransaction, SignedHandle>();
 
 /** A signed transaction, ready to submit. */
@@ -521,15 +335,7 @@ export class SignedTransaction {
     signedHandles.set(this, handle);
     this.id = handle.id();
     this.json = Object.freeze(parse<Record<string, unknown>>(handle.json()));
-    const json = parse<SignedSummaryJson>(handle.summary());
-    this.summary = Object.freeze({
-      ...json,
-      operation: operationFromJson(json.operation),
-      nonce: BigInt(json.nonce),
-      fee: BigInt(json.fee),
-      amount: BigInt(json.amount),
-      ...(json.memo === null ? {} : { memo: json.memo }),
-    } as SignedSummary);
+    this.summary = signedSummaryFromJson(parse<SignedSummaryJson>(handle.summary()));
   }
 
   /** @internal */

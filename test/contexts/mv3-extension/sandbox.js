@@ -25,7 +25,7 @@ window.addEventListener("message", async (event) => {
   let report;
   try {
     IceRootSdk.initSync(IceRootSdkWasmBytes);
-    report = IceRootVectorChecks.run(IceRootSdk, IceRootVectors, "mv3-sandbox");
+    report = await IceRootVectorChecks.run(IceRootSdk, IceRootVectors, "mv3-sandbox");
   } catch (error) {
     report = { ok: false, loadError: error.code || String(error) };
   }

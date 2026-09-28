@@ -17,26 +17,26 @@ test("the Node build loads on import", async () => {
   assert.equal(sdk.bindingsVersion(), "0.1.0");
 });
 
-test("the published Node build matches native Rust", () => {
-  const report = checks.run({ ...sdk, vote, keystore }, vectors, "node");
+test("the published Node build matches native Rust", async () => {
+  const report = await checks.run({ ...sdk, vote, keystore }, vectors, "node");
   assert.equal(report.hasFixedAux, false);
   assertReport(assert, report, { fixedAux: false, voteAndKeystore: true });
 });
 
-test("the test Node build signs byte for byte as native Rust", () => {
+test("the test Node build signs byte for byte as native Rust", async () => {
   // The test build carries the vote library and the keystore as namespaces of its root.
-  const report = checks.run(testSdk, vectors, "node-test");
+  const report = await checks.run(testSdk, vectors, "node-test");
   assert.equal(report.hasFixedAux, true);
   assertReport(assert, report, { fixedAux: true, voteAndKeystore: true });
 });
 
-test("the published build has no keystore seam and no vote test helpers", () => {
+test("the published build has no keystore seam and no vote test helpers", async () => {
   assert.equal("vote" in sdk, false);
   assert.equal("keystore" in sdk, false);
   assert.equal(testSdk.testing.hasKeystoreSeam(), true);
 });
 
-test("the published build has no way to choose the signature randomness", () => {
+test("the published build has no way to choose the signature randomness", async () => {
   assert.equal("testing" in sdk, false);
   const account = sdk.Keys.fromLegacyPassphrase("probe passphrase", sdk.profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] }));
   const one = sdk.Messages.sign(account, "same message");

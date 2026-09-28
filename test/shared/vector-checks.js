@@ -2,8 +2,9 @@
 //
 // A classic script with no imports, so it loads the same way in Node, a page, a Manifest V3 sandbox
 // page, a service worker and a Tauri webview. It defines one global, IceRootVectorChecks, whose
-// run(sdk, vectors, context) returns a report instead of throwing, so each context can send the
-// report back to the test.
+// run(sdk, vectors, context) resolves to a report instead of throwing, so each context can send the
+// report back to the test. Every call of the SDK is awaited, so the same checks run on the
+// WebAssembly entry and on the Tauri plugin's entry.
 //
 // When the context passes the vote library and the keystore too (sdk.vote and sdk.keystore, as the
 // classic-script build's global has them), their selections and keystore are checked as well.
@@ -41,7 +42,7 @@
     return hex.slice(0, -2) + (last < 16 ? "0" : "") + last.toString(16);
   }
 
-  function run(sdk, vectors, context) {
+  async function run(sdk, vectors, context) {
     var report = {
       context: context,
       checks: 0,
@@ -66,9 +67,9 @@
       return expected === actual;
     }
 
-    function attempt(name, f) {
+    async function attempt(name, f) {
       try {
-        f();
+        await f();
       } catch (error) {
         report.checks += 1;
         report.failures.push({ check: name, expected: "no error", actual: String(error && error.stack || error) });
@@ -83,30 +84,36 @@
       return profiles[networkByte];
     }
 
-    attempt("initialized", function () {
+    await attempt("initialized", async function () {
       check("initialized", true, sdk.isInitialized());
     });
 
-    vectors.keys.forEach(function (keyCase, keyIndex) {
-      attempt("key " + keyIndex, function () {
+    for (var keyIndex = 0; keyIndex < vectors.keys.length; keyIndex++) {
+      await checkKey(vectors.keys[keyIndex], keyIndex);
+    }
+
+    async function checkKey(keyCase, keyIndex) {
+      await attempt("key " + keyIndex, async function () {
         var networks = Object.keys(keyCase.addresses);
-        networks.forEach(function (network) {
-          var account = sdk.Keys.fromLegacyPassphrase(keyCase.passphrase, profile(Number(network)));
-          check("key " + keyIndex + " public key", keyCase.publicKey, account.publicKey);
-          check("key " + keyIndex + " address " + network, keyCase.addresses[network], account.address);
-          check("key " + keyIndex + " legacy", true, account.legacy);
-          account.release();
-        });
+        for (var n = 0; n < networks.length; n++) {
+          var network = networks[n];
+          var legacy = await sdk.Keys.fromLegacyPassphrase(keyCase.passphrase, profile(Number(network)));
+          check("key " + keyIndex + " public key", keyCase.publicKey, legacy.publicKey);
+          check("key " + keyIndex + " address " + network, keyCase.addresses[network], legacy.address);
+          check("key " + keyIndex + " legacy", true, legacy.legacy);
+          await legacy.release();
+        }
 
         // The same key from the passphrase's bytes; the array is wiped.
         var bytes = new TextEncoder().encode(keyCase.passphrase);
-        var fromBytes = sdk.Keys.fromLegacyPassphrase(bytes, profile(90));
+        var fromBytes = await sdk.Keys.fromLegacyPassphrase(bytes, profile(90));
         check("key " + keyIndex + " address from bytes", keyCase.addresses["90"], fromBytes.address);
         check("key " + keyIndex + " bytes wiped", true, bytes.every(function (b) { return b === 0; }));
-        fromBytes.release();
+        await fromBytes.release();
 
-        var account = sdk.Keys.fromLegacyPassphrase(keyCase.passphrase, profile(90));
-        keyCase.signatures.forEach(function (sigCase, sigIndex) {
+        var account = await sdk.Keys.fromLegacyPassphrase(keyCase.passphrase, profile(90));
+        for (var sigIndex = 0; sigIndex < keyCase.signatures.length; sigIndex++) {
+          var sigCase = keyCase.signatures[sigIndex];
           var name = "key " + keyIndex + " signature " + sigIndex;
           var message = hexToBytes(sigCase.message);
           var signed = {
@@ -116,43 +123,47 @@
             algorithm: ALGORITHM,
             network: "heartwood-devnet-v90",
           };
-          if (check(name + " verifies", true, sdk.Messages.verify(signed, profile(90)))) {
+          if (check(name + " verifies", true, await sdk.Messages.verify(signed, profile(90)))) {
             report.verifiedSignatures += 1;
           }
-          check(name + " tampered fails", false, sdk.Messages.verify(Object.assign({}, signed, { signature: tamper(sigCase.signature) })));
-          check(name + " other message fails", false, sdk.Messages.verify(Object.assign({}, signed, { message: sigCase.message + "00" })));
+          check(name + " tampered fails", false, await sdk.Messages.verify(Object.assign({}, signed, { signature: tamper(sigCase.signature) })));
+          check(name + " other message fails", false, await sdk.Messages.verify(Object.assign({}, signed, { message: sigCase.message + "00" })));
 
-          var fresh = sdk.Messages.sign(account, message);
-          check(name + " fresh signature verifies", true, sdk.Messages.verify(Object.assign({}, signed, { signature: fresh.signature })));
+          var fresh = await sdk.Messages.sign(account, message);
+          check(name + " fresh signature verifies", true, await sdk.Messages.verify(Object.assign({}, signed, { signature: fresh.signature })));
           check(name + " fresh signature network", "heartwood-devnet-v90", fresh.network);
           report.freshSignatures += 1;
 
           if (report.hasFixedAux) {
-            var fixed = sdk.testing.signMessageWithAux(account, message, hexToBytes(sigCase.aux));
+            var fixed = await sdk.testing.signMessageWithAux(account, message, hexToBytes(sigCase.aux));
             if (check(name + " bytes", sigCase.signature, fixed)) {
               report.fixedAuxSignatures += 1;
             }
-            check(name + " digest", sigCase.digest, sdk.testing.sha256(message));
+            check(name + " digest", sigCase.digest, await sdk.testing.sha256(message));
           }
-        });
-        account.release();
+        }
+        await account.release();
         var released = "no error";
         try {
-          sdk.Messages.sign(account, "after release");
+          await sdk.Messages.sign(account, "after release");
         } catch (error) {
           released = error.code;
         }
         check("key " + keyIndex + " released", "KeyReleased", released);
       });
-    });
+    }
 
-    vectors.addressChecks.forEach(function (addressCase, index) {
-      attempt("address check " + index, function () {
-        var result = sdk.Address.check(addressCase.text, profile(addressCase.network));
+    for (var a = 0; a < vectors.addressChecks.length; a++) {
+      await checkAddress(vectors.addressChecks[a], a);
+    }
+
+    async function checkAddress(addressCase, index) {
+      await attempt("address check " + index, async function () {
+        var result = await sdk.Address.check(addressCase.text, profile(addressCase.network));
         var name = "address check " + index + " (" + JSON.stringify(addressCase.text) + ")";
         check(name + " ok", addressCase.ok, result.ok);
         if (addressCase.ok) {
-          var parsed = sdk.Address.parse(addressCase.text, profile(addressCase.network));
+          var parsed = await sdk.Address.parse(addressCase.text, profile(addressCase.network));
           check(name + " bytes", addressCase.bytes, bytesToHex(parsed.bytes));
           check(name + " network", addressCase.network, parsed.network);
         } else {
@@ -160,104 +171,130 @@
           check(name + " position", addressCase.position === null ? undefined : addressCase.position, result.position);
           var thrown;
           try {
-            sdk.Address.parse(addressCase.text, profile(addressCase.network));
+            await sdk.Address.parse(addressCase.text, profile(addressCase.network));
           } catch (error) {
             thrown = error;
           }
           check(name + " throws InvalidAddress", true, thrown instanceof sdk.InvalidAddress);
         }
       });
-    });
+    }
 
-    vectors.publicKeyAddresses.forEach(function (keyCase, index) {
-      attempt("public key address " + index, function () {
-        var address = sdk.Address.fromPublicKey(keyCase.publicKey, profile(keyCase.network));
+    for (var k = 0; k < vectors.publicKeyAddresses.length; k++) {
+      await checkPublicKeyAddress(vectors.publicKeyAddresses[k], k);
+    }
+
+    async function checkPublicKeyAddress(keyCase, index) {
+      await attempt("public key address " + index, async function () {
+        var address = await sdk.Address.fromPublicKey(keyCase.publicKey, profile(keyCase.network));
         check("public key address " + index, keyCase.address, address.toString());
       });
-    });
+    }
 
-    (vectors.phraseAccounts || []).forEach(function (phraseCase, index) {
-      attempt("phrase account " + index, function () {
+    var phraseAccounts = vectors.phraseAccounts || [];
+    for (var p = 0; p < phraseAccounts.length; p++) {
+      await checkPhraseAccount(phraseAccounts[p], p);
+    }
+
+    async function checkPhraseAccount(phraseCase, index) {
+      await attempt("phrase account " + index, async function () {
         var name = "phrase account " + index + " (" + phraseCase.path + ")";
         var options = { account: phraseCase.account, index: phraseCase.index, passphrase: phraseCase.passphrase };
-        var account = sdk.Keys.fromPhrase(phraseCase.phrase, profile(90), options);
+        var account = await sdk.Keys.fromPhrase(phraseCase.phrase, profile(90), options);
         check(name + " public key", phraseCase.publicKey, account.publicKey);
         check(name + " address", phraseCase.address, account.address);
         check(name + " path", phraseCase.path, account.path);
         check(name + " not legacy", false, account.legacy);
-        account.release();
+        await account.release();
         var bytes = new TextEncoder().encode(phraseCase.phrase);
-        var fromBytes = sdk.Keys.fromPhrase(bytes, profile(90), options);
+        var fromBytes = await sdk.Keys.fromPhrase(bytes, profile(90), options);
         check(name + " address from bytes", phraseCase.address, fromBytes.address);
         check(name + " bytes wiped", true, bytes.every(function (b) { return b === 0; }));
-        fromBytes.release();
+        await fromBytes.release();
         report.phraseAccounts += 1;
       });
-    });
+    }
 
-    (vectors.phraseChecks || []).forEach(function (phraseCase, index) {
-      attempt("phrase check " + index, function () {
-        var result = sdk.Mnemonic.check(phraseCase.text);
+    var phraseChecks = vectors.phraseChecks || [];
+    for (var c = 0; c < phraseChecks.length; c++) {
+      await checkPhrase(phraseChecks[c], c);
+    }
+
+    async function checkPhrase(phraseCase, index) {
+      await attempt("phrase check " + index, async function () {
+        var result = await sdk.Mnemonic.check(phraseCase.text);
         var name = "phrase check " + index;
         check(name + " ok", phraseCase.ok, result.ok);
         check(name + " words", phraseCase.words, result.words);
         check(name + " reason", phraseCase.reason, result.reason);
         check(name + " position", phraseCase.position, result.position);
       });
-    });
+    }
 
     if (vectors.amounts) {
-      vectors.amounts.parse.forEach(function (amountCase, index) {
-        attempt("amount parse " + index, function () {
-          var name = "amount parse " + index + " (" + JSON.stringify(amountCase.text) + ")";
-          var outcome;
-          try {
-            outcome = sdk.Amount.parse(amountCase.text, amountCase.decimals).toString();
-          } catch (error) {
-            outcome = error.code;
-          }
-          check(name, amountCase.units !== undefined ? amountCase.units : amountCase.error, outcome);
-        });
+      for (var i = 0; i < vectors.amounts.parse.length; i++) {
+        await checkParse(vectors.amounts.parse[i], i);
+      }
+      for (var f = 0; f < vectors.amounts.format.length; f++) {
+        await checkFormat(vectors.amounts.format[f], f);
+      }
+    }
+
+    async function checkParse(amountCase, index) {
+      await attempt("amount parse " + index, async function () {
+        var name = "amount parse " + index + " (" + JSON.stringify(amountCase.text) + ")";
+        var outcome;
+        try {
+          outcome = (await sdk.Amount.parse(amountCase.text, amountCase.decimals)).toString();
+        } catch (error) {
+          outcome = error.code;
+        }
+        check(name, amountCase.units !== undefined ? amountCase.units : amountCase.error, outcome);
       });
-      vectors.amounts.format.forEach(function (formatCase, index) {
-        attempt("amount format " + index, function () {
-          var options = { grouping: formatCase.grouping };
-          if (formatCase.maxFraction !== null) {
-            options.maxFraction = formatCase.maxFraction;
-          }
-          check("amount format " + index, formatCase.text, sdk.Amount.format(BigInt(formatCase.units), formatCase.decimals, options));
-        });
+    }
+
+    async function checkFormat(formatCase, index) {
+      await attempt("amount format " + index, async function () {
+        var options = { grouping: formatCase.grouping };
+        if (formatCase.maxFraction !== null) {
+          options.maxFraction = formatCase.maxFraction;
+        }
+        check("amount format " + index, formatCase.text, await sdk.Amount.format(BigInt(formatCase.units), formatCase.decimals, options));
       });
     }
 
     if (vectors.transactions) {
-      checkTransactions(sdk, vectors.transactions, report, check, attempt, profile(90));
+      await checkTransactions(sdk, vectors.transactions, report, check, attempt, profile(90));
     }
 
     if (sdk.vote && vectors.vote) {
-      checkVote(sdk, vectors.vote, check, attempt, report);
+      await checkVote(sdk, vectors.vote, check, attempt, report);
     }
     if (sdk.keystore && vectors.keystore) {
-      checkKeystore(sdk, vectors.keystore, check, attempt, report);
+      await checkKeystore(sdk, vectors.keystore, check, attempt, report);
     }
     report.ok = report.failures.length === 0 && report.checks > 0;
     return report;
   }
 
-  function checkVote(sdk, cases, check, attempt, report) {
+  async function checkVote(sdk, cases, check, attempt, report) {
     var vote = sdk.vote;
     var snapshot;
-    attempt("vote snapshot", function () {
+    await attempt("vote snapshot", async function () {
       snapshot = vote.VoteSnapshot.deserialize(JSON.stringify(cases.snapshot));
       check("vote snapshot height", cases.snapshot.height, snapshot.height.toString());
     });
     if (snapshot === undefined) {
       return;
     }
-    cases.selections.forEach(function (expected, index) {
+    for (var index = 0; index < cases.selections.length; index++) {
+      await checkSelection(cases.selections[index], index);
+    }
+
+    async function checkSelection(expected, index) {
       var name = "vote " + index + " " + expected.mode;
-      attempt(name, function () {
-        var selection = vote.select(snapshot, {
+      await attempt(name, async function () {
+        var selection = await vote.select(snapshot, {
           mode: expected.mode,
           account: expected.account,
           draw: expected.draw,
@@ -276,16 +313,16 @@
             return typeof reason.kind === "string" && reason.text.length > 0;
           }));
         });
-        check(name + " valid vote", 0, vote.validateVote(selection.vote, cases.rules).length);
-        check(name + " still meets", true, vote.check(selection, snapshot).every(function (finding) {
+        check(name + " valid vote", 0, (await vote.validateVote(selection.vote, cases.rules)).length);
+        check(name + " still meets", true, (await vote.check(selection, snapshot)).every(function (finding) {
           return finding.stillMeets;
         }));
         report.voteSelections += 1;
       });
-    });
-    attempt("vote refusal", function () {
+    }
+    await attempt("vote refusal", async function () {
       try {
-        vote.select(snapshot, { mode: "diversity", account: "holder", count: 19, rules: cases.rules });
+        await vote.select(snapshot, { mode: "diversity", account: "holder", count: 19, rules: cases.rules });
         check("vote refusal", "InvalidPickCount", "no error");
       } catch (error) {
         check("vote refusal", "InvalidPickCount", error.code);
@@ -294,28 +331,28 @@
     });
   }
 
-  function checkKeystore(sdk, expected, check, attempt, report) {
+  async function checkKeystore(sdk, expected, check, attempt, report) {
     var keystore = sdk.keystore;
     var decoder = new TextDecoder();
-    attempt("keystore", function () {
+    await attempt("keystore", async function () {
       var password = new TextEncoder().encode(expected.password);
-      var opened = keystore.decrypt(hexToBytes(expected.keystore), password);
+      var opened = await keystore.decrypt(hexToBytes(expected.keystore), password);
       check("keystore phrase", expected.phrase, decoder.decode(opened.phrase));
       check("keystore words", expected.words, opened.words);
       check("keystore password wiped", true, password.every(function (b) { return b === 0; }));
-      check("keystore text", expected.text, keystore.armor(hexToBytes(expected.keystore)));
-      check("keystore from text", expected.phrase, decoder.decode(keystore.decrypt(expected.text, expected.password).phrase));
+      check("keystore text", expected.text, await keystore.armor(hexToBytes(expected.keystore)));
+      check("keystore from text", expected.phrase, decoder.decode((await keystore.decrypt(expected.text, expected.password)).phrase));
       try {
-        keystore.decrypt(expected.text, "wrong " + expected.password);
+        await keystore.decrypt(expected.text, "wrong " + expected.password);
         check("keystore wrong password", "WrongPasswordOrCorrupt", "no error");
       } catch (error) {
         check("keystore wrong password", "WrongPasswordOrCorrupt", error.code);
       }
       // A new keystore at the lowest parameters, read back.
       var low = { memoryKib: 19456, iterations: 2, parallelism: 1 };
-      var fresh = keystore.encrypt(expected.phrase, "fresh password", low);
-      check("keystore fresh header", 19456, keystore.inspect(fresh).memoryKib);
-      check("keystore fresh phrase", expected.phrase, decoder.decode(keystore.decrypt(fresh, "fresh password").phrase));
+      var fresh = await keystore.encrypt(expected.phrase, "fresh password", low);
+      check("keystore fresh header", 19456, (await keystore.inspect(fresh)).memoryKib);
+      check("keystore fresh phrase", expected.phrase, decoder.decode((await keystore.decrypt(fresh, "fresh password")).phrase));
       report.keystoresOpened += 1;
     });
   }
@@ -363,10 +400,10 @@
     });
   }
 
-  function checkTransactions(sdk, data, report, check, attempt, devnet) {
+  async function checkTransactions(sdk, data, report, check, attempt, devnet) {
     var chain;
-    attempt("chain", function () {
-      chain = sdk.Chain.load(devnet, data.configuration);
+    await attempt("chain", async function () {
+      chain = await sdk.Chain.load(devnet, data.configuration);
       check("chain nethash", data.nethash, chain.nethash);
       check("chain pinned", data.nethash, chain.profile.chain.nethash);
       check("chain decimals", 8, chain.token.decimals);
@@ -374,16 +411,20 @@
     if (chain === undefined) {
       return;
     }
-    data.cases.forEach(function (txCase) {
-      attempt("transaction " + txCase.name, function () {
+    for (var t = 0; t < data.cases.length; t++) {
+      await checkTransaction(data.cases[t]);
+    }
+
+    async function checkTransaction(txCase) {
+      await attempt("transaction " + txCase.name, async function () {
         var name = "transaction " + txCase.name;
-        var account = signer(sdk, txCase.signer, chain);
-        var second = signer(sdk, txCase.secondSigner, chain);
+        var account = await signer(sdk, txCase.signer, chain);
+        var second = await signer(sdk, txCase.secondSigner, chain);
         var facts = { sender: account, nonce: BigInt(txCase.facts.nonce), height: txCase.facts.height };
         if (txCase.facts.secondKey !== null) {
           facts.secondKey = txCase.facts.secondKey;
         }
-        var draft = sdk.Draft.build(chain, request(txCase.request), facts);
+        var draft = await sdk.Draft.build(chain, request(txCase.request), facts);
         var summary = draft.summary;
         check(name + " kind", txCase.summary.kind, summary.kind);
         check(name + " operation", JSON.stringify(txCase.summary.operation), operationText(summary.operation));
@@ -399,45 +440,45 @@
         check(name + " unsigned bytes", txCase.unsigned, bytesToHex(draft.unsignedBytes));
 
         // Built here, serialized, and read back as another context would.
-        var again = sdk.Draft.deserialize(draft.serialize(), chain.profile);
+        var again = await sdk.Draft.deserialize(draft.serialize(), chain.profile);
         check(name + " draft round trip", txCase.unsigned, bytesToHex(again.unsignedBytes));
         check(name + " draft round trip summary", JSON.stringify(summary.lines), JSON.stringify(again.summary.lines));
         check(name + " draft round trip fee source", summary.fee.source, again.summary.fee.source);
 
         // The native signed transaction verifies here and has the native id.
-        var native = sdk.SignedTransaction.fromJson(chain, txCase.json, txCase.facts.height);
+        var native = await sdk.SignedTransaction.fromJson(chain, txCase.json, txCase.facts.height);
         check(name + " native id", txCase.id, native.id);
         if (check(name + " native verifies", true, native.verified)) {
           report.verifiedTransactions += 1;
         }
 
         var options = second === undefined ? {} : { secondKey: second };
-        var fresh = again.sign(account, options);
+        var fresh = await again.sign(account, options);
         check(name + " fresh verifies", true, fresh.verified);
         check(name + " fresh carries the unsigned bytes", txCase.unsigned, bytesToHex(fresh.bytes).slice(0, txCase.unsigned.length));
-        var back = sdk.SignedTransaction.deserialize(fresh.serialize(), chain.profile);
+        var back = await sdk.SignedTransaction.deserialize(fresh.serialize(), chain.profile);
         check(name + " fresh round trip", fresh.id, back.id);
         if (second !== undefined) {
-          check(name + " fresh second signature", true, fresh.verifySecondSignature(second.publicKey));
+          check(name + " fresh second signature", true, await fresh.verifySecondSignature(second.publicKey));
         }
         report.freshTransactions += 1;
 
         if (report.hasFixedAux) {
-          var signed = sdk.testing.signDraftWithAux(draft, account, hexToBytes(txCase.aux), second);
+          var signed = await sdk.testing.signDraftWithAux(draft, account, hexToBytes(txCase.aux), second);
           check(name + " id", txCase.id, signed.id);
           check(name + " bytes", txCase.bytes, bytesToHex(signed.bytes));
           check(name + " json", JSON.stringify(txCase.json), JSON.stringify(signed.json));
-          check(name + " draft sha256", txCase.draftSha256, sdk.testing.sha256(draft.serialize()));
-          if (check(name + " signed sha256", txCase.signedSha256, sdk.testing.sha256(signed.serialize()))) {
+          check(name + " draft sha256", txCase.draftSha256, await sdk.testing.sha256(draft.serialize()));
+          if (check(name + " signed sha256", txCase.signedSha256, await sdk.testing.sha256(signed.serialize()))) {
             report.fixedAuxTransactions += 1;
           }
         }
-        account.release();
+        await account.release();
         if (second !== undefined) {
-          second.release();
+          await second.release();
         }
       });
-    });
+    }
   }
 
   globalThis.IceRootVectorChecks = { run: run };
