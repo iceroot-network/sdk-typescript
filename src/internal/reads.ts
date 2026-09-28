@@ -51,6 +51,15 @@ export type Answer<T> = T | Promise<T>;
  */
 const WATCH_HISTORY_LIMIT = 50;
 
+/**
+ * A block time in milliseconds for the default intervals and limits of waiting and watching:
+ * the node's block time, kept within 1 to 600 seconds whatever the context reports.
+ */
+function blockMsOf(blockTime: number): number {
+  const seconds = Number.isFinite(blockTime) ? Math.min(Math.max(blockTime, 1), 600) : 600;
+  return seconds * 1000;
+}
+
 /** `value` milliseconds if it is positive, else `fallback` when absent. */
 export function positive(value: number | undefined, name: string, fallback: number): number {
   if (value === undefined) {
@@ -226,7 +235,7 @@ export async function waitFor(id: Hex, options: WaitOptions, context: WaitContex
   if (!Number.isSafeInteger(wanted) || wanted < 1) {
     throw new InvalidArgument("confirmations is a whole number, at least 1", { confirmations: wanted });
   }
-  const blockMs = context.blockTime * 1000;
+  const blockMs = blockMsOf(context.blockTime);
   const timeoutMs = positive(options.timeoutMs, "timeoutMs", Math.max(60_000, 10 * blockMs));
   const intervalMs = positive(options.intervalMs, "intervalMs", Math.max(1_000, blockMs / 2));
   const droppedAfterMs = positive(options.droppedAfterMs, "droppedAfterMs", Math.max(10_000, 3 * blockMs));
@@ -297,7 +306,7 @@ export function watchPolling(
   options: WatchOptions,
   context: WatchContext,
 ): () => void {
-  const blockMs = context.blockTime * 1000;
+  const blockMs = blockMsOf(context.blockTime);
   const intervalMs = positive(options.intervalMs, "intervalMs", Math.max(1_000, blockMs));
   const stopper = new AbortController();
   const outer = options.signal;

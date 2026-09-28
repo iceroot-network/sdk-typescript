@@ -179,7 +179,10 @@ export interface NodeConfiguration {
   readonly explorer?: string;
   /** Validator seats per round at the node's tip. */
   readonly seats: number;
-  /** Block time in seconds at the node's tip. */
+  /**
+   * Block time in seconds at the node's tip: 1 to 600. A node that reports another block time is
+   * refused with `BadResponse`, since waiting and watching take their default intervals from it.
+   */
   readonly blockTime: number;
   /** The milestone in force at the node's tip, as the node's JSON text. */
   readonly milestoneJson: string;

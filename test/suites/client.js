@@ -182,6 +182,23 @@ export default function suite(test, env) {
     }
   });
 
+  test("a node configuration's block time must be 1 to 600 seconds", async () => {
+    const configuration = JSON.parse((await fixture("node-configuration")).body);
+    for (const blockTime of [0, 601, 2_000_000, 4_294_967_295]) {
+      const changed = structuredClone(configuration);
+      changed.data.constants.blockTime = blockTime;
+      await assert.rejects(connected({ "GET /node/configuration": json(200, changed) }), (error) => {
+        assert.ok(error instanceof sdk.BadResponse, `${blockTime}: ${error}`);
+        assert.equal(error.details.reason, "block-time");
+        return true;
+      });
+    }
+    const slow = structuredClone(configuration);
+    slow.data.constants.blockTime = 600;
+    const { net } = await connected({ "GET /node/configuration": json(200, slow) });
+    assert.equal(net.configuration.blockTime, 600);
+  });
+
   test("accounts, histories and transactions are typed records", async () => {
     const { net, node } = await connected();
 

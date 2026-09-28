@@ -5,6 +5,7 @@
 // checks that each converter turns every such string into a `bigint` and leaves nothing out.
 
 import { AssetId } from "../amount.js";
+import { BadResponse } from "../errors.js";
 import type {
   AccountInfo,
   BlockInfo,
@@ -66,7 +67,24 @@ export function nodeStatus(json: Json<NodeStatus>): NodeStatus {
   };
 }
 
+/**
+ * The longest block time a node may report, in seconds. The block time sets the default intervals
+ * and time limits of watching and waiting, so a relay could otherwise make a wait last for years.
+ */
+const MAX_BLOCK_TIME_SECONDS = 600;
+
+/**
+ * The node's configuration from the client's JSON. A block time that is not a whole number of
+ * seconds from 1 to 600 is refused with `BadResponse` (reason `block-time`).
+ */
 export function nodeConfiguration(json: Json<NodeConfiguration>): NodeConfiguration {
+  const blockTime = json.blockTime;
+  if (!Number.isInteger(blockTime) || blockTime < 1 || blockTime > MAX_BLOCK_TIME_SECONDS) {
+    throw new BadResponse(`the node's block time is not a whole number of seconds from 1 to ${MAX_BLOCK_TIME_SECONDS}`, {
+      reason: "block-time",
+      blockTime,
+    });
+  }
   return {
     coreVersion: json.coreVersion,
     network: json.network,

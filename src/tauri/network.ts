@@ -269,6 +269,8 @@ export class Network {
 
   /** @internal */
   constructor(connection: Connection) {
+    // First, so that the plugin closes the session even when what it describes is refused below.
+    dropWith(this, "net_close", { session: connection.session });
     this.#session = connection.session;
     this.chain = Chain.fromInfo(connection.chain, true);
     this.profile = this.chain.profile;
@@ -277,7 +279,6 @@ export class Network {
     this.configuration = records.nodeConfiguration(JSON.parse(connection.configuration) as Json<NodeConfiguration>);
     this.#at = connection.at;
     this.#height = BigInt(connection.at.height);
-    dropWith(this, "net_close", { session: connection.session });
 
     const namespaces = readers({
       read: (operation, args, convert) => this.#read(operation, args, convert),
