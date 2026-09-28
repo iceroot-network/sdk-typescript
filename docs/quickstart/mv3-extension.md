@@ -102,7 +102,7 @@ The service worker must be a classic worker (no `"type": "module"`), because the
 <script src="sandbox.js"></script>
 ```
 
-The sandbox answers three operations. `address` returns the address of a phrase. `review` returns the summary recomputed from the draft's bytes, so the approval screen shows what will really be signed. `sign` signs the same bytes with a key derived for this one operation and wipes it.
+The sandbox answers three operations. `address` returns the address and public key of a phrase. `review` returns the summary recomputed from the draft's bytes, so the approval screen shows what will really be signed. `sign` reads the bytes again, and signs them only if they still give the summary that was approved and the phrase gives the saved address. It uses a key derived for this one operation and wipes it. Deriving a key needs the profile only, so none of this needs a network.
 
 <!-- sample: verified 0.1.0 -->
 ```js
@@ -114,6 +114,12 @@ The sandbox answers three operations. `address` returns the address of a phrase.
 
   const toJson = (value) => JSON.parse(JSON.stringify(value, (_key, item) => (typeof item === "bigint" ? item.toString() : item)));
 
+  // What the holder approved, as text to compare: the network, sender, nonce, every line, the amount, the fee and the total.
+  const reviewText = (summary) => JSON.stringify([
+    summary.nethash, summary.kind, summary.from, summary.publicKey, String(summary.nonce),
+    summary.lines, String(summary.amount), String(summary.total), String(summary.fee.amount), summary.secondSignature,
+  ]);
+
   // `profile` is the wallet page's net.profile, a plain object; the sandbox never contacts its relays.
   const ops = {
     address({ profile, phrase }) {
@@ -124,10 +130,13 @@ The sandbox answers three operations. `address` returns the address of a phrase.
       const parsed = Sdk.Draft.deserialize(draft, profile);   // refuses a draft for another network
       return { summary: toJson(parsed.summary), fee: parsed.fee.toString() };
     },
-    sign({ profile, draft, phrase }) {
+    // `address` is the one the wallet saved; `reviewed` is the summary `review` returned and the holder approved.
+    sign({ profile, draft, phrase, address, reviewed }) {
       const parsed = Sdk.Draft.deserialize(draft, profile);
+      if (reviewText(toJson(parsed.summary)) !== reviewText(reviewed)) throw new Error("This is not the transaction you reviewed. Review it again.");
       const account = Sdk.Keys.fromPhrase(phrase, profile, { account: 0, index: 0 });
       try {
+        if (account.address !== address) throw new Error("This recovery phrase belongs to another wallet.");
         return { signed: parsed.sign(account).serialize() };
       } finally {
         account.release();
@@ -203,19 +212,22 @@ Replace `http://127.0.0.1:6003` with your devnet's origin.
   const profile = net.profile;   // sent to the sandbox with every operation
   const { decimals, symbol } = net.token;
   let draftBytes = null;
+  let approved = null;   // { address, summary }: what the holder is shown, and the address it is from
 
   $("send").addEventListener("submit", async (event) => {
     event.preventDefault();
     $("status").textContent = "";
     try {
       // Keys exist only in the sandbox; the wallet page asks it for the public key.
-      const { publicKey } = await sandbox("address", { profile, phrase: $("phrase").value });
+      // A wallet saves both when the account is created, and builds from the saved public key.
+      const { publicKey, address } = await sandbox("address", { profile, phrase: $("phrase").value });
       const draft = await net.build.transfer({
         from: publicKey,   // the builder reads the nonce and the height from the node
         to: [{ address: Sdk.Address.parse($("to").value.trim(), net), amount: Sdk.Amount.parse($("amount").value.trim(), decimals) }],
       });
       draftBytes = draft.serialize();
       const reviewed = await sandbox("review", { profile, draft: draftBytes });
+      approved = { address, summary: reviewed.summary };
       $("review").textContent = JSON.stringify(reviewed.summary, null, 2) + `\nFee: ${Sdk.Amount.format(BigInt(reviewed.fee), decimals)} ${symbol}`;
       $("confirm").hidden = false;
     } catch (error) {
@@ -226,7 +238,7 @@ Replace `http://127.0.0.1:6003` with your devnet's origin.
   $("confirm").addEventListener("click", async () => {
     $("confirm").hidden = true;
     try {
-      const { signed } = await sandbox("sign", { profile, draft: draftBytes, phrase: $("phrase").value });
+      const { signed } = await sandbox("sign", { profile, draft: draftBytes, phrase: $("phrase").value, address: approved.address, reviewed: approved.summary });
       const transaction = Sdk.SignedTransaction.deserialize(signed, net.profile);
       const result = await net.submit(transaction);
       if (result.status !== "accepted") throw new Error(`Refused: ${result.reason}`);
@@ -239,12 +251,13 @@ Replace `http://127.0.0.1:6003` with your devnet's origin.
       $("status").textContent = error.message;
     } finally {
       draftBytes = null;
+      approved = null;
     }
   });
 })();
 ```
 
-In a real wallet the phrase comes from an encrypted vault that the trusted page unlocks, and it is passed to the sandbox per operation, as the browser wallet does today. The address is stored with the account when it is created, so it is not derived again for every transfer.
+In a real wallet the phrase comes from an encrypted vault that the trusted page unlocks, and it is passed to the sandbox per operation, as the browser wallet does today. The address and public key are stored with the account when it is created, so the wallet page builds from the saved public key and never asks the sandbox for them again. Every later `sign` passes the saved address, and the sandbox refuses a phrase that gives another. Chain text that a real wallet shows (memos, names) must be escaped first; see the [browser wallet guide](../apps/browser-wallet.md#6-the-live-devnet-wallet). The [browser wallet guide](../apps/browser-wallet.md#4-the-sandbox) builds this out.
 
 ## 6. Service worker: the sign-in check
 
