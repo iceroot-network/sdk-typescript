@@ -266,4 +266,37 @@ export default function suite(test, env) {
     assert.ok((await refusal(() => keystore.inspect(version))) instanceof keystore.UnsupportedVersion);
     assert.equal((await refusal(() => keystore.dearmor("irks:!!"))).reason, "armor-encoding");
   });
+
+  test("an account opens straight from a keystore, the phrase never reaching JavaScript", async () => {
+    const profile = sdk.profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] });
+    const stored = await keystore.encrypt(PHRASE_24, "correct horse", LOW);
+    const direct = await sdk.Keys.fromPhrase(PHRASE_24, profile, { index: 3, passphrase: "x" });
+    const opened = await sdk.Keys.fromKeystore(stored, "correct horse", profile, { index: 3, passphrase: "x" });
+    assert.equal(opened.address, direct.address);
+    assert.equal(opened.path, "m/44'/1'/0'/0'/3'");
+    assert.equal(opened.legacy, false);
+    // The text form, and a password given as bytes, which is wiped.
+    const password = new TextEncoder().encode("correct horse");
+    const fromText = await sdk.Keys.fromKeystore(await keystore.armor(stored), password, profile, { index: 3, passphrase: "x" });
+    assert.equal(fromText.address, direct.address);
+    assert.ok(wiped(password), "the password bytes are wiped");
+    const first = await sdk.Keys.fromKeystore(stored, "correct horse", profile);
+    assert.equal(first.address, (await sdk.Keys.fromPhrase(PHRASE_24, profile)).address);
+
+    const wrong = new TextEncoder().encode("wrong horse");
+    assert.ok((await refusal(() => sdk.Keys.fromKeystore(stored, wrong, profile))) instanceof keystore.WrongPasswordOrCorrupt);
+    assert.ok(wiped(wrong), "a refused password's bytes are wiped");
+    // A platform that cannot spare the memory a keystore asks for refuses it before any work (the
+    // ceiling never drops below the format's floor, so this keystore asks for a little more).
+    const larger = await keystore.encrypt(PHRASE_24, "correct horse", { ...LOW, memoryKib: 20_480 });
+    const limited = await refusal(() => sdk.Keys.fromKeystore(larger, "correct horse", profile, { maxMemoryKib: 19_456 }));
+    assert.ok(limited instanceof keystore.ParamsOutOfRange);
+    assert.deepEqual(limited.details, { param: "memory", value: 20_480, minimum: 19_456, maximum: 19_456 });
+    assert.ok((await refusal(() => sdk.Keys.fromKeystore(stored, "correct horse", profile, { account: 2 ** 31 }))) instanceof sdk.InvalidArgument);
+    assert.ok((await refusal(() => sdk.Keys.fromKeystore(new Uint8Array([1, 2, 3]), "pw", profile))) instanceof keystore.Malformed);
+    assert.ok((await refusal(() => sdk.Keys.fromKeystore(42, "pw", profile))) instanceof sdk.InvalidArgument);
+    for (const account of [direct, opened, fromText, first]) {
+      await account.release();
+    }
+  });
 }

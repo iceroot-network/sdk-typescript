@@ -3,8 +3,8 @@
 // The module's stack lives in its memory, and the frames that hashing, key derivation, signing and
 // decryption use keep copies of secrets after they return, so the wrapper overwrites the stack
 // after every call. These tests search the whole memory of the test build (which exposes it) for
-// the secrets themselves: a keystore's password, phrase and entropy after it is opened, and a key's
-// bytes after it is released.
+// the secrets themselves: a keystore's password, phrase and entropy after it is opened (also
+// straight into an account), and a key's bytes after it is released.
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -68,6 +68,24 @@ test("an opened keystore leaves no copy of its password, phrase or entropy", () 
   for (const secret of [encode(password), encode("another password 77c0"), encode(PHRASE), entropy]) {
     assert.equal(occurrences(secret), 0);
   }
+});
+
+test("an account opened from a keystore leaves no copy of the password, phrase or entropy", () => {
+  const password = "keystore account password 91fa";
+  const entropy = mnemonicToEntropy(PHRASE, wordlist);
+  const key = HDKey.fromMasterSeed(mnemonicToSeedSync(PHRASE)).derive("m/44'/1'/0'/0'/2'").privateKey;
+  const stored = testSdk.keystore.encrypt(PHRASE, password, LOW);
+  const account = testSdk.Keys.fromKeystore(stored, encode(password), profile(), { index: 2 });
+  assert.equal(account.path, "m/44'/1'/0'/0'/2'");
+  assert.equal(occurrences(encode(password)), 0, "password");
+  assert.equal(occurrences(encode(PHRASE)), 0, "phrase");
+  assert.equal(occurrences(entropy), 0, "entropy");
+  assert.equal(occurrences(key), 1, "the key, held once, in its handle");
+  account.release();
+  assert.equal(occurrences(key), 0);
+  assert.throws(() => testSdk.Keys.fromKeystore(stored, "not the password", profile()), { code: "WrongPasswordOrCorrupt" });
+  assert.equal(occurrences(encode(PHRASE)), 0);
+  assert.equal(occurrences(entropy), 0);
 });
 
 test("a released account key leaves no copy of the key", () => {

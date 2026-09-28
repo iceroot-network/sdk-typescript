@@ -13,9 +13,10 @@
  * @module
  */
 
-import { KeyReleased } from "./errors.js";
+import { InvalidArgument, KeyReleased } from "./errors.js";
 import { call, parse, type KeyHandle } from "./internal/bindings.js";
 import { pathNumber } from "./internal/key-args.js";
+import { isBytes, memoryLimit } from "./internal/keystore-args.js";
 import { fromHex, toHex } from "./internal/hex.js";
 import { profileHandleOf, profileOf, type NetworkProfile, type ProfileSource } from "./profiles.js";
 import type { Algorithm, Hex } from "./types.js";
@@ -110,6 +111,18 @@ export interface AccountOptions {
   readonly passphrase?: string;
 }
 
+/**
+ * Where an account sits in a keystore's recovery phrase, and how much memory the keystore may ask
+ * for when it is opened.
+ */
+export interface KeystoreAccountOptions extends AccountOptions {
+  /**
+   * The most memory, in KiB, the keystore may ask for, as with the keystore entry's `decrypt`: a
+   * keystore that asks for more is refused with `ParamsOutOfRange` before any work is done.
+   */
+  readonly maxMemoryKib?: number;
+}
+
 /** Creating and importing accounts. */
 export const Keys = {
   /**
@@ -137,6 +150,55 @@ export const Keys = {
     } finally {
       if (typeof phrase !== "string") {
         phrase.fill(0);
+      }
+    }
+    return Account.fromHandle(handle, profile);
+  },
+
+  /**
+   * The account at `options.account` and `options.index` of the recovery phrase a keystore holds
+   * (its bytes, or its `irks:` text form), opened with `password`: the keystore is decrypted and
+   * the key derived inside the SDK, so the phrase never reaches JavaScript. With the Tauri
+   * plugin's entry this happens in the plugin, in Rust.
+   *
+   * A password given as bytes is overwritten with zeros, whatever the outcome. Refusals are the
+   * keystore's (`WrongPasswordOrCorrupt`, `ParamsOutOfRange` and the others of
+   * `@iceroot-network/sdk/keystore`) and the phrase's. Argon2id blocks the thread it runs on for
+   * about a second with a platform's preset.
+   */
+  fromKeystore(
+    keystore: Uint8Array | string,
+    password: string | Uint8Array,
+    source: ProfileSource,
+    options: KeystoreAccountOptions = {},
+  ): Account {
+    const profile = profileOf(source);
+    const passwordBytes = typeof password === "string" ? new TextEncoder().encode(password) : password;
+    let handle: KeyHandle;
+    try {
+      if (!isBytes(passwordBytes)) {
+        throw new InvalidArgument("a password is a string or a Uint8Array of UTF-8");
+      }
+      const stored =
+        typeof keystore === "string"
+          ? call((module) => module.keystoreDearmor(keystore))
+          : isBytes(keystore)
+            ? keystore
+            : undefined;
+      if (stored === undefined) {
+        throw new InvalidArgument("a keystore is a Uint8Array or its text form");
+      }
+      const account = pathNumber(options.account, "account");
+      const index = pathNumber(options.index, "index");
+      const passphrase = options.passphrase ?? "";
+      const limit = memoryLimit(options);
+      const profileHandle = profileHandleOf(profile);
+      handle = call((module) =>
+        module.KeyHandle.fromKeystore(profileHandle, stored, passwordBytes, account, index, passphrase, limit),
+      );
+    } finally {
+      if (isBytes(passwordBytes)) {
+        passwordBytes.fill(0);
       }
     }
     return Account.fromHandle(handle, profile);

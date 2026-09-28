@@ -24,7 +24,15 @@ export {
   type ProfileSource,
 } from "./profiles.js";
 
-export { Account, Keys, Mnemonic, type AccountOptions, type PhraseCheck, type PhraseProblem } from "./keys.js";
+export {
+  Account,
+  Keys,
+  Mnemonic,
+  type AccountOptions,
+  type KeystoreAccountOptions,
+  type PhraseCheck,
+  type PhraseProblem,
+} from "./keys.js";
 export { Address, type AddressCheck } from "./address.js";
 export {
   Amount,

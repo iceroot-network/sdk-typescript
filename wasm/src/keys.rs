@@ -49,6 +49,33 @@ impl KeyHandle {
             .map(|key| KeyHandle { key })
     }
 
+    /// The account at `account` and `index` of the recovery phrase the keystore `keystore` holds,
+    /// opened with `password` (UTF-8 bytes, overwritten with zeros in WebAssembly memory and in the
+    /// caller's array, whatever the outcome), with the optional BIP39 `passphrase`, whose copy is
+    /// wiped. The phrase is decrypted and the key derived in WebAssembly memory: the phrase never
+    /// reaches JavaScript. `max_memory_kib` lowers the memory the keystore may ask for.
+    #[wasm_bindgen(js_name = fromKeystore)]
+    pub fn from_keystore(
+        profile: &ProfileHandle,
+        keystore: &[u8],
+        password: &mut [u8],
+        account: u32,
+        index: u32,
+        passphrase: String,
+        max_memory_kib: Option<u32>,
+    ) -> Result<KeyHandle> {
+        Key::from_keystore(
+            profile.profile(),
+            keystore,
+            password,
+            account,
+            index,
+            passphrase,
+            max_memory_kib,
+        )
+        .map(|key| KeyHandle { key })
+    }
+
     /// The reference implementation's passphrase key: the SHA-256 of the passphrase's UTF-8
     /// bytes. For importing existing devnet identities only, on profiles in today's formats; new
     /// accounts come from recovery phrases. The copy of the text in WebAssembly memory is wiped.

@@ -66,7 +66,7 @@ import {
 } from "./internal/reads.js";
 import * as records from "./internal/records.js";
 import type { Json } from "./internal/records.js";
-import { Keys, type Account, type AccountOptions } from "./keys.js";
+import { Keys, type Account, type AccountOptions, type KeystoreAccountOptions } from "./keys.js";
 import { Messages, type MessageSignature } from "./messages.js";
 import { capabilitiesOf, profileHandleOf, type Capabilities, type NetworkProfile } from "./profiles.js";
 import type { BaseUnits, FormatStage, Hex } from "./types.js";
@@ -399,6 +399,8 @@ export class Network {
     fromPhrase(phrase: string | Uint8Array, options?: AccountOptions): Account;
     /** As `Keys.fromLegacyPassphrase`, on this network. */
     fromLegacyPassphrase(passphrase: string | Uint8Array): Account;
+    /** As `Keys.fromKeystore`, on this network: the phrase never reaches JavaScript. */
+    fromKeystore(keystore: Uint8Array | string, password: string | Uint8Array, options?: KeystoreAccountOptions): Account;
     /**
      * A watch-only account for an address of this network: no key, so it can be read and watched
      * but never sign. Throws `InvalidAddress` for text that is not an address of this network.
@@ -448,6 +450,7 @@ export class Network {
     this.keys = {
       fromPhrase: (phrase, options) => Keys.fromPhrase(phrase, this.profile, options),
       fromLegacyPassphrase: (passphrase) => Keys.fromLegacyPassphrase(passphrase, this.profile),
+      fromKeystore: (keystore, password, options) => Keys.fromKeystore(keystore, password, this.profile, options),
       watch: (address) => watchedAccount(Address.parse(String(address), this.profile).toString()),
     };
     this.messages = {
