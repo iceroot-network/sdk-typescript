@@ -100,8 +100,12 @@ export type TxWaitResult =
     }
   | {
       /**
-       * Neither in the node's pool nor in a block for `droppedAfterMs`: the pool dropped it (it
-       * expired, or was evicted), or it never reached the pool. It is not on chain; build again.
+       * Neither in the node's pool nor in a block for `droppedAfterMs`, as the relay reports it:
+       * the pool dropped it (it expired, or was evicted), or it never reached the pool. The signed
+       * transaction stays valid, and a relay that kept it back can still broadcast it. Before
+       * sending the payment again, read the account's nonce (from another relay where there is
+       * one): while it is below the dropped transaction's, build the new one with the same nonce
+       * (`Draft.build` takes it), so at most one of the two can ever be executed.
        */
       readonly state: "dropped";
       /** The transaction id. */

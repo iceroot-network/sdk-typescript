@@ -202,7 +202,7 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
 - **New identities.** Create with `generatePhrase` (24 words) and store `scheme: "bip32"` with `account: 0, index: 0`. Restore accepts 18, 21 or 24 words.
 - **Vault format.** Add `scheme`, `account` and `index` to the authenticated identity metadata (the AES-GCM additional data), under a new vault key version. The same phrase gives different keys under the two schemes, so the scheme must never be guessed.
 - **Approval screens.** The identity page asks the sandbox (`parseSignIn`) for the checked fields it displays, so it needs no SDK of its own and its CSP stays unchanged.
-- **Devnet setting.** The identity page passes the wallet's stored devnet setting (`{ relay, nethash }`, written by the wallet page when it connects) to every sandbox operation as `devnet`.
+- **Devnet setting.** The identity page passes the devnet setting (`{ relay, nethash }`) to every sandbox operation as `devnet`. The network hash in it is what the sandbox refuses other networks' drafts by, so it must not come from the context that builds the drafts: keep it in the vault's authenticated identity metadata, written once when the holder confirms the network on first connection (and again only when the holder confirms a new chain, [rule 14](../rules.md)), and take it from there, never from the wallet page's request. For the public testnet and mainnet the SDK's profiles carry the hash themselves.
 - Keep the rest: the password rules, the idle lock, the storage event handling, the manual sign-in flow (its output JSON keeps the `publicKey`, `signature`, `network` and `algorithm` fields the portal accepts).
 
 ### 6. The live devnet wallet
@@ -311,7 +311,8 @@ The legacy signer keeps its own files. When the SDK's ownership-proof functions 
 - The provider offers `connect` and `signMessage` only; transaction requests come only from the wallet's own page, never from a website ([rule 6](../rules.md)).
 - Every sign-in message passes `SignIn.parse` before the holder sees an approval screen, with the real sender origin.
 - Keys exist only in the sandbox, for one operation, and are released; the vault stays encrypted ([rule 12](../rules.md)).
-- The approval screen shows the summary the sandbox recomputed from the draft's bytes ([rule 15](../rules.md)).
+- The approval screen shows the summary the sandbox recomputed from the draft's bytes ([rule 15](../rules.md)), and the fee as an amount: the floor it is compared with comes from the configuration the draft carries.
+- `wallet.js` submits a signed transaction only when `signed.matches(draft)`.
 - Fees, decimals and vote limits come from the network ([rule 1](../rules.md)); amounts are `bigint` ([rule 2](../rules.md)).
 - "Confirmed", never "final", on today's devnet ([rule 5](../rules.md)).
 
