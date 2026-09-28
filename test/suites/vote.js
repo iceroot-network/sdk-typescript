@@ -311,6 +311,116 @@ export default function suite(test, env) {
     }
   });
 
+  const answer = (status, body) => ({ status, headers: {}, body: typeof body === "string" ? body : JSON.stringify(body) });
+
+  test("VoteSnapshot.fromNode keeps a relay's names out of every object's prototype", async () => {
+    const validators = await readJson(`${API_FIXTURES}/delegates-page.json`);
+    validators.data[0].username = "constructor";
+    validators.data[2].username = "__proto__";
+    const registrations = await readJson(`${API_FIXTURES}/transactions-validator-registration.json`);
+    const template = registrations.data[0];
+    const registration = (name, height, index) => ({
+      ...template,
+      id: template.id.slice(0, 62) + String(index).padStart(2, "0"),
+      blockHeight: height,
+      asset: { delegate: { username: name } },
+    });
+    registrations.data = [registration("__proto__", 10, 1), registration("constructor", 11, 2), registration("genesis_17", 12, 3)];
+    registrations.meta = { ...registrations.meta, count: 3, pageCount: 1, totalCount: 3, next: null };
+    const blocks = await readJson(`${API_FIXTURES}/delegate-blocks.json`);
+    const firstBlock = answer(200, { meta: { ...blocks.meta, count: 1, pageCount: 2, totalCount: 2, next: null }, data: [{ ...blocks.data[0], height: 15 }] });
+    const node = await env.node({
+      "GET /delegates": answer(200, validators),
+      "GET /transactions": answer(200, registrations),
+      "GET /delegates/constructor/blocks": firstBlock,
+      "GET /delegates/__proto__/blocks": firstBlock,
+      "GET /delegates/*/blocks": { behavior: "vote-first-forged" },
+    });
+    const net = await sdk.connect(sdk.profiles.devnet({ relays: [node.relay] }), { ...node.options, rateLimit: false });
+    try {
+      const snapshot = await vote.VoteSnapshot.fromNode(net);
+      assert.equal({}.registeredHeight, undefined);
+      assert.equal({}.firstForgedHeight, undefined);
+      assert.equal(Object.registeredHeight, undefined);
+      assert.equal(Object.firstForgedHeight, undefined);
+      const named = (name) => snapshot.records.find((record) => record.name === name);
+      assert.equal(named("constructor").registeredHeight, 11n);
+      assert.notEqual(named("constructor").seatedDaysInWindow, null);
+      assert.equal(named("genesis_17").registeredHeight, 12n);
+    } finally {
+      for (const target of [Object.prototype, Object]) {
+        delete target.registeredHeight;
+        delete target.firstForgedHeight;
+      }
+    }
+  });
+
+  test("VoteSnapshot.fromNode refuses a listing without end or a page longer than asked for, and keeps one record per name", async () => {
+    const page = await readJson(`${API_FIXTURES}/delegates-page.json`);
+    const template = page.data[0];
+    const profile = sdk.profiles.devnet({ relays: [RELAY] });
+    const validator = (index, key) => ({
+      ...template,
+      username: `v${index}`,
+      rank: index + 1,
+      blocks: { produced: 0 },
+      ...(key === undefined ? {} : { address: key.address, publicKey: key.publicKey }),
+    });
+    const listing = (items, next) =>
+      answer(200, {
+        meta: { ...page.meta, count: items.length, pageCount: 100, totalCount: 10_000, next: next ? "/delegates?page=2&limit=100" : null },
+        data: items,
+      });
+    const snapshotOf = async (routes) => {
+      const node = await env.node(routes);
+      const net = await sdk.connect(sdk.profiles.devnet({ relays: [node.relay] }), { ...node.options, rateLimit: false });
+      return vote.VoteSnapshot.fromNode(net, { registrations: false, firstForged: false });
+    };
+    const refused = async (routes, reason) => {
+      const error = await refusal(() => snapshotOf(routes));
+      assert.ok(error instanceof sdk.BadResponse, String(error));
+      assert.equal(error.details.reason, reason);
+    };
+
+    // More than 2,000 validators, a new hundred on every page.
+    const pages = [];
+    for (let number = 0; number < 21; number += 1) {
+      pages.push(listing(Array.from({ length: 100 }, (_, i) => validator(number * 100 + i)), true));
+    }
+    await refused({ "GET /delegates": { sequence: pages } }, "too-many");
+    // A page with more items than asked for.
+    await refused({ "GET /delegates": listing(Array.from({ length: 101 }, (_, i) => validator(i)), false) }, "page-too-long");
+
+    // A validator that moved to the next page between two reads is kept once.
+    const keys = [];
+    for (let i = 0; i < 150; i += 1) {
+      const account = await sdk.Keys.fromLegacyPassphrase(`vote page ${i}`, profile);
+      keys.push({ address: account.address, publicKey: account.publicKey });
+      await account.release();
+    }
+    const shifted = await snapshotOf({
+      "GET /delegates": {
+        sequence: [
+          listing(keys.slice(0, 100).map((key, i) => validator(i, key)), true),
+          listing(keys.slice(99).map((key, i) => validator(i + 99, key)), false),
+        ],
+      },
+    });
+    assert.equal(shifted.records.length, 150);
+    await vote.VoteSnapshot.validate(shifted);
+  });
+
+  test("production counts a JavaScript number cannot hold exactly are refused", async () => {
+    const text = await env.read(`${API_FIXTURES}/delegates-page.json`);
+    assert.ok(text.includes('"produced":2,'));
+    const node = await env.node({ "GET /delegates": answer(200, text.replace('"produced":2,', '"produced":9007199254740993,')) });
+    const net = await sdk.connect(sdk.profiles.devnet({ relays: [node.relay] }), { ...node.options, rateLimit: false });
+    const error = await refusal(() => vote.VoteSnapshot.fromNode(net, { registrations: false, firstForged: false }));
+    assert.ok(error instanceof vote.InvalidSnapshot, String(error));
+    assert.equal(error.reason, "inconsistent");
+    assert.equal(error.details.field, "production");
+  });
+
   test("VoteSnapshot.fromValidators and a selection signed as a vote", async () => {
     const chain = await devnetChain();
     assert.deepEqual({ ...(await vote.VoteRules.of(chain, 2)) }, { ...vote.VoteRules.SOLAR_COMPATIBLE });

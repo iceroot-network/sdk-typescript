@@ -215,6 +215,12 @@ export const VoteSnapshot = Object.freeze({
    * validator that has not resigned and whose node it has not seen running (`ERR_OFFLINE`); the
    * list shows such a validator without a `version`, and the snapshot leaves it out, so no
    * selection names it and a later {@link check} reports a pick left out this way.
+   *
+   * The listings are read 100 items per page, and a validator that moves to the next page between
+   * two reads is kept once. A relay that lists more than 2,000 validators or 10,000 registrations,
+   * or serves a page with more items than asked for, is refused with `BadResponse`. Only names a
+   * network allows are looked up, and a production count above 2^53 - 1 is refused with
+   * `InvalidSnapshot`.
    */
   async fromNode(net: Network, options: SnapshotOptions = {}): Promise<VoteSnapshot> {
     const inputs = await snapshotInputs(net, options);

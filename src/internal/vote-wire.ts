@@ -3,7 +3,8 @@
 // strings and become `bigint`.
 
 import type { NodeStatus, Page, PageOptions, TxFilter, TxRecord, ValidatorInfo } from "../client.js";
-import { InvalidArgument } from "../errors.js";
+import { BadResponse, InvalidArgument } from "../errors.js";
+import { InvalidSnapshot } from "../vote-errors.js";
 import type {
   Candidate,
   Finding,
@@ -104,11 +105,33 @@ export function decode<T>(text: string, what: string, convert: (wire: Wire) => T
   return convert(wire as Wire);
 }
 
+/**
+ * A record's production counts, which travel as JSON numbers: a count a JavaScript number cannot
+ * hold exactly would reach the library changed when the snapshot goes back to it, so it is
+ * refused with `InvalidSnapshot` (reason `inconsistent`, field `production`).
+ */
+function checkProduction(record: Wire): void {
+  const production = record["production"] as Wire | null | undefined;
+  if (production === null || production === undefined) {
+    return;
+  }
+  for (const count of [production["forged"], production["assigned"]]) {
+    if (typeof count === "number" && !Number.isSafeInteger(count)) {
+      throw new InvalidSnapshot("a production count is larger than 2^53 - 1", {
+        reason: "inconsistent",
+        name: record["name"],
+        field: "production",
+      });
+    }
+  }
+}
+
 export function snapshotFromWire(wire: Wire): VoteSnapshot {
   return {
     ...(wire as unknown as VoteSnapshot),
     height: big(wire["height"], "height"),
     records: records(wire["records"], "records").map((record) => {
+      checkProduction(record);
       const payouts = record["payouts"] as Wire | null | undefined;
       return {
         ...(record as unknown as ValidatorRecord),
@@ -173,15 +196,60 @@ export function findingFromWire(wire: Wire): Finding {
   return { ...(wire as unknown as Finding), reasons: reasons(wire["reasons"]), shortfalls: shortfalls(wire["shortfalls"]) };
 }
 
-export async function allPages<T>(read: (page: number) => Promise<Page<T>>): Promise<T[]> {
+/** The page size of the listings `VoteSnapshot.fromNode` reads: the node API's largest. */
+const PAGE_LIMIT = 100;
+
+/** The most validators `VoteSnapshot.fromNode` reads; a network has 53 seats. */
+const MAX_VALIDATORS = 2_000;
+
+/** The most validator registrations `VoteSnapshot.fromNode` reads. */
+const MAX_REGISTRATIONS = 10_000;
+
+/**
+ * Every item of a listing, read page by page with `PAGE_LIMIT` items per page, keeping the first
+ * item of each key: an item that moved to the next page between two reads is kept once. The
+ * listing ends at the last page, or at a page that adds nothing new. A page with more items than
+ * asked for, or a listing of more than `max` items, is refused with `BadResponse` (reason
+ * `page-too-long` or `too-many`), so a relay cannot keep the reading going.
+ */
+export async function allPages<T>(
+  read: (page: number) => Promise<Page<T>>,
+  key: (item: T) => string,
+  what: string,
+  max: number,
+): Promise<T[]> {
   const items: T[] = [];
+  const seen = new Set<string>();
   for (let page = 1; ; page += 1) {
     const listing = await read(page);
-    items.push(...listing.items);
-    if (!listing.hasNext || listing.items.length === 0) {
+    if (listing.items.length > PAGE_LIMIT) {
+      throw new BadResponse(`a page of ${what} has more than ${PAGE_LIMIT} items`, { reason: "page-too-long", page });
+    }
+    let added = 0;
+    for (const item of listing.items) {
+      const id = key(item);
+      if (!seen.has(id)) {
+        seen.add(id);
+        items.push(item);
+        added += 1;
+      }
+    }
+    if (items.length > max) {
+      throw new BadResponse(`the node lists more than ${max} ${what}`, { reason: "too-many", limit: max });
+    }
+    if (!listing.hasNext || added === 0) {
       return items;
     }
   }
+}
+
+/**
+ * Whether `name` can be a validator's name on any network the SDK knows (the devnet's rule, which
+ * IceRoot's lowercase letters also follow). Only such names are looked up and passed on, so a name
+ * such as `__proto__` from a relay never becomes a key.
+ */
+function lookupName(name: string): boolean {
+  return /^[a-z0-9!@$&_.]{1,20}$/.test(name) && !name.startsWith("_") && !/^[0-9]+$/.test(name);
 }
 
 /** What `VoteSnapshot.fromNode` reads from a network. */
@@ -200,16 +268,32 @@ export async function snapshotInputs(
   options: SnapshotOptions,
 ): Promise<{ height: number; validators: string; lookups: string }> {
   const status = await net.refresh();
-  const validators = await allPages((page) => net.validators.list({ page, limit: 100 }));
-  const lookups: Record<string, { registeredHeight?: string; firstForgedHeight?: string }> = {};
-  const entry = (name: string) => (lookups[name] ??= {});
+  const validators = await allPages(
+    (page) => net.validators.list({ page, limit: PAGE_LIMIT }),
+    (validator) => validator.name,
+    "validators",
+    MAX_VALIDATORS,
+  );
+  // Keyed by names a relay chose: a Map, so no name reaches an object's prototype.
+  const lookups = new Map<string, { registeredHeight?: string; firstForgedHeight?: string }>();
+  const entry = (name: string) => {
+    let found = lookups.get(name);
+    if (found === undefined) {
+      found = {};
+      lookups.set(name, found);
+    }
+    return found;
+  };
   if (options.registrations ?? true) {
-    const registrations = await allPages((page) =>
-      net.transactions.list({ kind: "register-validator", oldestFirst: true, page, limit: 100 }),
+    const registrations = await allPages(
+      (page) => net.transactions.list({ kind: "register-validator", oldestFirst: true, page, limit: PAGE_LIMIT }),
+      (record) => record.id,
+      "validator registrations",
+      MAX_REGISTRATIONS,
     );
     for (const record of registrations) {
       const details = record.details;
-      if (record.block !== undefined && details.kind === "register-validator") {
+      if (record.block !== undefined && details.kind === "register-validator" && lookupName(details.name)) {
         entry(details.name).registeredHeight ??= String(record.block.height);
       }
     }
@@ -219,7 +303,7 @@ export async function snapshotInputs(
       const produced = validator.production.produced;
       // A validator the snapshot leaves out (see VoteSnapshot.fromNode) needs no lookup.
       const leftOut = !validator.status.startsWith("resigned") && validator.version === undefined;
-      if (produced === 0n || leftOut) {
+      if (produced === 0n || produced > 0xffffffffn || leftOut || !lookupName(validator.name)) {
         continue;
       }
       // Blocks come highest first, one per page: the page numbered by the blocks produced is the first.
@@ -234,7 +318,7 @@ export async function snapshotInputs(
     }
   }
   const height = status.height > 0xffffffffn ? 0xffffffff : Math.max(1, Number(status.height));
-  return { height, validators: toWire(validators), lookups: toWire(lookups) };
+  return { height, validators: toWire(validators), lookups: toWire(Object.fromEntries(lookups)) };
 }
 
 /** The request of `select` in the module's JSON. */
