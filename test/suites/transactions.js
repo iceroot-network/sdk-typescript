@@ -371,5 +371,25 @@ export default function suite(test, env) {
       sdk.NetworkMismatch,
     );
     await assert.rejects(async () => sdk.Chain.load(devnet, "{}"), sdk.BadResponse);
+
+    // A configuration with more seats than any network has is refused before anything is computed
+    // per seat (the plugin's own check belongs to its Rust side).
+    if (env.wasm) {
+      const seats = (count) => {
+        const configuration = structuredClone(data().configuration);
+        for (const milestone of configuration.milestones) {
+          milestone.activeDelegates = count;
+          delete milestone.dynamicReward;
+        }
+        return configuration;
+      };
+      assert.equal((await (await sdk.Chain.load(devnet, seats(1000))).economics(2)).seats, 1000);
+      await assert.rejects(async () => sdk.Chain.load(devnet, seats(1001)), (error) => {
+        assert.ok(error instanceof sdk.BadResponse);
+        assert.equal(error.details.reason, "seats");
+        return true;
+      });
+      await assert.rejects(async () => sdk.Chain.load(devnet, seats(3_000_000)), sdk.BadResponse);
+    }
   });
 }

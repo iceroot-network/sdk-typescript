@@ -85,6 +85,19 @@ impl ChainHandle {
     pub fn economics(&self, height: u32) -> String {
         chain::economics(&self.chain, height)
     }
+
+    /// The most validator seats a milestone of the chain names (its `activeDelegates`). The
+    /// economics list a reward per seat, so the wrapper refuses a chain with implausibly many.
+    #[wasm_bindgen(js_name = mostSeats)]
+    pub fn most_seats(&self) -> u64 {
+        self.chain
+            .milestones()
+            .all()
+            .iter()
+            .map(|params| params.active_delegates())
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 impl ChainHandle {

@@ -108,6 +108,27 @@ export default function suite(test, env) {
     assert.equal(net.rules.height, 83);
   });
 
+  test("the economics are computed when they are read, not with the rules", async () => {
+    // The plugin computes its rules and economics in Rust; this is the WebAssembly entry's.
+    if (!env.wasm) {
+      return;
+    }
+    const { net } = await connected();
+    let computed = 0;
+    const economics = net.chain.economics.bind(net.chain);
+    net.chain.economics = (height) => {
+      computed += 1;
+      return economics(height);
+    };
+    assert.equal(net.rules.height, 81);
+    await net.transactions.get(TWO_RECIPIENTS);
+    assert.equal(net.rules.height, 83);
+    assert.equal(computed, 0);
+    assert.equal(net.economics.seats, 53);
+    assert.equal(net.economics.seats, 53);
+    assert.equal(computed, 1);
+  });
+
   test("connect refuses what it cannot use", async () => {
     const node = await env.node();
     const later = { ...devnet(node.relay), id: "idDevnet", backend: "iceroot", keyScheme: "slip10-mldsa65" };

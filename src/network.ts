@@ -407,7 +407,8 @@ export class Network {
 
   readonly #relays: Relays;
   #height: bigint;
-  #cache: { height: bigint; rules: Rules; economics: Economics } | undefined;
+  #rules: { height: bigint; rules: Rules } | undefined;
+  #economics: { height: bigint; economics: Economics } | undefined;
 
   /** @internal */
   constructor(chain: Chain, configuration: NodeConfiguration, relays: Relays) {
@@ -478,13 +479,24 @@ export class Network {
 
   /** The rules in force at the next block. Follows the chain as its height is read. */
   get rules(): Rules {
-    return this.#atNextHeight().rules;
+    const height = this.height;
+    if (this.#rules?.height !== height) {
+      this.#rules = { height, rules: this.chain.rules(this.nextHeight) };
+    }
+    return this.#rules.rules;
   }
 
-  /** The economics in force at the next block, and the supply the node reports. */
+  /**
+   * The economics in force at the next block, and the supply the node reports. Computed when read,
+   * not with the rules.
+   */
   get economics(): NetworkEconomics {
+    const height = this.height;
+    if (this.#economics?.height !== height) {
+      this.#economics = { height, economics: this.chain.economics(this.nextHeight) };
+    }
     return {
-      ...this.#atNextHeight().economics,
+      ...this.#economics.economics,
       supply: () => this.#read("supply", {}, records.supply),
     };
   }
@@ -565,15 +577,6 @@ export class Network {
     } finally {
       plan.free();
     }
-  }
-
-  #atNextHeight(): { rules: Rules; economics: Economics } {
-    const height = this.height;
-    if (this.#cache === undefined || this.#cache.height !== height) {
-      const next = this.nextHeight;
-      this.#cache = { height, rules: this.chain.rules(next), economics: this.chain.economics(next) };
-    }
-    return this.#cache;
   }
 
   async #read<W, T>(operation: string, args: object, convert: (json: W) => T): Promise<T> {

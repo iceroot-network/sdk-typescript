@@ -14,7 +14,7 @@
  */
 
 import type { TokenInfo } from "./amount.js";
-import { InvalidArgument } from "./errors.js";
+import { BadResponse, InvalidArgument } from "./errors.js";
 import { call, type ChainHandle } from "./internal/bindings.js";
 import { checkHeight, economicsFromJson, rulesFromJson, tokenFromJson } from "./internal/chain-json.js";
 import {
@@ -110,6 +110,13 @@ export interface Economics {
 
 const chains = new WeakMap<Chain, ChainHandle>();
 
+/**
+ * The most validator seats a chain may have. The economics list a reward per seat, and the seat
+ * count comes from milestones the pinned network hash does not cover, so a relay could otherwise
+ * make every read of the economics allocate billions of entries. IceRoot has 53 seats.
+ */
+const MAX_SEATS = 1000n;
+
 /** A network's loaded configuration, bound to a profile. */
 export class Chain {
   /** The profile, with the network hash pinned. Keep it for the next contact. */
@@ -122,6 +129,11 @@ export class Chain {
   readonly token: TokenInfo;
 
   private constructor(handle: ChainHandle) {
+    if (handle.mostSeats() > MAX_SEATS) {
+      throw new BadResponse(`the network configuration names more than ${MAX_SEATS} validator seats`, {
+        reason: "seats",
+      });
+    }
     chains.set(this, handle);
     this.profile = profileFromHandle(handle.profile());
     this.nethash = handle.nethash();
@@ -131,7 +143,9 @@ export class Chain {
 
   /**
    * The chain of the crypto configuration a node reports, for the profile of `source`:
-   * `/node/configuration/crypto`'s `data` object, as JSON text or as the parsed object.
+   * `/node/configuration/crypto`'s `data` object, as JSON text or as the parsed object. A
+   * configuration whose token symbol is not 1 to 10 ASCII letters and digits, or that names more
+   * than 1,000 validator seats, is refused with `BadResponse`.
    */
   static load(source: ProfileSource, configuration: string | object): Chain {
     const profile = profileHandleOf(source);
