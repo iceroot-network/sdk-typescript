@@ -262,7 +262,8 @@ export default function suite(test, env) {
     const inPoolOnly = await connected({ [`GET /transactions/${TWO_RECIPIENTS}`]: "transaction-not-found" });
     assert.equal((await inPoolOnly.net.transactions.get(TWO_RECIPIENTS)).status, "pending");
 
-    const byKind = await net.transactions.list({ kind: "vote", sender: TEAM, oldestFirst: true, page: 1, limit: 5 });
+    // The recording holds ten items: a page longer than the one asked for is refused.
+    const byKind = await net.transactions.list({ kind: "vote", sender: TEAM, oldestFirst: true, page: 1, limit: 10 });
     const listing = await last(node);
     assert.equal(listing.query.get("typeGroup"), "2");
     assert.equal(listing.query.get("type"), "2");
