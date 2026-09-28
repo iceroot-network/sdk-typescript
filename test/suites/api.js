@@ -92,24 +92,25 @@ export default function suite(test, env) {
     await account.release();
   });
 
-  test("a message that begins like a transaction is refused", async () => {
+  test("a message is signed only as UTF-8 text, which no transaction is", async () => {
     const devnet = sdk.profiles.devnet({ relays: [RELAY] });
     const account = await sdk.Keys.fromLegacyPassphrase("probe passphrase", devnet);
-    // Every transaction's bytes begin with 0xff, and no UTF-8 text does.
-    for (const message of [Uint8Array.of(0xff), Uint8Array.of(0xff, 0x03, 0x5a, 0x01)]) {
+    // Every transaction's bytes begin with 0xff, which UTF-8 text never contains.
+    for (const message of [Uint8Array.of(0xff), Uint8Array.of(0xff, 0x03, 0x5a, 0x01), Uint8Array.of(0x00, 0xff), Uint8Array.of(0xc3)]) {
       await assert.rejects(async () => sdk.Messages.sign(account, message), (error) => {
         assert.ok(error instanceof sdk.InvalidArgument);
-        assert.equal(error.details.reason, "transaction-header");
+        assert.equal(error.details.reason, "a message is signed only as UTF-8 text");
         return true;
       });
     }
-    // Text never begins with 0xff, and other bytes are signed as they are.
+    // Text, given as a string or as its UTF-8 bytes, is signed as before.
     const text = { ...(await sdk.Messages.sign(account, "\u00ff")), message: "\u00ff" };
     assert.equal(await sdk.Messages.verify(text, devnet), true);
-    const bytes = Uint8Array.of(0x00, 0xff);
+    const bytes = new TextEncoder().encode("bytes of text \u00ff");
     assert.equal(await sdk.Messages.verify({ ...(await sdk.Messages.sign(account, bytes)), message: bytes }, devnet), true);
-    // Such bytes never verify as a message either.
+    // Bytes that are not text never verify as a message either.
     assert.equal(await sdk.Messages.verify({ ...text, message: Uint8Array.of(0xff) }, devnet), false);
+    assert.equal(await sdk.Messages.verify({ ...text, message: Uint8Array.of(0xc3, 0xbf, 0xff) }, devnet), false);
     await account.release();
   });
 

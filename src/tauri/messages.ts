@@ -29,8 +29,8 @@ export function messageAlgorithmOf(source: ProfileSource): Promise<MessageAlgori
 export const Messages = {
   /**
    * Signs `message` (text is signed as its UTF-8 bytes) with the key of `account`, in the plugin.
-   * Bytes that begin with 0xff, as every transaction does, are refused with `InvalidArgument`
-   * (reason `transaction-header`).
+   * A message given as bytes must be UTF-8 text, which no transaction is, or it is refused with
+   * `InvalidArgument`.
    */
   async sign(account: Account, message: string | Uint8Array): Promise<MessageSignature> {
     const key = keyOf(account);
@@ -41,8 +41,8 @@ export const Messages = {
 
   /**
    * Whether `signed` is a valid signature. Resolves to false, never rejects, for a malformed key or
-   * signature or an unknown algorithm, and for a message that begins with 0xff; the public key
-   * must be a valid key. With `source`, the signature must also name that profile's network.
+   * signature or an unknown algorithm, and for a message given as bytes that are not UTF-8 text;
+   * the public key must be a valid key. With `source`, the signature must also name that profile's network.
    */
   async verify(signed: SignedMessage, source?: ProfileSource): Promise<boolean> {
     const bytes = verifiableMessage(signed.message);

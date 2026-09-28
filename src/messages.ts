@@ -55,10 +55,10 @@ export const Messages = {
   /**
    * Signs `message` (text is signed as its UTF-8 bytes) with the key of `account`.
    *
-   * Bytes that begin with 0xff are refused with `InvalidArgument` (reason `transaction-header`):
-   * every transaction begins with that byte, and in today's format a message signature over a
-   * transaction's unsigned bytes would be a valid signature of the transaction. Text never
-   * begins with it. Sign only messages the holder was shown as text.
+   * A message given as bytes must be UTF-8 text, or it is refused with `InvalidArgument`: in
+   * today's format a message signature over a transaction's unsigned bytes would be a valid
+   * signature of the transaction, and every transaction begins with the byte 0xff, which UTF-8
+   * text never contains. Sign only messages the holder was shown as text.
    */
   sign(account: Account, message: string | Uint8Array): MessageSignature {
     const handle = keyHandleOf(account);
@@ -68,8 +68,9 @@ export const Messages = {
 
   /**
    * Whether `signed` is a valid signature. Returns false, never throws, for a malformed key or
-   * signature or an unknown algorithm, and for a message that begins with 0xff, which no message
-   * signature covers (see {@link Messages.sign}); the public key must be a valid key. With
+   * signature or an unknown algorithm, and for a message given as bytes that are not UTF-8 text,
+   * which no message signature covers (see {@link Messages.sign}); the public key must be a valid
+   * key. With
    * `source`, the signature must also name that profile's network.
    *
    * The signature covers the message only: `network` and `algorithm` are labels beside it. A
