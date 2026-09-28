@@ -10,7 +10,7 @@
 
 import { keyHandleOf, type Account } from "./keys.js";
 import { call, parse } from "./internal/bindings.js";
-import { messageBytes } from "./internal/hex.js";
+import { signableMessage, verifiableMessage } from "./internal/hex.js";
 import { profileHandleOf, type ProfileSource } from "./profiles.js";
 import type { Hex, MessageAlgorithm } from "./types.js";
 
@@ -52,18 +52,35 @@ export function messageAlgorithmOf(source: ProfileSource): MessageAlgorithm {
 
 /** Signing and verifying messages. */
 export const Messages = {
-  /** Signs `message` (text is signed as its UTF-8 bytes) with the key of `account`. */
+  /**
+   * Signs `message` (text is signed as its UTF-8 bytes) with the key of `account`.
+   *
+   * Bytes that begin with 0xff are refused with `InvalidArgument` (reason `transaction-header`):
+   * every transaction begins with that byte, and in today's format a message signature over a
+   * transaction's unsigned bytes would be a valid signature of the transaction. Text never
+   * begins with it. Sign only messages the holder was shown as text.
+   */
   sign(account: Account, message: string | Uint8Array): MessageSignature {
     const handle = keyHandleOf(account);
-    return Object.freeze(parse<MessageSignature>(call(() => handle.signMessage(messageBytes(message)))));
+    const bytes = signableMessage(message);
+    return Object.freeze(parse<MessageSignature>(call(() => handle.signMessage(bytes))));
   },
 
   /**
    * Whether `signed` is a valid signature. Returns false, never throws, for a malformed key or
-   * signature or an unknown algorithm; the public key must be a valid key. With `source`, the
-   * signature must also name that profile's network.
+   * signature or an unknown algorithm, and for a message that begins with 0xff, which no message
+   * signature covers (see {@link Messages.sign}); the public key must be a valid key. With
+   * `source`, the signature must also name that profile's network.
+   *
+   * The signature covers the message only: `network` and `algorithm` are labels beside it. A
+   * protocol that must bind a message to one network names the network in the message's text,
+   * as the sign-in message does.
    */
   verify(signed: SignedMessage, source?: ProfileSource): boolean {
+    const bytes = verifiableMessage(signed.message);
+    if (bytes === undefined) {
+      return false;
+    }
     if (source !== undefined) {
       let network: string;
       try {
@@ -76,7 +93,7 @@ export const Messages = {
       }
     }
     return call((module) =>
-      module.verifyMessage(messageBytes(signed.message), signed.publicKey, signed.signature, signed.algorithm),
+      module.verifyMessage(bytes, signed.publicKey, signed.signature, signed.algorithm),
     );
   },
 } as const;

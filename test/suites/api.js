@@ -92,6 +92,27 @@ export default function suite(test, env) {
     await account.release();
   });
 
+  test("a message that begins like a transaction is refused", async () => {
+    const devnet = sdk.profiles.devnet({ relays: [RELAY] });
+    const account = await sdk.Keys.fromLegacyPassphrase("probe passphrase", devnet);
+    // Every transaction's bytes begin with 0xff, and no UTF-8 text does.
+    for (const message of [Uint8Array.of(0xff), Uint8Array.of(0xff, 0x03, 0x5a, 0x01)]) {
+      await assert.rejects(async () => sdk.Messages.sign(account, message), (error) => {
+        assert.ok(error instanceof sdk.InvalidArgument);
+        assert.equal(error.details.reason, "transaction-header");
+        return true;
+      });
+    }
+    // Text never begins with 0xff, and other bytes are signed as they are.
+    const text = { ...(await sdk.Messages.sign(account, "\u00ff")), message: "\u00ff" };
+    assert.equal(await sdk.Messages.verify(text, devnet), true);
+    const bytes = Uint8Array.of(0x00, 0xff);
+    assert.equal(await sdk.Messages.verify({ ...(await sdk.Messages.sign(account, bytes)), message: bytes }, devnet), true);
+    // Such bytes never verify as a message either.
+    assert.equal(await sdk.Messages.verify({ ...text, message: Uint8Array.of(0xff) }, devnet), false);
+    await account.release();
+  });
+
   test("recovery phrases: new phrases, form feedback and derived accounts", async () => {
     const devnet = sdk.profiles.devnet({ relays: [RELAY] });
     const phrase = await sdk.Mnemonic.generate();

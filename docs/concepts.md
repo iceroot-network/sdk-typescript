@@ -386,8 +386,10 @@ const challenge = SignIn.build({ origin, publicKey, nonce, issuedAt, expiresAt }
 ```
 
 - On today's devnet a message signature is BIP340 over the SHA-256 of the exact UTF-8 message, which is the format the browser wallet and the validators portal already use. The SDK always hashes first, so a message of exactly 32 bytes is handled like any other.
+- In today's format a transaction is signed the same way, over the SHA-256 of its unsigned bytes, so a message signature over those bytes would be a valid signature of the transaction. Every transaction begins with the byte 0xff and no UTF-8 text does: `Messages.sign` refuses a message given as bytes that begin with 0xff with `InvalidArgument` (reason `transaction-header`), and `Messages.verify` returns false for one. From the post-quantum formats on, a message signature carries a signing domain of its own.
 - `messageNetworkOf` and `messageAlgorithmOf` give the identifiers of a profile's message format without signing anything. A wallet's `connect` answer and a server's challenge use them.
-- There is no SDK function that signs a transaction for a website. A website provider offers `connect` and `signMessage` only, and the wallet runs `SignIn.parse` before it asks the holder.
+- A signature's `network` and `algorithm` are labels next to it: the signature covers the message only. A protocol that must bind a message to one network names the network in the message's text, as the sign-in message does.
+- A wallet never signs a transaction for a website, and signs for a website only a message it shows the holder as text. A website provider offers `connect` and `signMessage` only, takes the message as text, never as bytes or hex, and the wallet runs `SignIn.parse` before it asks the holder.
 
 ## Errors
 

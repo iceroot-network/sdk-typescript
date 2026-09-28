@@ -187,6 +187,27 @@ export default function suite(test, env) {
     await second.release();
   });
 
+  test("a message signature never signs or passes for a transaction", async () => {
+    const { TRANSFER } = await load();
+    const { sender, draft } = await build(sdk, TRANSFER, transfer(TRANSFER));
+    const unsigned = draft.unsignedBytes;
+    assert.equal(unsigned[0], 0xff);
+    await assert.rejects(async () => sdk.Messages.sign(sender, unsigned), sdk.InvalidArgument);
+
+    // The transaction's own signature does not verify as a message signature of its bytes.
+    const signed = await draft.sign(sender);
+    const signature = hex(signed.bytes.slice(unsigned.length, unsigned.length + 64));
+    const claimed = {
+      message: unsigned,
+      publicKey: sender.publicKey,
+      signature,
+      algorithm: "secp256k1-bip340-sha256",
+      network: "heartwood-devnet-v90",
+    };
+    assert.equal(await sdk.Messages.verify(claimed), false);
+    await sender.release();
+  });
+
   test("drafts apply the network's rules before anything is signed", async () => {
     const { TRANSFER } = await load();
     const chain = await sdk.Chain.load(sdk.profiles.devnet({ relays: [RELAY] }), data().configuration);
