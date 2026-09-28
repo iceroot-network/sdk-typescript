@@ -284,7 +284,7 @@ Profile texts of validators (tagline, website, location) are not chain data. The
 
 ### Limits of today's devnet API
 
-The reference implementation's API allows about 100 requests per minute per client address. The SDK spends a request budget before each request (waiting when it is spent), retries HTTP 429 with backoff (2 seconds, doubling, three retries), and reports `RateLimited` when the node keeps refusing. Design screens to read once and refresh on a timer or on new blocks, not per row: for example read `validators.list()` once, not `validators.get(name)` for each validator.
+The reference implementation's API allows about 100 requests per minute per client address. The SDK spends a request budget before each request (waiting when it is spent), retries HTTP 429 with backoff (2 seconds, doubling, three retries, or the node's `Retry-After` when it is longer, up to 30 seconds), and reports `RateLimited` when the node keeps refusing. A relay whose `Retry-After` asks for more than 30 seconds is skipped for that request, and `RateLimited` is the error when no other relay answers. Design screens to read once and refresh on a timer or on new blocks, not per row: for example read `validators.list()` once, not `validators.get(name)` for each validator.
 
 ## Transactions: build, review, sign, submit, follow
 

@@ -48,6 +48,13 @@ export const MAX_ANSWER_BYTES = 4 * 1024 * 1024;
 /** The longest delay a timer keeps (2^31 - 1 ms, about 24.8 days); a longer one fires at once. */
 const MAX_DELAY_MS = 2_147_483_647;
 
+/**
+ * The longest wait before retrying HTTP 429 on the same relay: the backoff's longest step (30
+ * seconds). A relay whose `Retry-After` asks for longer counts as unavailable for this request, so
+ * the next relay is asked, and the shared request budget is never blocked for longer.
+ */
+const MAX_RETRY_WAIT_MS = 30_000;
+
 /** The most requests a window allows (2^32 - 1, the Rust client's `u32`). */
 const MAX_REQUESTS = 4_294_967_295;
 
@@ -119,21 +126,35 @@ function checkedHeaders(headers: Readonly<Record<string, string>>): Readonly<Rec
   return checked;
 }
 
-/** Waits `ms` milliseconds. */
+/**
+ * Waits `ms` milliseconds. A wait longer than a timer keeps (2^31 - 1 ms) is made of several
+ * timers, since a single one would fire at once.
+ */
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(abortError(signal));
       return;
     }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
+    let remaining = Number.isNaN(ms) ? 0 : Math.max(0, ms);
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const onAbort = () => {
       clearTimeout(timer);
       reject(abortError(signal));
     };
+    const arm = () => {
+      const step = Math.min(remaining, MAX_DELAY_MS);
+      timer = setTimeout(() => {
+        remaining -= step;
+        if (remaining > 0) {
+          arm();
+          return;
+        }
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, step);
+    };
+    arm();
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
@@ -198,9 +219,11 @@ export class Relays {
 
   /**
    * Sends `request` and decodes the answer with `decode`. Relays are tried in order: one that
-   * cannot be reached, times out, answers with a server error or answers with a redirect is
-   * skipped. HTTP 429 is retried on the same relay after the backoff; when the retries are spent
-   * the error is `RateLimited`.
+   * cannot be reached, times out, answers with a server error, answers with a redirect or answers
+   * with more than 4 MiB is skipped. HTTP 429 is retried on the same relay after the backoff, or
+   * after the node's `Retry-After` when it is longer, up to 30 seconds; a relay that asks for
+   * longer is skipped. When the retries are spent, or no other relay answers, the error is
+   * `RateLimited`.
    */
   async send<T>(request: RequestJson, decode: (answer: Answer) => T): Promise<T> {
     let last: unknown = new NodeUnavailable("no relay was tried");
@@ -219,6 +242,10 @@ export class Relays {
         } catch (error) {
           if (error instanceof IceRootError && error.code === "RateLimited") {
             const wait = retryAfterMs(error);
+            if (wait !== undefined && wait > MAX_RETRY_WAIT_MS) {
+              last = error;
+              break;
+            }
             const delay = call((module) => module.backoffDelay(attempt, wait));
             if (delay === undefined) {
               throw error;

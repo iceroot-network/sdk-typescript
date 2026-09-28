@@ -497,6 +497,58 @@ export default function suite(test, env) {
     await assert.rejects(always.net.blocks.latest(), sdk.RateLimited);
   });
 
+  test("a Retry-After longer than the backoff's longest step moves on to the next relay", async () => {
+    // The plugin's requests are made in Rust; this is the WebAssembly entry's transport.
+    if (!env.wasm) {
+      return;
+    }
+    const node = await env.node();
+    let limited = 0;
+    const transport = async (url, init) => {
+      if (url.startsWith("http://limited.example")) {
+        limited += 1;
+        return new Response(JSON.stringify({ statusCode: 429, error: "Too Many Requests", message: "slow down" }), {
+          status: 429,
+          headers: { "retry-after": "3000000000" },
+        });
+      }
+      return node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+    };
+    const both = sdk.profiles.devnet({ relays: ["http://limited.example/api", node.relay] });
+    for (const rateLimit of [undefined, false]) {
+      const started = Date.now();
+      const net = await sdk.connect(both, { transport, ...(rateLimit === undefined ? {} : { rateLimit }) });
+      assert.equal(net.height, 80n);
+      // Later requests are not held back either.
+      assert.equal((await net.node.status()).height, 80n);
+      assert.ok(Date.now() - started < 2_000, `${Date.now() - started} ms`);
+    }
+    const alone = sdk.profiles.devnet({ relays: ["http://limited.example/api"] });
+    const started = Date.now();
+    await assert.rejects(sdk.connect(alone, { transport }), (error) => {
+      assert.ok(error instanceof sdk.RateLimited, String(error));
+      assert.equal(error.details.retryAfterSeconds, 3_000_000_000);
+      return true;
+    });
+    assert.ok(Date.now() - started < 2_000, `${Date.now() - started} ms`);
+    // Each request asked the limited relay once and never waited to retry it: four for each
+    // connection and its status read, and the one refused.
+    assert.equal(limited, 9);
+  });
+
+  test("a wait longer than a timer can hold is not cut short", async () => {
+    if (!env.wasm) {
+      return;
+    }
+    const { net, node } = await connected();
+    const before = (await node.requests()).length;
+    const stop = net.watch({}, () => {}, { intervalMs: 3_000_000_000_000 });
+    await sleep(300);
+    stop();
+    // One poll, then a wait of about a century; a timer of more than 2^31 - 1 ms would fire at once.
+    assert.equal((await node.requests()).length - before, 1);
+  });
+
   test("submissions keep to the pool's limits and report every outcome in order", async () => {
     const mixed = (await fixture("submit-mixed")).request.transactions;
     const accepted = (await fixture("submit-accepted")).request.transactions;
