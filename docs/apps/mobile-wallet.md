@@ -10,7 +10,7 @@ The desktop wallet (`iceroot-network/desktop-wallet`) is a worked example of the
 
 | Module | What it shows |
 |---|---|
-| `src/network.ts` | `connect` with the HTTP plugin's `fetch` inside Tauri and no transport outside it; the token in `headers` |
+| `src/network.ts` | `connect` with the HTTP plugin's `fetch` inside Tauri and no transport outside it, and an optional `headers` for an endpoint's token (empty on the desktop, whose local relay needs none) |
 | `src/walletData.ts` | The reads, and `safeText` for text that comes from the chain |
 | `src/session.ts` | `Sender` and `senderOf`, the prepare functions that need no key, `reviewDraft`, `signDraft` and `submitSigned` |
 | `src/keys.ts` | `deriveAccount` from a profile alone, and `openWallet` with its check of the saved address |
@@ -66,7 +66,7 @@ The desktop wallet (`iceroot-network/desktop-wallet`) is a worked example of the
 ### 1. Configure the Tauri app
 
 1. Install the SDK tarball ([Installation](../installation.md)). The Tauri entry loads no WebAssembly: no `optimizeDeps` setting and no CSP change.
-2. Add `tauri-plugin-iceroot` to `src-tauri/Cargo.toml` and register `tauri_plugin_iceroot::init()` in the builder of `src-tauri/src/lib.rs` ([Tauri quickstart, step 1](../quickstart/tauri.md#1-add-the-plugin)). To use the WebAssembly entry instead, as the desktop wallet does until the plugin has run on a device, add `'wasm-unsafe-eval'` to `script-src` of `csp` and `devCsp`, and register `tauri_plugin_http::init()` ([The WebAssembly path](../quickstart/tauri.md#the-webassembly-path)).
+2. Add `tauri-plugin-iceroot` to `src-tauri/Cargo.toml` and register `tauri_plugin_iceroot::init()` in the builder of `src-tauri/src/lib.rs` ([Tauri quickstart, step 1](../quickstart/tauri.md#1-add-the-plugin)). To use the WebAssembly entry instead, as the desktop wallet does until it registers the plugin, add `'wasm-unsafe-eval'` to `script-src` of `csp` and `devCsp`, and register `tauri_plugin_http::init()` ([The WebAssembly path](../quickstart/tauri.md#the-webassembly-path)).
 3. Create `src-tauri/capabilities/main.json` granting `iceroot:default` and allowing the hosted devnet relay in the `allow` scope of `iceroot:allow-net-connect`, and list it in `app.security.capabilities`, which is empty today ([Tauri quickstart, step 2](../quickstart/tauri.md#2-grant-the-plugin-and-the-relays)). On the WebAssembly entry the capability grants `http:default` for the endpoint only.
 4. Connect to the hosted HTTPS devnet endpoint (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). The plugin's requests leave from Rust, so the platforms' cleartext rules do not apply to them, but a remote devnet is reached over HTTPS. On Android the plugin checks the endpoint's certificate against the Mozilla root certificates built into it, not the device's store, so the endpoint needs a certificate from a public authority. Those roots are fixed when the app is built (the `webpki-root-certs` version in `src-tauri/Cargo.lock`; run `cargo update -p webpki-root-certs` before each release), and no certificate revocation is checked ([Tauri quickstart, TLS on Android](../quickstart/tauri.md#7-mobile)). Keep the endpoint's token out of the repository: the holder enters it in the app's settings, and the app stores it with its preferences. The token reaches the node as a request header, and `connect` takes headers in its `headers` option on both entries: the plugin sends them from Rust, and on the WebAssembly entry they go through the transport. `connect` refuses a header that HTTP does not allow with `InvalidArgument`, naming the header and never showing its value. A name must be an HTTP token, and a value must be visible ASCII, spaces and tabs, so a token pasted with a line break or a look-alike character fails there. Trim it and check it before it is saved (`tokenHeaders` below). No entry follows a redirect, so the token goes to the listed relay only.
 5. Android builds need the Android NDK for the plugin's C code (libsecp256k1, and aws-lc through the HTTP client's TLS); `tauri android build` finds it through `NDK_HOME`. iOS builds need a Mac with Xcode.
@@ -158,7 +158,7 @@ export async function quoteVote(net: Network, from: Sender, entries: VoteEntry[]
 }
 ```
 
-- A watch-only wallet has an address and no public key. Its quote works once the account has sent a transaction. For a new account the builder refuses, and the screen says the account has not sent a transaction yet, so a quote needs the wallet's recovery phrase.
+- A watch-only wallet has an address and no public key. Its quote works once the account has sent a transaction. For a new account the builder refuses with `InvalidArgument`: say that the account has not sent a transaction yet, so no quote is possible until it has, or until the wallet is imported with its recovery phrase.
 - The review screen shows `draft.summary.lines`, `draft.fee` and `draft.summary.total`. Nothing is signed yet, and no key is open.
 - `net.build.*` reads the sender's nonce and the fee floor from the node and checks the draft against every rule of the next block. `senderOf` and the prepare functions in the desktop wallet's `src/session.ts` are the same code with `Sender` and one function per operation.
 
@@ -238,7 +238,7 @@ export async function submit(net: Network, signed: SignedTransaction) {
 - The plugin wipes every key the page opened when the page reloads. Release the key after each signing, and when the app goes to the background or locks.
 - Add the create and import controls with the architecture document's review of this boundary.
 - A vote for a validator the node has not seen running is refused with `ERR_OFFLINE` (`result.nodeCode`). On a new devnet that is every validator until its node has been seen producing during the first round ([Devnet](../devnet.md#a-new-devnet-and-its-first-round)). Show the refusal's message and offer a retry later, and do not treat it as a bug of the wallet.
-- The vote library's `VoteSnapshot.fromNode` makes one request per validator that has produced a block, and the node allows 100 requests per minute, so on a devnet the read takes a while. Read it once per visit of the vote page, show progress, and do not read it again on each render ([Vote](../vote.md)).
+- The vote library's `VoteSnapshot.fromNode` makes one request per validator that has produced a block, and the node allows about 100 requests per minute per client, so on a devnet the read can take a minute or more. Read it once per visit of the vote page, show progress, and do not read it again on each render ([Vote](../vote.md)).
 
 ## Rules that apply to the mobile wallet
 

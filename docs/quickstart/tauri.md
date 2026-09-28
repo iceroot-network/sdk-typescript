@@ -195,4 +195,4 @@ export async function openNetwork(relay: string, nethash?: string): Promise<Netw
 
 Never pass `globalThis.fetch` or `window.fetch` as the transport. The SDK calls the transport as a method of its own client, so the built-in `fetch` runs with the wrong `this` and Chromium throws `TypeError: Illegal invocation`. Leave the option out, or wrap the call: `(input, init) => fetch(input, init)`.
 
-Keys then live in WebAssembly memory inside the webview. The desktop and mobile wallets use the plugin: moving from this path changes the imports, adds `await` where the plugin returns promises, and removes `'wasm-unsafe-eval'` and the HTTP plugin if nothing else uses them.
+Keys then live in WebAssembly memory inside the webview. The desktop and mobile wallets are to use the plugin (the desktop wallet runs this path until it registers it): moving from this path changes the imports, adds `await` where the plugin returns promises, and removes `'wasm-unsafe-eval'` and the HTTP plugin if nothing else uses them.

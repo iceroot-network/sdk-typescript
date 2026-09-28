@@ -71,11 +71,11 @@ Compare the account's address with the address the wallet saved, every time a wa
 
 <!-- sample: verified 0.1.0 -->
 ```ts
-import { Keys } from "@iceroot-network/sdk";
+import { Keys, type NetworkProfile } from "@iceroot-network/sdk";
 
-/** Opens the saved wallet's key, only if it is the address the holder saw and saved. */
-function unlockSaved(stored: string, password: Uint8Array, savedAddress: string, index: number) {
-  const account = Keys.fromKeystore(stored, password, net.profile, { account: 0, index });
+/** Opens the saved wallet's key, only if it is the address the holder saw and saved. No connection is needed. */
+function unlockSaved(stored: string, password: Uint8Array, profile: NetworkProfile, savedAddress: string, index: number) {
+  const account = Keys.fromKeystore(stored, password, profile, { account: 0, index });
   if (account.address !== savedAddress) {
     account.release();                               // wipe the key of the other address
     throw new Error("This keystore belongs to another wallet.");

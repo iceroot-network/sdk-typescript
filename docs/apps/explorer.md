@@ -209,6 +209,6 @@ The explorer shows each round's forging order. The order is shuffled per round b
 ## Tests to add
 
 - API tests against recorded devnet responses: the SDK's mappers are tested upstream, so the explorer's tests check its own cache, pagination, filters and error handling.
-- A test that a memo with U+202E or a line break is shown escaped and do not reorder the row.
+- A test that a memo with U+202E or a line break is shown escaped and does not reorder the row.
 - A test that the API answers `503`, and never sample data, when the relay is unreachable.
 - One end-to-end run against a local devnet: the latest block and a known transfer appear in the frontend.
