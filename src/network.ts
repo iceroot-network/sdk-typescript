@@ -446,6 +446,7 @@ export class Network {
       refresh: () => this.refresh(),
       nodeConfiguration: () => this.#nodeConfiguration(),
       wait: (id, options) => this.#wait(id, options),
+      addressOf: (publicKey) => Address.fromPublicKey(publicKey, this.profile).toString(),
     });
     this.node = namespaces.node;
     this.fees = namespaces.fees;

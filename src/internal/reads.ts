@@ -24,7 +24,7 @@ import type {
   TxRecord,
   ValidatorInfo,
 } from "../client.js";
-import { InvalidArgument, NotFound, Timeout, UnsupportedOnNetwork } from "../errors.js";
+import { BadResponse, InvalidArgument, NotFound, Timeout, UnsupportedOnNetwork, WrongKey } from "../errors.js";
 import type {
   HistoryOptions,
   TxProgress,
@@ -105,6 +105,27 @@ export interface ReadContext {
   nodeConfiguration(): Promise<NodeConfiguration>;
   /** Waits for a transaction. */
   wait(id: Hex, options: WaitOptions): Promise<TxWaitResult>;
+  /** The address of a public key on the network. */
+  addressOf(publicKey: Hex): Answer<string>;
+}
+
+/** Refuses an answer about something other than what was asked for. */
+function mismatch(what: string, asked: string, answered: string): BadResponse {
+  return new BadResponse(`the node answered with another ${what} than the one asked for`, {
+    reason: "other-record",
+    asked,
+    answered,
+  });
+}
+
+/** `record` if its id is `id`, else `BadResponse`. */
+function sameTransaction(id: Hex): (record: TxRecord | null) => TxRecord | null {
+  return (record) => {
+    if (record !== null && record.id.toLowerCase() !== id.toLowerCase()) {
+      throw mismatch("transaction", id, record.id);
+    }
+    return record;
+  };
 }
 
 /** The read namespaces of a connected network, the same in every entry. */
@@ -113,6 +134,8 @@ export function readers(context: ReadContext) {
   const lookup = <W, T>(operation: string, args: object, convert: (json: W) => T): Promise<T | null> =>
     read(operation, args, records.orNull(convert));
   const address = (value: AddressLike) => ({ address: String(value) });
+  const transaction = async (operation: string, id: Hex): Promise<TxRecord | null> =>
+    sameTransaction(id)(await lookup(operation, { id }, records.transaction));
   return {
     node: {
       status: (): Promise<NodeStatus> => context.refresh(),
@@ -125,7 +148,13 @@ export function readers(context: ReadContext) {
         read("feeStatistics", options.days === undefined ? {} : { days: options.days }, records.feeStatistics),
     },
     accounts: {
-      get: (value: AddressLike): Promise<AccountInfo> => read("account", address(value), records.account),
+      get: async (value: AddressLike): Promise<AccountInfo> => {
+        const account = await read("account", address(value), records.account);
+        if (account.address !== String(value)) {
+          throw mismatch("account", String(value), account.address);
+        }
+        return account;
+      },
     },
     history: {
       forAccount: (value: AddressLike, options: HistoryOptions = {}): Promise<Page<TxRecord>> =>
@@ -141,10 +170,9 @@ export function readers(context: ReadContext) {
     },
     transactions: {
       get: async (id: Hex): Promise<TxRecord | null> =>
-        (await lookup("transaction", { id }, records.transaction)) ??
-        (await lookup("unconfirmedTransaction", { id }, records.transaction)),
-      confirmed: (id: Hex): Promise<TxRecord | null> => lookup("transaction", { id }, records.transaction),
-      pending: (id: Hex): Promise<TxRecord | null> => lookup("unconfirmedTransaction", { id }, records.transaction),
+        (await transaction("transaction", id)) ?? (await transaction("unconfirmedTransaction", id)),
+      confirmed: (id: Hex): Promise<TxRecord | null> => transaction("transaction", id),
+      pending: (id: Hex): Promise<TxRecord | null> => transaction("unconfirmedTransaction", id),
       list: (filter: TxFilter & PageOptions = {}): Promise<Page<TxRecord>> => {
         const { page, limit, ...rest } = filter;
         return read(
@@ -201,7 +229,20 @@ export function readers(context: ReadContext) {
       },
     },
     names: {
-      resolve: (name: string): Promise<ResolvedName | null> => lookup("resolveName", { name }, records.resolvedName),
+      resolve: async (name: string): Promise<ResolvedName | null> => {
+        const resolved = await lookup("resolveName", { name }, records.resolvedName);
+        if (resolved === null) {
+          return null;
+        }
+        if (resolved.name.toLowerCase() !== name.toLowerCase()) {
+          throw mismatch("name", name, resolved.name);
+        }
+        const address = await context.addressOf(resolved.publicKey);
+        if (resolved.address !== address) {
+          throw mismatch("address", address, resolved.address);
+        }
+        return resolved;
+      },
     },
   };
 }
@@ -426,12 +467,14 @@ export async function readFacts(from: { readonly publicKey: Hex } | Hex | string
   let publicKey: Hex;
   let account: string | undefined;
   let looked = false;
+  let requested: string | undefined;
   if (typeof from !== "string") {
     publicKey = from.publicKey;
   } else if (/^0[23][0-9a-fA-F]{64}$/.test(from)) {
     publicKey = from.toLowerCase();
   } else {
     const address = await context.parseAddress(from);
+    requested = address;
     account = await accountJson(context.read, address);
     looked = true;
     const known = account === undefined ? undefined : (JSON.parse(account) as { publicKey?: Hex }).publicKey;
@@ -444,6 +487,12 @@ export async function readFacts(from: { readonly publicKey: Hex } | Hex | string
     publicKey = known;
   }
   const address = await context.addressOf(publicKey);
+  if (looked && address !== requested) {
+    throw new WrongKey("the node reported the public key of another account for the sender's address", {
+      address: requested,
+      publicKeyAddress: address,
+    });
+  }
   const [senderAccount, status] = await Promise.all([
     looked ? Promise.resolve(account) : accountJson(context.read, address),
     context.read("nodeStatus", {}, (json: Json<NodeStatus>) => json),

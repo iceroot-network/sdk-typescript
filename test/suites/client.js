@@ -278,8 +278,10 @@ export default function suite(test, env) {
 
     const kinds = new Set();
     for (const name of ["transaction-vote", "transaction-burn", "transaction-second-key", "transaction-validator-registration", "transaction-resignation-temporary"]) {
-      const other = await connected({ [`GET /transactions/${TWO_RECIPIENTS}`]: name });
-      const record = await other.net.transactions.confirmed(TWO_RECIPIENTS);
+      // Each recording is served at its own id: an answer about another transaction is refused.
+      const id = JSON.parse((await fixture(name)).body).data.id;
+      const record = await net.transactions.confirmed(id);
+      assert.equal(record.id, id);
       kinds.add(record.details.kind);
       if (record.details.kind === "burn") {
         assert.equal(typeof record.details.amount, "bigint");
@@ -818,6 +820,30 @@ export default function suite(test, env) {
     const signature = await net.messages.sign(legacy, "hello");
     assert.equal(await sdk.Messages.verify({ ...signature, message: "hello" }, net), true);
     await legacy.release();
+  });
+
+  test("an answer about another account, transaction or name than the one asked for is refused", async () => {
+    const team = JSON.parse((await fixture("wallet-team")).body);
+    const secondKey = JSON.parse((await fixture("wallet-second-key")).body);
+    const transfer = JSON.parse((await fixture("transaction-transfer")).body);
+    const validator = JSON.parse((await fixture("delegate-by-name")).body);
+    const { net } = await connected({
+      // Asked for one account, the node answers with another that holds a key and a nonce.
+      [`GET /wallets/${GENESIS_1}`]: json(200, secondKey),
+      [`GET /wallets/${TEAM}`]: json(200, { ...team, data: { ...team.data, address: GENESIS_1 } }),
+      [`GET /transactions/${TWO_RECIPIENTS}`]: json(200, transfer),
+      [`GET /transactions/unconfirmed/${TWO_RECIPIENTS}`]: json(200, transfer),
+      "GET /delegates/genesis_5": json(200, { ...validator, data: { ...validator.data, address: TEAM } }),
+    });
+    await assert.rejects(
+      net.build.transfer({ from: GENESIS_1, to: [{ address: TEAM, amount: 1n }], fee: 1_000_000n }),
+      sdk.WrongKey,
+    );
+    await assert.rejects(net.accounts.get(TEAM), sdk.BadResponse);
+    await assert.rejects(net.transactions.get(TWO_RECIPIENTS), sdk.BadResponse);
+    await assert.rejects(net.transactions.confirmed(TWO_RECIPIENTS), sdk.BadResponse);
+    await assert.rejects(net.transactions.pending(TWO_RECIPIENTS), sdk.BadResponse);
+    await assert.rejects(net.names.resolve("genesis_5"), sdk.BadResponse);
   });
 
   test("watch-only accounts, and watching blocks and an account's transactions", async () => {

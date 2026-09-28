@@ -179,7 +179,7 @@ AssetId.ROOT;                                               // the ROOT asset id
 
 ## Reading from the network
 
-All reads are methods of `net`, return typed records and throw on failure. An unavailable node is an error, never an empty list. A lookup that finds nothing returns `null`.
+All reads are methods of `net`, return typed records and throw on failure. An unavailable node is an error, never an empty list. A lookup that finds nothing returns `null`. An answer about another account, transaction or name than the one asked for is `BadResponse`, and a builder given the sender's address refuses a node that reports another account's key for it with `WrongKey`.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
