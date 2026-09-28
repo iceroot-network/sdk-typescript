@@ -149,16 +149,20 @@ export default function suite(test, env) {
   test("a token symbol is a short word, so it cannot write into the review lines", async () => {
     const { TRANSFER } = await load();
     const devnet = sdk.profiles.devnet({ relays: [RELAY] });
-    const withSymbol = (symbol) => {
+    const withLabel = (key, text) => {
       const configuration = structuredClone(data().configuration);
-      configuration.network.client.symbol = symbol;
+      configuration.network.client[key] = text;
       return configuration;
     };
     const recipient = TRANSFER.request.operation.to[0].address;
     for (const symbol of ["", `dRT to ${recipient}${" ".repeat(400)}`, "d\u00a0RT", "dRT\u200b", "d.RT", "ABCDEFGHIJK"]) {
-      await assert.rejects(async () => sdk.Chain.load(devnet, withSymbol(symbol)), sdk.BadResponse, JSON.stringify(symbol));
+      await assert.rejects(async () => sdk.Chain.load(devnet, withLabel("symbol", symbol)), sdk.BadResponse, JSON.stringify(symbol));
     }
-    assert.equal((await sdk.Chain.load(devnet, withSymbol("ROOT"))).token.symbol, "ROOT");
+    for (const name of ["", "two  spaces", " dROOT", "dROOT\n", "d".repeat(33), "dROOT to someone\u2003"]) {
+      await assert.rejects(async () => sdk.Chain.load(devnet, withLabel("token", name)), sdk.BadResponse, JSON.stringify(name));
+    }
+    assert.equal((await sdk.Chain.load(devnet, withLabel("symbol", "ROOT"))).token.symbol, "ROOT");
+    assert.equal((await sdk.Chain.load(devnet, withLabel("token", "IceRoot devnet v2.1-a"))).token.name, "IceRoot devnet v2.1-a");
 
     // A draft whose travelling configuration names such a symbol is refused where it is signed.
     const { chain, sender, draft } = await build(sdk, TRANSFER, transfer(TRANSFER));
@@ -397,11 +401,7 @@ export default function suite(test, env) {
         return configuration;
       };
       assert.equal((await (await sdk.Chain.load(devnet, seats(1000))).economics(2)).seats, 1000);
-      await assert.rejects(async () => sdk.Chain.load(devnet, seats(1001)), (error) => {
-        assert.ok(error instanceof sdk.BadResponse);
-        assert.equal(error.details.reason, "seats");
-        return true;
-      });
+      await assert.rejects(async () => sdk.Chain.load(devnet, seats(1001)), sdk.BadResponse);
       await assert.rejects(async () => sdk.Chain.load(devnet, seats(3_000_000)), sdk.BadResponse);
     }
   });

@@ -129,10 +129,10 @@ export class Chain {
   readonly token: TokenInfo;
 
   private constructor(handle: ChainHandle) {
-    if (handle.mostSeats() > MAX_SEATS) {
-      throw new BadResponse(`the network configuration names more than ${MAX_SEATS} validator seats`, {
-        reason: "seats",
-      });
+    const seats = handle.mostSeats();
+    if (seats > MAX_SEATS) {
+      const reason = `a milestone has ${seats} seats; at most ${MAX_SEATS} are accepted`;
+      throw new BadResponse(reason, { reason });
     }
     chains.set(this, handle);
     this.profile = profileFromHandle(handle.profile());
@@ -144,8 +144,9 @@ export class Chain {
   /**
    * The chain of the crypto configuration a node reports, for the profile of `source`:
    * `/node/configuration/crypto`'s `data` object, as JSON text or as the parsed object. A
-   * configuration whose token symbol is not 1 to 10 ASCII letters and digits, or that names more
-   * than 1,000 validator seats, is refused with `BadResponse`.
+   * configuration whose token symbol is not 1 to 10 ASCII letters and digits, whose token name is
+   * not 1 to 32 ASCII letters, digits, `-` and `.` with single spaces between words, or that names
+   * more than 1,000 validator seats, is refused with `BadResponse`.
    */
   static load(source: ProfileSource, configuration: string | object): Chain {
     const profile = profileHandleOf(source);
