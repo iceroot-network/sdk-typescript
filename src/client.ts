@@ -29,17 +29,26 @@ export type Transport = (input: string | URL | Request, init?: RequestInit) => P
 
 /** A request allowance: at most `requests` per `windowMs` milliseconds. */
 export interface RateLimit {
-  /** Requests allowed per window. */
+  /** Requests allowed per window: a whole number from 1 to 2^32 - 1. */
   readonly requests: number;
-  /** The window in milliseconds. */
+  /** The window in milliseconds, at most 2^31 - 1 (about 24.8 days). */
   readonly windowMs: number;
 }
 
 /** Options of `connect`. */
 export interface ConnectOptions {
-  /** The transport; `globalThis.fetch` by default. */
+  /**
+   * The transport; `globalThis.fetch` by default. The SDK asks it not to follow redirects
+   * (`redirect: "manual"`, and `maxRedirections: 0` for the Tauri HTTP plugin's `fetch`) and skips
+   * a relay that answers with one, so a request, its headers and its body reach the relays only.
+   * A transport that follows redirects anyway sends them to the redirect's target.
+   */
   readonly transport?: Transport;
-  /** Extra headers for every request, for a relay behind a proxy that needs a token. */
+  /**
+   * Extra headers for every request, for a relay behind a proxy that needs a token. A name is an
+   * HTTP token and a value is text of visible ASCII characters, spaces and tabs; `connect` refuses
+   * anything else with `InvalidArgument`, naming the header and never showing its value.
+   */
   readonly headers?: Readonly<Record<string, string>>;
   /**
    * The request allowance to keep to. The default is the reference implementation's: 100 requests
@@ -47,7 +56,7 @@ export interface ConnectOptions {
    * allows more; HTTP 429 is still retried with backoff.
    */
   readonly rateLimit?: RateLimit | false;
-  /** Time allowed for one request, in milliseconds; 15,000 by default. */
+  /** Time allowed for one request, in milliseconds, at most 2^31 - 1; 15,000 by default. */
   readonly timeoutMs?: number;
 }
 

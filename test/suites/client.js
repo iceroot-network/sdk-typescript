@@ -112,9 +112,38 @@ export default function suite(test, env) {
     const node = await env.node();
     const later = { ...devnet(node.relay), id: "idDevnet", backend: "iceroot", keyScheme: "slip10-mldsa65" };
     await assert.rejects(sdk.connect(later, node.options), sdk.UnsupportedOnNetwork);
-    for (const options of [{ timeoutMs: 0 }, { timeoutMs: Number.NaN }, { rateLimit: { requests: 0, windowMs: 1 } }, { rateLimit: { requests: 1, windowMs: -1 } }]) {
+    const refused = [
+      { timeoutMs: 0 },
+      { timeoutMs: Number.NaN },
+      { rateLimit: { requests: 0, windowMs: 1 } },
+      { rateLimit: { requests: 1, windowMs: -1 } },
+      // Numbers past what a timer keeps (2^31 - 1 ms) or the request budget counts (2^32 - 1).
+      { timeoutMs: 2 ** 31 },
+      { timeoutMs: 1e20 },
+      { rateLimit: { requests: 2 ** 32, windowMs: 1_000 } },
+      { rateLimit: { requests: 1, windowMs: 2 ** 31 } },
+      // Headers HTTP does not allow, or a value that is not text.
+      { headers: { "x-count": 5 } },
+      { headers: { "bad name": "value" } },
+    ];
+    for (const options of refused) {
       await assert.rejects(sdk.connect(devnet(node.relay), { ...node.options, ...options }), sdk.InvalidArgument, JSON.stringify(options));
     }
+    // A header value HTTP does not allow is refused without a trace of it.
+    await assert.rejects(sdk.connect(devnet(node.relay), { ...node.options, headers: { "x-api-key": "s3cret\nvalue" } }), (error) => {
+      assert.ok(error instanceof sdk.InvalidArgument, String(error));
+      assert.ok(error.message.includes("x-api-key"), error.message);
+      assert.ok(!JSON.stringify([error.message, error.details]).includes("s3cret"), error.message);
+      return true;
+    });
+    assert.equal((await node.requests()).length, 0, "nothing was sent");
+    // The largest values are accepted.
+    const largest = await sdk.connect(devnet(node.relay), {
+      ...node.options,
+      timeoutMs: 2 ** 31 - 1,
+      rateLimit: { requests: 2 ** 32 - 1, windowMs: 2 ** 31 - 1 },
+    });
+    assert.equal(largest.height, 80n);
     await assert.rejects(
       sdk.connect(sdk.profiles.devnet({ relays: ["http://user:secret@127.0.0.1:4003/api"] }), node.options),
       sdk.InvalidRequest,
@@ -351,6 +380,25 @@ export default function suite(test, env) {
     const started = Date.now();
     await assert.rejects(sdk.connect(devnet(silent.relay), { ...silent.options, timeoutMs: 50 }), sdk.Timeout);
     assert.ok(Date.now() - started < 2_000);
+  });
+
+  test("a relay that answers with a redirect is skipped, and the redirect is never followed", async () => {
+    const relays = await env.relays();
+    const net = await sdk.connect(sdk.profiles.devnet({ relays: [relays.moved, relays.working] }), { ...relays.options, rateLimit: false });
+    assert.equal(net.height, 80n);
+    assert.ok((await relays.movedRequests()) >= 1);
+    const only = sdk.profiles.devnet({ relays: [relays.moved] });
+    await assert.rejects(sdk.connect(only, { ...relays.options, rateLimit: false }), (error) => {
+      assert.ok(error instanceof sdk.NodeUnavailable, String(error));
+      assert.match(error.message, /redirect/);
+      return true;
+    });
+    // The redirect's target was never asked, and the transport was told not to follow.
+    assert.equal(await relays.targetRequests(), 0);
+    const modes = await relays.redirectModes();
+    if (modes !== undefined) {
+      assert.ok(modes.length >= 2 && modes.every((mode) => mode === "manual/0"), JSON.stringify(modes));
+    }
   });
 
   test("the request budget spaces requests, and HTTP 429 is retried after the backoff", async () => {

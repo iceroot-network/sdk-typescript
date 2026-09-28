@@ -37,8 +37,8 @@ import type {
 } from "../client.js";
 import { InvalidArgument, UnsupportedOnNetwork } from "../errors.js";
 import { economicsFromJson, rulesFromJson } from "../internal/chain-json.js";
-import { DEFAULT_RATE_LIMIT, DEFAULT_TIMEOUT_MS } from "../internal/http.js";
-import { positive, readFacts, readers, waitFor, watchedAccount, watchedText, watchPolling } from "../internal/reads.js";
+import { connectSettings } from "../internal/http.js";
+import { readFacts, readers, waitFor, watchedAccount, watchedText, watchPolling } from "../internal/reads.js";
 import * as records from "../internal/records.js";
 import type { Json } from "../internal/records.js";
 import type {
@@ -155,11 +155,13 @@ interface Connection {
  * plugin's `allow-net-connect`).
  *
  * `options.transport` is not used: the plugin makes every request. The headers, the request
- * allowance and the timeout apply as with the WebAssembly entry.
+ * allowance and the timeout are checked and apply as with the WebAssembly entry.
  *
  * Throws `NetworkMismatch` when the node serves another chain, `UnsupportedOnNetwork` for a
  * profile the SDK cannot connect to yet, `InvalidProfile` for a relay the application does not
- * allow, and `NodeUnavailable`, `Timeout` or `RateLimited` when no relay answers.
+ * allow, `InvalidArgument` for options it cannot use (see {@link ConnectOptions}), and
+ * `NodeUnavailable`, `Timeout` or `RateLimited` when no relay answers. A relay that answers with
+ * a redirect is skipped like one that cannot be reached.
  */
 export async function connect(profile: NetworkProfile, options: ConnectOptions = {}): Promise<Network> {
   if (!(await capabilitiesOf(profile)).has("connect")) {
@@ -167,34 +169,17 @@ export async function connect(profile: NetworkProfile, options: ConnectOptions =
       profile: profile.id,
     });
   }
-  const rateLimit = options.rateLimit ?? DEFAULT_RATE_LIMIT;
-  if (rateLimit !== false) {
-    if (!Number.isInteger(rateLimit.requests) || rateLimit.requests < 1) {
-      throw new InvalidArgument("rateLimit.requests is a whole number, at least 1", { requests: rateLimit.requests });
-    }
-    positive(rateLimit.windowMs, "windowMs", 1);
-  }
-  const timeoutMs = positive(options.timeoutMs, "timeoutMs", DEFAULT_TIMEOUT_MS);
-  // The plugin reads whole numbers of fixed width: a larger value means the same as its largest.
+  const { headers, rateLimit, timeoutMs } = connectSettings(options);
+  // The plugin reads whole milliseconds: a fraction is rounded up.
   const connection = await invoke<Connection>("net_connect", {
     profile: profileJson(profile),
     options: {
-      headers: Object.entries(options.headers ?? {}),
-      rateLimit:
-        rateLimit === false
-          ? false
-          : { requests: Math.min(rateLimit.requests, MAX_U32), windowMs: whole(rateLimit.windowMs) },
-      timeoutMs: whole(timeoutMs),
+      headers: Object.entries(headers),
+      rateLimit: rateLimit === false ? false : { requests: rateLimit.requests, windowMs: Math.ceil(rateLimit.windowMs) },
+      timeoutMs: Math.ceil(timeoutMs),
     },
   });
   return new Network(connection);
-}
-
-const MAX_U32 = 0xffff_ffff;
-
-/** `ms` rounded up to a whole number the plugin reads (at most 2^53 - 1). */
-function whole(ms: number): number {
-  return Math.min(Math.ceil(ms), Number.MAX_SAFE_INTEGER);
 }
 
 /** A connected network, whose requests the plugin makes. */

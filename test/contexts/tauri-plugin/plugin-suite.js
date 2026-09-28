@@ -73,18 +73,13 @@ export default function suite(test, env) {
     }
   });
 
-  test("arguments Tauri cannot read are InvalidArgument; larger numbers than the plugin reads are bounded", async () => {
-    await assert.rejects(
-      sdk.connect(sdk.profiles.devnet({ relays: [RELAY] }), { headers: { "x-count": 5 } }),
-      sdk.InvalidArgument,
-    );
-    const node = await env.node();
-    const net = await sdk.connect(sdk.profiles.devnet({ relays: [node.relay] }), {
-      ...node.options,
-      timeoutMs: 1e20,
-      rateLimit: { requests: 2 ** 32, windowMs: 1e20 },
+  test("arguments Tauri cannot read are InvalidArgument", async () => {
+    // A number where the command reads text: Tauri refuses the arguments before the plugin runs.
+    await assert.rejects(sdk.Address.parse(12345, sdk.profiles.devnet({ relays: [RELAY] })), (error) => {
+      assert.ok(error instanceof sdk.InvalidArgument, String(error));
+      assert.match(error.message, /invalid args/);
+      return true;
     });
-    assert.equal(typeof net.height, "bigint");
   });
 
   test("the plugin signs what it reads from a draft's bytes", async () => {

@@ -82,17 +82,27 @@ async function node(routes = {}, vars = {}) {
   };
 }
 
-/** The failover test's relays: nothing listens on port 6099; the busy node answers 503. */
+/**
+ * The failover tests' relays: nothing listens on port 6099; the busy node answers 503; the moved
+ * node answers every request with a redirect to the target node.
+ */
 async function relays() {
   const busy = await node({ "*": { status: 503, headers: {}, body: JSON.stringify({ statusCode: 503, error: "Service Unavailable", message: "busy" }) } });
   const working = await node();
+  const target = await node();
+  const moved = await node({ "*": { status: 307, headers: { location: `${target.relay}/node/configuration/crypto` }, body: "" } });
   return {
     down: "http://127.0.0.1:6099/api",
     busy: busy.relay,
+    moved: moved.relay,
     working: working.relay,
     options: {},
     tried: async () => undefined,
     busyRequests: async () => (await busy.requests()).length,
+    movedRequests: async () => (await moved.requests()).length,
+    targetRequests: async () => (await target.requests()).length,
+    // The plugin's client is set to follow none; the target's requests show it.
+    redirectModes: async () => undefined,
   };
 }
 

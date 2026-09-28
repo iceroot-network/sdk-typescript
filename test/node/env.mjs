@@ -80,14 +80,16 @@ function node(routes = {}, vars = {}) {
 }
 
 /**
- * Three relays for the failover test: one that cannot be reached, one that answers every request
- * with a server error, and a recorded node, all through one transport that notes the host of each
- * request.
+ * Relays for the failover tests: one that cannot be reached, one that answers every request with a
+ * server error, one that answers every request with a redirect to another host, and a recorded
+ * node, all through one transport that notes the host of each request (and what the SDK asked of
+ * redirects, for the one that answers with them).
  */
 async function relays() {
   const working = node();
   const tried = [];
-  const transport = async (url, init) => {
+  const redirectModes = [];
+  const transport = async (url, init = {}) => {
     tried.push(new URL(url).host);
     if (url.startsWith("http://down.example")) {
       throw new TypeError("fetch failed");
@@ -95,15 +97,26 @@ async function relays() {
     if (url.startsWith("http://busy.example")) {
       return new Response(JSON.stringify({ statusCode: 503, error: "Service Unavailable", message: "busy" }), { status: 503 });
     }
+    if (url.startsWith("http://moved.example")) {
+      redirectModes.push(`${init.redirect}/${init.maxRedirections}`);
+      return new Response(null, { status: 307, headers: { location: url.replace("moved.example", "target.example") } });
+    }
+    if (url.startsWith("http://target.example")) {
+      throw new Error("the redirect was followed");
+    }
     return working.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
   };
   return {
     down: "http://down.example/api",
     busy: "http://busy.example/api",
+    moved: "http://moved.example/api",
     working: working.relay,
     options: { transport },
     tried: async () => tried,
     busyRequests: async () => tried.filter((host) => host === "busy.example").length,
+    movedRequests: async () => tried.filter((host) => host === "moved.example").length,
+    targetRequests: async () => tried.filter((host) => host === "target.example").length,
+    redirectModes: async () => redirectModes,
   };
 }
 

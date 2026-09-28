@@ -54,16 +54,8 @@ import type {
 } from "./client.js";
 import { InvalidArgument, UnsupportedOnNetwork } from "./errors.js";
 import { call, parse, type ApiCall } from "./internal/bindings.js";
-import { DEFAULT_RATE_LIMIT, DEFAULT_TIMEOUT_MS, Relays, type RequestJson } from "./internal/http.js";
-import {
-  positive,
-  readFacts,
-  readers,
-  waitFor,
-  watchedAccount,
-  watchedText,
-  watchPolling,
-} from "./internal/reads.js";
+import { connectSettings, Relays, type RequestJson } from "./internal/http.js";
+import { readFacts, readers, waitFor, watchedAccount, watchedText, watchPolling } from "./internal/reads.js";
 import * as records from "./internal/records.js";
 import type { Json } from "./internal/records.js";
 import { Keys, type Account, type AccountOptions, type KeystoreAccountOptions } from "./keys.js";
@@ -234,8 +226,9 @@ function defaultTransport(): Transport {
  * pinned now; keep {@link Network.profile}), and reads the node's configuration and status.
  *
  * Throws `NetworkMismatch` when the node serves another chain, `UnsupportedOnNetwork` for a
- * profile the SDK cannot connect to yet, and `NodeUnavailable`, `Timeout` or `RateLimited` when no
- * relay answers.
+ * profile the SDK cannot connect to yet, `InvalidArgument` for options it cannot use (see
+ * {@link ConnectOptions}), and `NodeUnavailable`, `Timeout` or `RateLimited` when no relay
+ * answers. A relay that answers with a redirect is skipped like one that cannot be reached.
  */
 export async function connect(profile: NetworkProfile, options: ConnectOptions = {}): Promise<Network> {
   if (!capabilitiesOf(profile).has("connect")) {
@@ -243,19 +236,13 @@ export async function connect(profile: NetworkProfile, options: ConnectOptions =
       profile: profile.id,
     });
   }
-  const rateLimit = options.rateLimit ?? DEFAULT_RATE_LIMIT;
-  if (rateLimit !== false) {
-    if (!Number.isInteger(rateLimit.requests) || rateLimit.requests < 1) {
-      throw new InvalidArgument("rateLimit.requests is a whole number, at least 1", { requests: rateLimit.requests });
-    }
-    positive(rateLimit.windowMs, "windowMs", 1);
-  }
+  const settings = connectSettings(options);
   const relays = new Relays(
     profile.api.relays,
     options.transport ?? defaultTransport(),
-    options.headers ?? {},
-    rateLimit,
-    positive(options.timeoutMs, "timeoutMs", DEFAULT_TIMEOUT_MS),
+    settings.headers,
+    settings.rateLimit,
+    settings.timeoutMs,
   );
   const profileHandle = profileHandleOf(profile);
   const chainHandle = await withCall(0, "cryptoConfiguration", {}, (prepared) =>
