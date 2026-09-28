@@ -146,6 +146,17 @@ export function displayText(text: string): string {
   );
 }
 
+/**
+ * Whether `signed` (a signed transaction's bytes, at `signedHeight`) is the transaction whose
+ * unsigned bytes are `unsigned`, at `height`: the signatures follow the unsigned bytes.
+ */
+export function signsDraft(signed: Uint8Array, signedHeight: number, unsigned: Uint8Array, height: number): boolean {
+  if (signedHeight !== height || signed.length <= unsigned.length) {
+    return false;
+  }
+  return unsigned.every((byte, index) => signed[index] === byte);
+}
+
 export function lines(summary: Omit<DraftSummary, "lines">, symbol: string, format: (units: BaseUnits) => string): string[] {
   const amount = (value: BaseUnits) => `${format(value)} ${symbol}`;
   const operation = summary.operation;

@@ -246,6 +246,19 @@ export default function suite(test, env) {
     await sender.release();
   });
 
+  test("a signed transaction that comes back is checked against the draft that was sent", async () => {
+    const { TRANSFER } = await load();
+    const { chain, sender, draft } = await build(sdk, TRANSFER, transfer(TRANSFER));
+    const back = await sdk.SignedTransaction.deserialize((await draft.sign(sender)).serialize(), chain.profile);
+    assert.equal(await back.matches(draft), true);
+    // Another draft of the same sender and nonce, signed in its place, does not match.
+    const other = (await build(sdk, TRANSFER, { ...transfer(TRANSFER), memo: "another memo" })).draft;
+    assert.equal(await back.matches(other), false);
+    const swapped = await sdk.SignedTransaction.deserialize((await other.sign(sender)).serialize(), chain.profile);
+    assert.equal(await swapped.matches(draft), false);
+    await sender.release();
+  });
+
   test("drafts apply the network's rules before anything is signed", async () => {
     const { TRANSFER } = await load();
     const chain = await sdk.Chain.load(sdk.profiles.devnet({ relays: [RELAY] }), data().configuration);

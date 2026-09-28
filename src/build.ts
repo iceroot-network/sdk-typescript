@@ -25,6 +25,7 @@ import {
   factsJson,
   requestJson,
   signedSummaryFromJson,
+  signsDraft,
   summaryFromJson,
   type DraftSummaryJson,
   type SignedSummaryJson,
@@ -397,6 +398,15 @@ export class SignedTransaction {
   /** The transaction as bytes, for the trip back from the context that signed it. */
   serialize(): Uint8Array {
     return call(() => signedHandleOf(this).serialize());
+  }
+
+  /**
+   * Whether this is `draft`, signed: the transaction's bytes are the draft's unsigned bytes and
+   * its signatures, at the draft's height. Check it before submitting a transaction that came back
+   * from the context that signed it, so a mix-up of requests submits nothing else.
+   */
+  matches(draft: Draft): boolean {
+    return signsDraft(this.bytes, this.summary.height, draft.unsignedBytes, draft.height);
   }
 }
 

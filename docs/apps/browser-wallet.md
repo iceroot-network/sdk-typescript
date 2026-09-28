@@ -251,7 +251,7 @@ The wallet page builds the draft; the identity page reviews and signs it through
 1. `wallet.js` builds `net.build.transfer({ from, to: [...1 to 256 recipients], memo })` or `net.build.vote({ from, entries })`, and serializes it with `draft.serialize()`. `from` is the identity's public key from its metadata: the builder reads the nonce from the node. The address alone works only once the identity has sent a transaction, because the node learns the public key from it.
 2. It hands the bytes to the identity page as a transaction request. In the extension this goes through the service worker's pending-request store, like website requests, but only from the extension's own wallet page: refuse a transaction request from any other sender, and never accept one from a website. In the web build the wallet page opens the identity page with the request.
 3. The identity page unlocks the vault if needed, calls the sandbox's `reviewDraft`, and shows the recomputed summary and fee. On approval it calls `signDraft` with the phrase and scheme, and returns the signed bytes.
-4. `wallet.js` restores them with `SignedTransaction.deserialize(bytes, net.profile)`, calls `net.submit`, and follows `net.transactions.wait(id, { until: "confirmed" })`.
+4. `wallet.js` restores them with `SignedTransaction.deserialize(bytes, net.profile)`, checks with `signed.matches(draft)` that they are the draft it sent, calls `net.submit`, and follows `net.transactions.wait(id, { until: "confirmed" })`.
 
 <!-- sample: verified 0.1.0 -->
 ```js
@@ -264,6 +264,7 @@ async function sendTransfer(from, recipients, memo) {
   });
   const signedBytes = await approveInIdentityPage({ kind: "transaction", draft: draft.serialize() });
   const signed = Sdk.SignedTransaction.deserialize(signedBytes, net.profile);
+  if (!signed.matches(draft)) throw new Error("The signed transaction is not the transfer that was reviewed.");
   const result = await net.submit(signed);
   if (result.status !== "accepted") throw new Error("The network refused the transfer (" + result.reason + ").");
   return net.transactions.wait(signed.id, { until: "confirmed" });

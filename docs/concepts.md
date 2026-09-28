@@ -354,6 +354,7 @@ const signedBytes = again.sign(account).serialize();
 
 // Back where the network is:
 const signedTx = SignedTransaction.deserialize(signedBytes, net.profile);
+if (!signedTx.matches(draft)) throw new Error("not the draft that was sent");   // the draft's bytes, signed, at its height
 await net.submit(signedTx);
 ```
 
