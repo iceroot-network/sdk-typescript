@@ -80,7 +80,7 @@ This also settles the older-WebKit question of the WebAssembly path (macOS 11 an
 
 ## 4. Use the SDK from the page
 
-Install the package as in [Installation](../installation.md) and import from `@iceroot-network/sdk/tauri`. Vite needs no `optimizeDeps` setting for this entry, since it loads no `.wasm` file. Call `init()` once at start-up: it checks that the page runs in a Tauri webview whose app registered and allows the plugin, and rejects with `SdkNotInitialized` otherwise.
+Install the package as in [Installation](../installation.md) and import from `@iceroot-network/sdk/tauri`. Vite needs no `optimizeDeps` setting for this entry, since it loads no `.wasm` file. Call `init()` once at start-up: it checks that the page runs in a Tauri webview whose app registered and allows the plugin, and that the plugin is of the package's release (0.1.x with 0.1.x), and rejects with `SdkNotInitialized` otherwise.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -94,7 +94,13 @@ export async function openNetwork(relay: string, nethash?: string): Promise<Netw
 }
 ```
 
-Every call that computes returns a promise; await it. Values that need no call stay synchronous: profiles, a draft's summary and fee, an account's address and public key, `net.rules`, `net.economics` and `net.stage` at the next block, and the text forms of snapshots and selections. Code that awaits every SDK call runs unchanged on either entry, with two differences to know: `net.watch` with an address that is not valid on the network throws `InvalidAddress` at once on the WebAssembly entry, while through the plugin it reports an `error` event (with that `InvalidAddress`) and ends the watch; and `init()` rejects when the plugin is not of the package's release (0.1.x with 0.1.x).
+Every call that computes returns a promise; await it. Values that need no call stay synchronous: profiles, a draft's summary and fee, an account's address and public key, `net.rules`, `net.economics` and `net.stage` at the next block, and the text forms of snapshots and selections. Code that awaits every SDK call runs unchanged on either entry: the error codes, the checks of `connect`'s options and the skipping of a relay that answers with a redirect are the same. What differs through the plugin:
+
+- `init()` also rejects with `SdkNotInitialized` when the plugin is not of the package's release (0.1.x with 0.1.x). There is no `initSync`.
+- `net.watch` with an address that is not valid on the network reports an `error` event (with that `InvalidAddress`) and ends the watch; the WebAssembly entry throws `InvalidAddress` at once.
+- `NodeUnavailable` and `Timeout` carry no `details.url`: the WebAssembly entry names the relay's URL there, and the plugin names none (its `NodeUnavailable` has `details.reason` instead). Branch on the error's class or `code`.
+- `connect` takes no `transport`: the plugin makes every request, through a proxy only when the app's environment names one (`HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY`).
+- Error messages are worded differently in places; the codes and the documented details are the interface.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -150,7 +156,7 @@ export function unlock(net: Network, keystore: string, password: string): Promis
 ## 7. Mobile
 
 - **Relays.** Requests leave from the plugin's own HTTP client, so Android's cleartext rule and iOS App Transport Security, which govern the platform's HTTP stacks, do not stop plain HTTP; use the hosted devnet endpoint over HTTPS anyway for anything beyond a local emulator (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). The Android emulator reaches the host machine at `10.0.2.2`, the iOS simulator at `127.0.0.1`; allow those relay URLs in the capability.
-- **TLS on Android.** On Android the plugin verifies HTTPS relays against the Mozilla root certificates built into it, not the device's certificate store, since the platform's verifier needs the app's Java environment. A relay with a certificate from a public authority works; one from a private or user-installed authority is refused.
+- **TLS on Android.** On Android the plugin verifies HTTPS relays against the Mozilla root certificates built into it, not the device's certificate store, since the platform's verifier needs the app's Java environment. A relay with a certificate from a public authority works; one from a private or user-installed authority is refused. The roots are those of the `webpki-root-certs` version in the app's `Cargo.lock`, so a root Mozilla adds or distrusts later reaches the app only with a rebuild: run `cargo update -p webpki-root-certs` in `src-tauri` before each release. No certificate revocation is checked there, so a relay's revoked certificate is accepted until it expires.
 - **Keys.** The plugin is the native boundary the mobile wallet's architecture requires before create and import controls exist. Use the `"mobile"` keystore preset and the platform's secure storage for the keystore text.
 - **Builds.** The plugin builds for Android (`aarch64-linux-android`) with the Android NDK; it has not been run on a device or an emulator yet. An iOS build needs a macOS machine with Xcode.
 

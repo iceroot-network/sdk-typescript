@@ -52,7 +52,7 @@ A local devnet runs on the machine that starts it and is the default for develop
 
 ## The hosted devnet endpoint
 
-Integrators who cannot run a local devnet, and phones, use a hosted devnet endpoint over HTTPS. Android and iOS refuse plain HTTP to a remote host, so a phone or emulator always needs this endpoint. It needs an access token, sent as a request header; the URL, the header name and the token are handed out with access to the endpoint.
+Integrators who cannot run a local devnet, and phones, use a hosted devnet endpoint over HTTPS. Android and iOS refuse plain HTTP to a remote host from their own HTTP stacks, so a phone or emulator on the WebAssembly entry needs this endpoint; the Tauri plugin's requests leave from Rust and are not subject to that rule, but a remote devnet is still reached over HTTPS. It needs an access token, sent as a request header; the URL, the header name and the token are handed out with access to the endpoint.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -67,8 +67,9 @@ const net = await connect(
 - A Rust backend passes the header in `HttpOptions::headers` and builds its client with `HttpClient::with_options` (see the documentation of `iceroot_sdk::api::HttpOptions`).
 - Never commit the token. Read it from the environment in scripts, and from the app's settings in apps.
 - The endpoint answers CORS preflight requests without the token, so browser pages and webviews can call it directly when their CSP allows the origin.
+- The token goes to the relays only: neither entry follows a redirect, and a relay that answers with one is skipped. A custom transport must honour `redirect: "manual"` for that to hold.
 
 ## Emulators and simulators
 
-- **Android emulator.** The host machine is `10.0.2.2` from inside the emulator. A page's own requests to it over plain HTTP are refused unless the app allows cleartext for that host; the Tauri plugin's requests leave from Rust and are not subject to that rule, but its capability must allow the relay. Prefer the hosted HTTPS endpoint; the plugin checks its certificate against the Mozilla root certificates built into it.
+- **Android emulator.** The host machine is `10.0.2.2` from inside the emulator. A page's own requests to it over plain HTTP are refused unless the app allows cleartext for that host; the Tauri plugin's requests leave from Rust and are not subject to that rule, but its capability must allow the relay. Prefer the hosted HTTPS endpoint; the plugin checks its certificate against the Mozilla root certificates built into it (fixed when the app is built, with no revocation check; see the [Tauri quickstart](quickstart/tauri.md#7-mobile)).
 - **iOS simulator.** The simulator shares the host's network, so `127.0.0.1` reaches a local devnet, and App Transport Security allows plain HTTP to localhost only. A physical iPhone needs the HTTPS endpoint.

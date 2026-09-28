@@ -339,8 +339,8 @@ export class UnsupportedOnNetwork extends IceRootError {
 
 /**
  * A function was called before `init()` or `initSync()` loaded the WebAssembly module; with the
- * Tauri entry, the page is not in a Tauri webview, or the application did not register the plugin
- * or allow the call.
+ * Tauri entry, the page is not in a Tauri webview, the application did not register the plugin or
+ * allow the call, or the plugin is of another release than the package.
  */
 export class SdkNotInitialized extends IceRootError {
   constructor(message = "the SDK is not initialized: call init() or initSync() before any other function") {
