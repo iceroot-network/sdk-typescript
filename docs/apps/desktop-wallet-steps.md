@@ -187,16 +187,11 @@ export type SendResult =
   | { readonly state: "rejected" | "dropped" | "not-yet"; readonly id: string; readonly reason?: string };
 
 /**
- * Result step: the key is opened now, after the Review step. The plugin signs the draft that step
- * showed; submits it and waits for a block. Replaces the second half of demoTransfer and demoVote.
+ * Result step, after the Review step: the plugin signs the draft that step showed with the key
+ * `unlock` opened; submits it and waits for a block. Replaces the second half of demoTransfer and demoVote.
  */
 export async function send(net: Network, draft: Draft, account: Account): Promise<SendResult> {
-  let signed;
-  try {
-    signed = await draft.sign(account);   // WrongKey if the account is not the draft's sender
-  } finally {
-    await account.release();   // the key is needed only for the signing
-  }
+  const signed = await draft.sign(account);   // WrongKey if the account is not the draft's sender
   const result = await net.submit(signed);
   if (result.status !== "accepted") return { state: "rejected", id: signed.id, reason: result.reason };
   try {
@@ -214,8 +209,8 @@ What changes for the screens:
 
 - **Build with no key.** `from` is the sender's public key or address, or an open `Account`. The public key works for every account. An address works once the account has sent a transaction; for a new account the builder refuses it with `InvalidArgument`, which is why the wallet keeps the public key with the address and builds with `await senderOf(net, wallet)`. Do not open a key just to get a quote.
 - **Details.** `SendFlow.tsx`'s `canReview` drops the `DEMO-` and 18-decimal patterns: check each recipient with `await Address.check(text, net)` and each amount with `await Amount.parse` (its `InvalidAmount` says what is wrong), as the fields change. The recipient and memo limits come from `transferLimits(net)`.
-- **Review.** Nothing is signed and no key is open. Render `draft.summary.lines` (one line per effect, then the memo and the fee), `draft.fee` and `draft.summary.total`, all computed from the transaction's own fields. The demo's fee of 0.1 ROOT per recipient and `DEMO_VOTE_FEE` go away: the fee is `draft.fee`, resolved from the network's fee floor.
-- **Result.** The holder confirms, the wallet opens the key (`unlock`, which checks the saved address), and `send` signs, releases the key and submits. "Confirmed in block N", never "final": today's devnet has no finality (`net.capabilities.has("finality")` is false). A `rejected` result with reason `nonce` means the account sent another transaction since the draft was built: build again and show the new review. A `rejected` result of a vote with node code `ERR_OFFLINE` means the node has not seen a chosen validator running yet (step 5). A `not-yet` result says to check the history later; it is not a failure.
+- **Review.** Nothing is signed, and no key is needed. Render `draft.summary.lines` (one line per effect, then the memo and the fee), `draft.fee` and `draft.summary.total`, all computed from the transaction's own fields. The demo's fee of 0.1 ROOT per recipient and `DEMO_VOTE_FEE` go away: the fee is `draft.fee`, resolved from the network's fee floor.
+- **Result.** The holder confirms. The wallet opens the key if it is not open yet (`unlock`, which checks the saved address), and `send` signs and submits. As in the reference wallet, the key then stays open for the session: locking, switching profiles, closing the window or a few minutes without input release it (`lockAll`). "Confirmed in block N", never "final": today's devnet has no finality (`net.capabilities.has("finality")` is false). A `rejected` result with reason `nonce` means the account sent another transaction since the draft was built: build again and show the new review. A `rejected` result of a vote with node code `ERR_OFFLINE` means the node has not seen a chosen validator running yet (step 5). A `not-yet` result says to check the history later; it is not a failure.
 - **Balances.** The demo subtracted amounts itself. After a confirmed result, read the account again (`loadWalletData`); never compute a balance locally.
 
 ## 4. Replace the rules of `vote.ts`
@@ -300,14 +295,14 @@ export async function stalePicks(net: Network, kept: string): Promise<string[]> 
 
 - **The review screen** shows `selection.topUpNotice` and `selection.sizeNotice` when they are set, then each pick with its share, its source and its reasons. On today's devnet Reliability, Maximum Rewards and Support Newcomers have no eligible validators (no payouts, declarations or 7 days of seats yet) and top up from Diversity; the notice says so, and the screen must show it.
 - **Slow read.** Show that the snapshot is being read, read it once per visit of the page and reuse it for every "Draw again". `fromNode(net, { firstForged: false, registrations: false })` reads only the list, when the modes that need the rest are not offered.
-- **A new devnet accepts no votes at first.** The node refuses a vote for a validator it has not seen running, and on a new devnet that is every validator until the first round has passed ([devnet](../devnet.md#a-new-devnet-and-its-first-round)). The snapshot leaves them out, so a selection may be short until then. A test that must vote early waits until at least 20 validators in `net.validators.list()` have a `version`, bounded by twice the seats in blocks.
+- **A new devnet accepts no votes at first.** The node refuses a vote for a validator it has not seen running, and on a new devnet that is every validator until the first round has passed ([devnet](../devnet.md#a-new-devnet-and-its-first-round)). The snapshot leaves them out, so a selection may be short until then. A test that must vote early waits until as many active validators in `net.validators.list()` have a `version` as the vote will name (20 in the reference wallet's devnet test), and gives up after twice the seats in blocks.
 - **Chain text.** Show validator names and every reason's text through `safeText` ([rule 16](../rules.md)).
 - **Signing.** Build the vote with `prepareVote(net, await senderOf(net, wallet), selection.vote)` and show the draft as for a transfer. The snapshot leaves out validators a node would refuse a vote for (not resigned, no node of theirs seen running; see [Vote selection](../vote.md#signing-the-vote)), but one can still stop between the snapshot and the submission: show the node's message (node code `ERR_OFFLINE`) and offer to read the validators again. After a confirmed result, keep `Selection.serialize(selection)` with the wallet in the profile's storage (it holds validator names and the draw, nothing secret).
 - **Later.** When the wallet opens, run `stalePicks` on the kept selection and tell the holder which picks no longer meet their criteria, for example "genesis_12: Validator resigned for now". Offer a new selection; never sign one automatically.
 
 ## 6. Rewire `App.tsx` and the pages
 
-- `openDemo()` loaded the fixture into a demo profile. A real profile connects and loads `loadWalletData(net, profile.wallets)` with no key open, since reading and quoting need only the address and the public key. The holder enters the keystore's password only to confirm a transaction (or to see the recovery phrase), and `src/keys.ts` then opens the account in the plugin and checks it against the saved address.
+- `openDemo()` loaded the fixture into a demo profile. A real profile connects and loads `loadWalletData(net, profile.wallets)` with no key open, since reading and quoting need only the address and the public key. The holder enters the keystore's password only when a transaction is confirmed with no key open (or to see the recovery phrase), and `src/keys.ts` then opens the account in the plugin and checks it against the saved address.
 - `simulateTransfer(entries, memo)` becomes the Details, Review and Result steps of step 3: `prepareTransfer` with `senderOf`, the review, then `unlock` and `send`. `SendFlow`'s `onTransfer` becomes asynchronous, and `demoBalance?: number` becomes `balance?: bigint`, formatted with `formatAmount`.
 - `simulateVote(walletId, vote)` becomes `prepareVote` and `send`, with the entries of step 4 or 5.
 - `DemoOverview`, `DemoWallets`, `DemoAssets`, `DemoActivity`, `DemoGovernance` and `DemoReceive` read `WalletData` and `historyOf`. Rename them once they no longer read the fixture.

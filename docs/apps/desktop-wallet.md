@@ -92,14 +92,14 @@ export function isNetworkChanged(error: unknown): boolean {
 - Show "Testnet" and "Mainnet" as not yet available. There is no SDK profile for them until their geneses exist.
 - On `NetworkMismatch`, tell the holder the devnet changed and ask before pinning the new identity.
 - **The interim path.** On the WebAssembly entry, `init()` takes the `.wasm` file's URL and `connect` takes a transport. Inside Tauri the transport is the HTTP plugin's `fetch`, so the request leaves from Rust: `connect(profile, isTauri() ? { transport: tauriFetch } : {})`, with `import { fetch as tauriFetch } from "@tauri-apps/plugin-http"` and `import { isTauri } from "@tauri-apps/api/core"`. Outside Tauri, pass nothing: the default transport is the page's own `fetch`. Never pass `globalThis.fetch` itself. The SDK calls the transport as a method, and a browser's `fetch` refuses another `this` with `TypeError: Illegal invocation`. Use an arrow such as `(input, init) => fetch(input, init)` if you must name it. `src/network.ts` of the reference wallet is this, and [Concepts](../concepts.md#networks-profiles-and-connect) has the rule. The native plugin needs no transport at all.
-- **Headers.** `connect` accepts `headers` on both entries, for a hosted endpoint that needs a token ([devnet](../devnet.md#the-hosted-devnet-endpoint)). A name must be a valid HTTP header name and a value must be printable ASCII, so trim what the holder pasted. The error names the header and never shows the value. The local relay of a desktop wallet needs none.
+- **Headers.** `connect` accepts `headers` on both entries, for a hosted endpoint that needs a token ([devnet](../devnet.md#the-hosted-devnet-endpoint)). A name must be an HTTP token and a value visible ASCII, spaces and tabs, so trim what the holder pasted. The error names the header and never shows the value. The local relay of a desktop wallet needs none.
 
 ### 3. Wallets: watch, create, import
 
 - **Watch.** `WalletFlows.tsx` saves an address. Check it with `await Address.check(text, net)` and store `(await Address.parse(text, net)).toString()`. Drop "Address formats are not verified in this preview."
 - **Create.** Generate `await Mnemonic.generate()` (24 words), show it for backup, confirm a few words, then ask for a password and encrypt the phrase into a keystore with the desktop preset. Store the keystore's text form with the wallet in the profile (it is encrypted; the password is never stored), and the address and the public key (`account.publicKey`) in the `WalletReference`. The public key lets the wallet build drafts with no key open ([step 5](#5-transfers)). Further addresses of the same phrase use `index: 1, 2, ...`.
 - **Import.** Replace "Import is coming soon." with phrase entry: `await Mnemonic.check(text)` for feedback (18, 21 or 24 words; fewer give `PhraseTooShort`), then the same keystore as for a new wallet.
-- **Unlock.** Open the wallet's account with `net.keys.fromKeystore(keystore, password, { account: 0, index })`: the plugin decrypts the keystore and derives the key, and the phrase never enters the page. Compare the account's address with the saved one every time, and refuse a key of another address. A wrong index, another wallet's keystore or a changed scheme each give a valid key of an address the holder never saw ([rule 17](../rules.md)). Opening a key needs a profile only, not a network, so unlock works with no connection. The key is opened for the signing, after the review, not when the screen opens. `release()` the account on lock, on window close and after a period of inactivity; the plugin also wipes every key the page opened when the page reloads or the window closes.
+- **Unlock.** Open the wallet's account with `net.keys.fromKeystore(keystore, password, { account: 0, index })`: the plugin decrypts the keystore and derives the key, and the phrase never enters the page. Compare the account's address with the saved one every time, and refuse a key of another address. A wrong index, another wallet's keystore or a changed scheme each give a valid key of an address the holder never saw ([rule 17](../rules.md)). Opening a key needs a profile only, not a network, so unlock works with no connection. The key is opened when the holder confirms a reviewed transaction, not when a screen opens, and then stays open for the session. `release()` the account on lock, on a profile switch, on window close and after a period of inactivity (`lockAll`); the plugin also wipes every key the page opened when the page reloads or the window closes.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -197,23 +197,19 @@ export async function prepareTransfer(net: Network, from: Sender, entries: Trans
   return net.build.transfer({ from, to, memo: memo.trim() });
 }
 
-/** Result step: the key is opened now, after the Review step. The plugin signs what that step showed; submit, and follow it to a block. */
+/** Result step, after the Review step: the plugin signs what that step showed with the key `unlock` opened; submit, and follow it to a block. */
 export async function sendTransfer(net: Network, draft: Draft, account: Account) {
-  try {
-    const signed = await draft.sign(account);
-    const result = await net.submit(signed);
-    if (result.status !== "accepted") return { state: "rejected" as const, reason: result.reason, id: signed.id };
-    const status = await net.transactions.wait(signed.id, { until: "confirmed" });
-    if (status.state === "dropped") return { state: "dropped" as const, id: signed.id };
-    return { state: status.state, id: signed.id, confirmations: status.confirmations };
-  } finally {
-    await account.release();   // a key is held only as long as it is needed
-  }
+  const signed = await draft.sign(account);   // WrongKey if the account is not the draft's sender
+  const result = await net.submit(signed);
+  if (result.status !== "accepted") return { state: "rejected" as const, reason: result.reason, id: signed.id };
+  const status = await net.transactions.wait(signed.id, { until: "confirmed" });
+  if (status.state === "dropped") return { state: "dropped" as const, id: signed.id };
+  return { state: status.state, id: signed.id, confirmations: status.confirmations };
 }
 ```
 
 - **Build without a key.** `from` is the sender's public key or address, or an open `Account`. The public key works for every account, including one that has never sent a transaction, so the wallet keeps it with the address ([step 3](#3-wallets-watch-create-import)) and builds with `await senderOf(net, wallet)`. An address works once the account has sent a transaction, since the node then learns its public key. For a new account the builder refuses an address with `InvalidArgument` ("the node does not know this address's public key until the account sends a transaction"). A watch-only wallet has no public key, so a quote for a new account needs the phrase.
-- **Sign after the review.** The Details and Review steps hold no key. The holder confirms, the wallet opens the key with `unlock` (which checks the address), signs the draft the Review step showed, and releases the key. `src/session.ts` of the reference wallet is this, with `send`, `prepareVote`, `prepareRegistration` and `prepareResignation`.
+- **Sign after the review.** The Details and Review steps hold no key. The holder confirms, the wallet opens the key with `unlock` if it is not open yet (which checks the address), and signs the draft the Review step showed. The key stays open for the session until `lockAll`, as in the reference wallet; a wallet that asks for the password on every transaction releases it right after signing and drops it from `open`. `src/session.ts` of the reference wallet is this, with `send`, `prepareVote`, `prepareRegistration` and `prepareResignation`.
 - **Two contexts.** A wallet whose network code and key live in different contexts, such as a browser extension, does not pass a `Draft` object across. It passes `draft.serialize()`, the signing context restores it with `Draft.deserialize(bytes, profile)` (which recomputes the summary and refuses another network), shows that summary, and signs only if the bytes still give the summary the holder saw. See `reviewDraft` and `signDraft` in the same file, and the [browser wallet guide](browser-wallet.md#7-transfers-and-votes).
 - The Review step renders `draft.summary` and `draft.fee`. The demo's "one receipt per recipient" goes away: a transfer to 12 recipients is one transaction with one id and one fee.
 - The form's limits come from `net.rules.transfer.maxRecipients` and `net.rules.memo.maxBytes`; keep counting memo bytes with `TextEncoder`, as `memoBytes` does.
@@ -261,7 +257,7 @@ export function prepareVote(net: Network, from: Sender, entries: VoteEntry[]) {
 - A validator account cannot vote from the IceRoot genesis. Check `(await net.accounts.get(address)).validatorName` and hide the vote editor for validator accounts, and let the builder enforce the rule.
 - `evenVote` is replaced by the [vote library](../vote.md)'s `split`, and the modes come from its `select` over `VoteSnapshot.fromNode(net)`, with each pick's reasons on the review screen and `check` of the saved selection when the wallet opens, all from `@iceroot-network/sdk/tauri/vote` and awaited. Do not implement the modes in the app.
 - **The snapshot is slow.** `VoteSnapshot.fromNode(net)` makes one request for each validator that has forged, on top of the list and the registrations, and a node allows about 100 requests per minute per client. With the other reads of the page the SDK waits for budget, so on a devnet the read can take a minute or more. Read it once per visit of the vote page, show that it is going on, and reuse it for every redraw. `src/voteModes.ts` does this.
-- **A new devnet accepts no votes at first.** The snapshot leaves out validators whose node the node has not seen running, and the node refuses a vote that names one (node code `ERR_OFFLINE`). On a new devnet that is every validator until the first round has passed ([devnet](../devnet.md#a-new-devnet-and-its-first-round)). Show the node's message, offer to read again later, and do not treat it as a fault of the wallet. A test that must vote early waits until at least 20 validators in `net.validators.list()` have a `version`, and gives up after twice the seats in blocks. `isOfflineValidator` in `src/session.ts` recognises the refusal.
+- **A new devnet accepts no votes at first.** The snapshot leaves out validators whose node the node has not seen running, and the node refuses a vote that names one (node code `ERR_OFFLINE`). On a new devnet that is every validator until the first round has passed ([devnet](../devnet.md#a-new-devnet-and-its-first-round)). Show the node's message, offer to read again later, and do not treat it as a fault of the wallet. A test that must vote early waits until as many active validators in `net.validators.list()` have a `version` as the vote will name (20 in the reference wallet's devnet test), and gives up after twice the seats in blocks. `isOfflineValidator` in `src/session.ts` recognises the refusal.
 - Validator names and reason texts go through `safeText` before they are shown.
 
 ### 6. Validator registration and resignation
@@ -280,7 +276,7 @@ Gate each later screen on `net.capabilities.has(...)`: names (`names`), swaps an
 - "Confirmed", never "final", on today's devnet ([rule 5](../rules.md)).
 - No phrase, key or password in the profile state file, `localStorage` or any unencrypted file; phrases are kept only as keystores, and keys only in the plugin ([rule 12](../rules.md)).
 - The review screen shows the draft ([rule 15](../rules.md)); votes are never recast automatically ([rule 7](../rules.md)).
-- Drafts are built with no key open, and the key is opened after the review and released after the signing ([rule 15](../rules.md)).
+- Drafts are built with no key open, and a key is opened only when the holder confirms a reviewed transaction ([rule 15](../rules.md)).
 - Chain text (memos, names, addresses in records) is shown through `safeText` ([rule 16](../rules.md)).
 - A reopened wallet's key is checked against the saved address ([rule 17](../rules.md)).
 
