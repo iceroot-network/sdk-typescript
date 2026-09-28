@@ -156,8 +156,8 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
   // scheme "bip32": new identities (24 words, hardened derivation at account and index).
   // Both need the profile only: no network, so this runs in a page with `connect-src 'none'`.
   // `args.address` is the address the holder saw and the wallet saved. A wrong scheme, index or phrase
-  // still gives a valid key, of another address, so a key of any other address is refused. Only the
-  // create and import operation passes `checkAddress = false`: it has no saved address yet.
+  // still gives a valid key, of another address, so a key of any other address is refused. Only
+  // `newIdentity` (create and import) passes `checkAddress = false`: it has no saved address yet.
   function withAccount(args, use, checkAddress = true) {
     const profile = profileFor(args.devnet);
     const account = args.scheme === "legacy-passphrase"
@@ -183,8 +183,10 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
   const ops = {
     ping: () => ({ ready: true }),
     generatePhrase: () => Sdk.Mnemonic.generate(),
-    // Create and import: the wallet page saves the returned publicKey and address with the identity.
-    identity: (args) => withAccount(args, publicIdentity, false),
+    // Create and import: the identity page saves the returned publicKey and address with the identity.
+    newIdentity: (args) => withAccount(args, publicIdentity, false),
+    // A saved identity, for a website's `connect`: checked against the saved address like every other operation.
+    identity: (args) => withAccount(args, publicIdentity),
     // `args.expected` is { origin, address, publicKey }: the requesting origin and the selected identity.
     parseSignIn: (args) => toJson(Sdk.SignIn.parse(args.message, profileFor(args.devnet), { ...args.expected, now: new Date() })),
     signSignIn: (args) => withAccount(args, (account, profile) => {
@@ -232,7 +234,7 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
 - **Existing identities.** A vault saved before the SDK holds a 12-word phrase whose key is the SHA-256 of the phrase. Treat every existing vault as `scheme: "legacy-passphrase"`; the SDK's legacy import gives the same public key and address as today. Keep a word-count and word-list check on this restore path, because the legacy import itself accepts any text.
 - **New identities.** Create with `generatePhrase` (24 words) and store `scheme: "bip32"` with `account: 0, index: 0`. Restore accepts 18, 21 or 24 words.
 - **Vault format.** Add `scheme`, `account` and `index` to the authenticated identity metadata (the AES-GCM additional data), under a new vault key version. The same phrase gives different keys under the two schemes, so the scheme must never be guessed.
-- **Public identity next to the vault.** When an identity is created or imported, the `identity` operation returns its `publicKey` and `address`. Save both with the metadata (they are public, so they need no encryption). The wallet page builds drafts from the saved public key with no key open, and every later sandbox operation gets the saved `address`, so the sandbox can refuse a key of another address ([rule 17](../rules.md)). When the identity is unlocked, check that the saved public key gives the saved address (`Address.fromPublicKey(publicKey, profile).toString()`) and refuse the identity if it does not.
+- **Public identity next to the vault.** When an identity is created or imported, the `newIdentity` operation returns its `publicKey` and `address`. Save both with the metadata (they are public, so they need no encryption). The wallet page builds drafts from the saved public key with no key open, and every later sandbox operation, `identity` included, gets the saved `address`, so the sandbox can refuse a key of another address ([rule 17](../rules.md)). Before it builds, the wallet page checks that the saved public key gives the saved address (`Sdk.Address.fromPublicKey(publicKey, net).toString()`, as `senderOf` in the desktop wallet does) and refuses the identity if it does not; the identity page has no SDK of its own for that.
 - **Approval screens.** The identity page asks the sandbox (`parseSignIn`) for the checked fields it displays, so it needs no SDK of its own and its CSP stays unchanged.
 - **Devnet setting.** The identity page passes the wallet's stored devnet setting (`{ relay, nethash }`, written by the wallet page when it connects) to every sandbox operation as `devnet`.
 - Keep the rest: the password rules, the idle lock, the storage event handling, the manual sign-in flow (its output JSON keeps the `publicKey`, `signature`, `network` and `algorithm` fields the portal accepts).
@@ -354,7 +356,7 @@ function voteEntries(basket) {
 }
 ```
 
-On a new devnet a vote for any validator is refused with `ERR_OFFLINE` until the node has seen that validator's node running, which takes the first round ([Devnet](../devnet.md#a-new-devnet-and-its-first-round)). Show the node's message and offer a retry later. The vote library's snapshot (`VoteSnapshot.fromNode`) makes one request per validator that forged, within the node's 100 requests per minute, so on a devnet it is slow: read it once per visit of the vote page and show that it is loading ([Vote](../vote.md)).
+On a new devnet a vote for any validator is refused with `ERR_OFFLINE` until the node has seen that validator's node running, which takes the first round ([Devnet](../devnet.md#a-new-devnet-and-its-first-round)). Show the node's message and offer a retry later. The vote library's snapshot (`VoteSnapshot.fromNode`) makes one request per validator that forged, within the node's allowance of about 100 requests per minute, so on a devnet it is slow: read it once per visit of the vote page and show that it is loading ([Vote](../vote.md)).
 
 The basket's `shareMax()` comes from `net.rules.vote.maxBasisPointsPerEntry` (10,000 on today's devnet, so no cap; 500 from the IceRoot genesis).
 
