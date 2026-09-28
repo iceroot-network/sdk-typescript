@@ -45,15 +45,16 @@ export class Chain {
   readonly capabilities: Capabilities;
 
   private constructor(info: ChainInfo, owned: boolean) {
+    // First, so that the plugin's chain is freed even when the description below is refused.
+    if (owned) {
+      dropWith(this, "chain_free", { chain: info.chain });
+    }
     handles.set(this, info.chain);
     this.profile = profileFromJson(info.profile);
     this.nethash = info.nethash;
     this.networkByte = info.networkByte;
     this.token = tokenFromJson(info.token);
     this.capabilities = capabilitiesFrom(info.capabilities);
-    if (owned) {
-      dropWith(this, "chain_free", { chain: info.chain });
-    }
   }
 
   /**

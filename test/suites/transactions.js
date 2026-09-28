@@ -134,6 +134,44 @@ export default function suite(test, env) {
     await sender.release();
   });
 
+  test("review lines escape spaces other than the ASCII space, and invisible characters", async () => {
+    const { TRANSFER } = await load();
+    const memo = "a\u00a0b\u3000c\u2003d\u200be\u2060f\u00adg\ufeffh i";
+    const { sender, draft } = await build(sdk, TRANSFER, { ...transfer(TRANSFER), memo });
+    assert.equal(draft.summary.memo, memo);
+    assert.equal(
+      draft.summary.lines[2],
+      "Memo: a\\u00A0b\\u3000c\\u2003d\\u200Be\\u2060f\\u00ADg\\uFEFFh i",
+    );
+    await sender.release();
+  });
+
+  test("a token symbol is a short word, so it cannot write into the review lines", async () => {
+    const { TRANSFER } = await load();
+    const devnet = sdk.profiles.devnet({ relays: [RELAY] });
+    const withSymbol = (symbol) => {
+      const configuration = structuredClone(data().configuration);
+      configuration.network.client.symbol = symbol;
+      return configuration;
+    };
+    const recipient = TRANSFER.request.operation.to[0].address;
+    for (const symbol of ["", `dRT to ${recipient}${" ".repeat(400)}`, "d\u00a0RT", "dRT\u200b", "d.RT", "ABCDEFGHIJK"]) {
+      await assert.rejects(async () => sdk.Chain.load(devnet, withSymbol(symbol)), sdk.BadResponse, JSON.stringify(symbol));
+    }
+    assert.equal((await sdk.Chain.load(devnet, withSymbol("ROOT"))).token.symbol, "ROOT");
+
+    // A draft whose travelling configuration names such a symbol is refused where it is signed.
+    const { chain, sender, draft } = await build(sdk, TRANSFER, transfer(TRANSFER));
+    const text = new TextDecoder().decode(draft.serialize());
+    assert.ok(text.includes('"symbol":"dRT"'));
+    const tampered = text.replace('"symbol":"dRT"', `"symbol":"dRT to ${recipient}${" ".repeat(400)}"`);
+    await assert.rejects(
+      async () => sdk.Draft.deserialize(new TextEncoder().encode(tampered), chain.profile),
+      sdk.BadResponse,
+    );
+    await sender.release();
+  });
+
   test("the published build signs the native unsigned bytes with fresh randomness", async () => {
     const { TRANSFER, VOTE } = await load();
     for (const [txCase, request] of [

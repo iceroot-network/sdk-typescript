@@ -357,7 +357,7 @@ const signedTx = SignedTransaction.deserialize(signedBytes, net.profile);
 await net.submit(signedTx);
 ```
 
-The summary comes from the transaction's own bytes: the operation, the recipients and amounts, the nonce, the fee and the memo are exactly what will be signed. The fee's source (`floor`) and the token symbol in the review lines come from the network configuration that travels with the draft; the pinned network hash identifies the chain but does not cover that configuration. A signing context that does not trust the context that built the draft judges the fee by its amount, not by its source.
+The summary comes from the transaction's own bytes: the operation, the recipients and amounts, the nonce, the fee and the memo are exactly what will be signed. The fee's source (`floor`) and the token symbol in the review lines come from the network configuration that travels with the draft; the pinned network hash identifies the chain but does not cover that configuration. A signing context that does not trust the context that built the draft judges the fee by its amount, not by its source. The symbol cannot change what a line says: a configuration whose symbol is not 1 to 10 ASCII letters and digits does not load (`BadResponse`), and the review lines escape every space but the ASCII space and every invisible character, so no text hides in blank space.
 
 ## Messages and sign-in
 

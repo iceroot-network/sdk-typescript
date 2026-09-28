@@ -3,7 +3,7 @@
 
 import type { AssetId, TokenInfo } from "../amount.js";
 import type { Economics, Rules } from "../chain.js";
-import { InvalidArgument } from "../errors.js";
+import { BadResponse, InvalidArgument } from "../errors.js";
 
 export interface RulesJson extends Omit<Rules, "transfer" | "burn" | "maxAmount"> {
   readonly transfer: Omit<Rules["transfer"], "minAmount"> & { readonly minAmount: string };
@@ -42,9 +42,25 @@ export function economicsFromJson(text: string): Economics {
   };
 }
 
-/** The token in the bindings' JSON text. */
+/**
+ * A token symbol the SDK shows: 1 to 10 ASCII letters and digits. The symbol comes from the
+ * network configuration a relay serves or a draft carries, which the pinned network hash does not
+ * cover, and it is written into every amount of a draft's review lines.
+ */
+const TOKEN_SYMBOL = /^[A-Za-z0-9]{1,10}$/;
+
+/**
+ * The token in the bindings' JSON text. A symbol other than 1 to 10 ASCII letters and digits is
+ * refused with `BadResponse`, as a configuration that does not load.
+ */
 export function tokenFromJson(text: string): TokenInfo {
   const token = JSON.parse(text) as { assetId: string; name: string; symbol: string; decimals: number };
+  if (typeof token.symbol !== "string" || !TOKEN_SYMBOL.test(token.symbol)) {
+    throw new BadResponse(
+      "the network configuration's token symbol is not 1 to 10 ASCII letters and digits",
+      { reason: "token-symbol" },
+    );
+  }
   return Object.freeze({ ...token, assetId: token.assetId as AssetId });
 }
 

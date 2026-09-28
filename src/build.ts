@@ -162,9 +162,11 @@ export interface DraftSummary {
   readonly secondSignature: boolean;
   /**
    * One readable line per effect, then the memo and the fee. Control characters, line and
-   * paragraph separators and bidirectional formatting characters are written as `\uXXXX`
-   * escapes, and a backslash as `\\`, so no text from the transaction or the network can start a
-   * line of its own or reorder what the screen shows.
+   * paragraph separators, bidirectional formatting and other invisible format characters, and
+   * every space but the ASCII space are written as `\uXXXX` escapes, and a backslash as `\\`, so
+   * no text from the transaction or the network can start a line of its own, hide in blank
+   * space or reorder what the screen shows. The token symbol is 1 to 10 ASCII letters and
+   * digits: a network configuration with any other symbol does not load.
    */
   readonly lines: readonly string[];
 }

@@ -129,8 +129,12 @@ export function basisPointsText(basisPoints: number): string {
   return fraction === 0 ? `${whole}%` : `${whole}.${String(fraction).padStart(2, "0").replace(/0$/, "")}%`;
 }
 
-/** Control characters (C0, DEL, C1), line and paragraph separators, bidirectional formatting characters and the backslash. */
-const UNSAFE_TEXT = /[\\\p{Cc}\p{Zl}\p{Zp}\p{Bidi_Control}]/gu;
+/**
+ * Control characters (C0, DEL, C1), line and paragraph separators, bidirectional formatting
+ * characters, format characters (invisible ones such as zero-width spaces and joiners), every
+ * space but the ASCII space, and the backslash.
+ */
+const UNSAFE_TEXT = /[\\\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Bidi_Control}]|(?! )\p{Zs}/gu;
 
 /**
  * `text` safe for one line of a review screen: every character of {@link UNSAFE_TEXT} is written as
