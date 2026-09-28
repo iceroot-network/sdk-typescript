@@ -846,6 +846,80 @@ export default function suite(test, env) {
     await assert.rejects(net.names.resolve("genesis_5"), sdk.BadResponse);
   });
 
+  test("a watch follows a height that went down, and never reports a transaction twice", async () => {
+    const history = JSON.parse((await fixture("wallet-transactions")).body);
+    const page = (data) => json(200, { ...history, data });
+    const newest = history.data[0];
+    const { net, node } = await connected(
+      {
+        "GET /node/status": { behavior: "watch-status" },
+        // Where the account stands, its two new transactions, the newest left out, then back.
+        [`GET /wallets/${TEAM}/transactions`]: {
+          sequence: [page(history.data.slice(2)), page(history.data), page(history.data.slice(1)), page(history.data)],
+        },
+      },
+      {},
+      { height: 80, failing: false },
+    );
+    const events = [];
+    const blocks = () => events.filter((event) => event.type === "block").length;
+    const until = async (condition) => {
+      for (let i = 0; i < 500 * slow && !condition(); i++) {
+        await sleep(5);
+      }
+      assert.ok(condition(), JSON.stringify(events.map((event) => event.type)));
+    };
+    const statusReads = async () => (await node.requests()).filter((request) => request.path === "/node/status").length;
+    const polls = async (count) => {
+      const from = await statusReads();
+      for (let i = 0; i < 500 * slow && (await statusReads()) < from + count; i++) {
+        await sleep(5);
+      }
+    };
+    const stop = net.watch({ address: TEAM }, (event) => events.push(event), { intervalMs: 10 });
+    try {
+      await polls(2);
+      // One status far ahead of the chain, then the chain's own heights again.
+      await node.set({ height: 1_000_000 });
+      await until(() => blocks() === 1);
+      await node.set({ height: 81 });
+      await polls(3);
+      await node.set({ height: 82 });
+      await until(() => blocks() === 2);
+      await node.set({ height: 83 });
+      await until(() => blocks() === 3);
+      await polls(2);
+      const reported = events.filter((event) => event.type === "transaction").map((event) => event.transaction.id);
+      assert.equal(reported.filter((id) => id === newest.id).length, 1, JSON.stringify(reported));
+    } finally {
+      stop();
+    }
+  });
+
+  test("a height is taken only from a used answer that succeeded, and only as a 64-bit number", async () => {
+    // The plugin keeps its own height; this is the WebAssembly entry's.
+    if (!env.wasm) {
+      return;
+    }
+    const latest = JSON.parse((await fixture("blocks-last")).body);
+    const missing = "00".repeat(32);
+    const { net, node } = await connected({
+      "GET /blocks/last": json(200, latest, { "x-block-height": "99999999999999999999" }),
+      [`GET /transactions/${missing}`]: json(404, { statusCode: 404, error: "Not Found", message: "none" }, { "x-block-height": "5000" }),
+    });
+    await net.blocks.latest();
+    assert.equal(net.height, 80n);
+    assert.equal(await net.transactions.confirmed(missing), null);
+    assert.equal(net.height, 80n);
+    // A height far ahead is followed until the node's own status says otherwise.
+    await node.route("GET /blocks/last", json(200, latest, { "x-block-height": "1000000" }));
+    await net.blocks.latest();
+    assert.equal(net.height, 1_000_000n);
+    await net.node.status();
+    assert.equal(net.height, 80n);
+    assert.equal(net.rules.height, 81);
+  });
+
   test("watch-only accounts, and watching blocks and an account's transactions", async () => {
     const history = JSON.parse((await fixture("wallet-transactions")).body);
     assert.ok(history.data.length >= 3);

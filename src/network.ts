@@ -482,7 +482,10 @@ export class Network {
     };
   }
 
-  /** The height of the node's last block, as last read (by `node.status()` or any answer). */
+  /**
+   * The height of the node's last block, as last read: by `node.status()`, or from an answer that
+   * succeeded (its `X-Block-Height`) since then when that is higher.
+   */
   get height(): bigint {
     const seen = this.#relays.latestHeight;
     return seen !== undefined && seen > this.#height ? seen : this.#height;
@@ -523,13 +526,23 @@ export class Network {
     };
   }
 
-  /** Reads the node's status, and follows its height. */
+  /**
+   * Reads the node's status, and follows its height: the status is the node's own word, so a
+   * height an answer's header reported earlier gives way to it, even when it is lower.
+   */
   async refresh(): Promise<NodeStatus> {
     const status = await this.#read("nodeStatus", {}, records.nodeStatus);
-    if (status.height > this.#height) {
-      this.#height = status.height;
-    }
+    this.#follow(status.height);
     return status;
+  }
+
+  /** Follows the height of a status the node reported. */
+  #follow(height: bigint): void {
+    this.#height = height;
+    const seen = this.#relays.latestHeight;
+    if (seen !== undefined && seen > height) {
+      this.#relays.latestHeight = undefined;
+    }
   }
 
   /**
@@ -623,11 +636,7 @@ export class Network {
   async #build(operation: Operation, options: BuildOptions): Promise<Draft> {
     const facts = await readFacts(options.from, {
       read: (name, args, convert) => this.#read(name, args, convert),
-      noteHeight: (height) => {
-        if (height > this.#height) {
-          this.#height = height;
-        }
-      },
+      noteHeight: (height) => this.#follow(height),
       parseAddress: (text) => Address.parse(text, this.profile).toString(),
       addressOf: (publicKey) => Address.fromPublicKey(publicKey, this.profile).toString(),
       onlineFacts: (publicKey, account, status) =>

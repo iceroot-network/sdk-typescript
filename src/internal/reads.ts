@@ -51,6 +51,9 @@ export type Answer<T> = T | Promise<T>;
  */
 const WATCH_HISTORY_LIMIT = 50;
 
+/** Transaction ids a watch remembers having reported or seen, so none is reported twice. */
+const WATCH_SEEN_LIMIT = 1_000;
+
 /**
  * A block time in milliseconds for the default intervals and limits of waiting and watching:
  * the node's block time, kept within 1 to 600 seconds whatever the context reports.
@@ -367,7 +370,13 @@ export function watchPolling(
   let seen: Set<Hex> | undefined;
   const poll = async (watched: string | undefined): Promise<void> => {
     const status = await context.refresh();
-    if (signal.aborted || (height !== undefined && status.height <= height)) {
+    if (signal.aborted) {
+      return;
+    }
+    if (height !== undefined && status.height <= height) {
+      // A height that went down (another relay answered, or the last one was never the chain's)
+      // is where the watch stands now, so the next block is reported.
+      height = status.height;
       return;
     }
     const first = height === undefined;
@@ -393,7 +402,19 @@ export function watchPolling(
           }
         }
       }
-      seen = new Set(confirmed.map((record) => record.id));
+      // Every id seen so far, the most recent last, up to a limit: a transaction a page left out
+      // and a later page shows again is not new.
+      seen ??= new Set();
+      for (const record of [...confirmed].reverse()) {
+        seen.delete(record.id);
+        seen.add(record.id);
+      }
+      for (const id of seen) {
+        if (seen.size <= WATCH_SEEN_LIMIT) {
+          break;
+        }
+        seen.delete(id);
+      }
     }
   };
   void (async () => {

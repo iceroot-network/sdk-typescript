@@ -55,6 +55,9 @@ const MAX_DELAY_MS = 2_147_483_647;
  */
 const MAX_RETRY_WAIT_MS = 30_000;
 
+/** The largest block height an answer's `X-Block-Height` may carry (2^64 - 1, as the Rust client reads it). */
+const MAX_U64 = 18_446_744_073_709_551_615n;
+
 /** The most requests a window allows (2^32 - 1, the Rust client's `u32`). */
 const MAX_REQUESTS = 4_294_967_295;
 
@@ -355,7 +358,9 @@ export class Relays {
         throw error;
       }
       this.#answered = relay;
-      this.#note(answer.height);
+      if (answer.status >= 200 && answer.status < 300) {
+        this.#note(answer.height);
+      }
       return { ok: true, value };
     }
   }
@@ -427,11 +432,15 @@ export class Relays {
     }
   }
 
+  /** Notes a block height a node reported, if it is a 64-bit number. */
   #note(height: string | null): void {
     if (height === null || !/^[0-9]{1,20}$/.test(height.trim())) {
       return;
     }
     const value = BigInt(height.trim());
+    if (value > MAX_U64) {
+      return;
+    }
     if (this.latestHeight === undefined || value > this.latestHeight) {
       this.latestHeight = value;
     }
