@@ -127,7 +127,8 @@ jobs:
           path: sdk-typescript/test-results/
           retention-days: 7
 
-  # A Tauri 2 webview (WebKitGTK) under tauri-driver, in a container.
+  # A Tauri 2 webview (WebKitGTK) under tauri-driver, in a container: the WebAssembly build in the
+  # webview, then the native plugin.
   tauri:
     needs: production-merge
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.production-merge.result == 'success') }}
@@ -183,3 +184,7 @@ jobs:
         run: npm run build && npm run build:test
       - name: Tauri webview tests
         run: npm run test:tauri
+      # The SDK's test suites and vectors through the native plugin (sdk-rust's
+      # tauri-plugin-iceroot) in the Tauri example, under tauri-driver in the same container.
+      - name: Tauri plugin tests
+        run: npm run test:tauri-plugin

@@ -1,0 +1,38 @@
+[package]
+name = "iceroot-sdk-tauri-plugin-example"
+description = "A Tauri 2 application on the IceRoot SDK's native plugin: keys, signing and node requests in Rust, the SDK's TypeScript interface in the webview"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+publish = false
+
+# A standalone application, not part of another workspace.
+[workspace]
+
+# The application as a library too, as Tauri's mobile targets build it: the desktop binary
+# (src/main.rs) calls `run`, and on Android and iOS the platform's project loads the library.
+[lib]
+name = "iceroot_sdk_tauri_plugin_example_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = []
+# The plugin's test seams, for the SDK's own tests of this example (test:tauri-plugin); an
+# application never enables them.
+test-seams = ["tauri-plugin-iceroot/test-seams"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+# The IceRoot SDK's Tauri plugin, from the sdk-rust checkout next to this repository until
+# sdk-rust has a tagged release; an application depends on it by git tag.
+tauri-plugin-iceroot = { path = "../../../../sdk-rust/crates/tauri-plugin-iceroot" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+overflow-checks = true

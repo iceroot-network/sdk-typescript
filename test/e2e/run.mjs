@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 // The end-to-end tests against a local devnet:
 //
-//   ICEROOT_DEVNET_TOOLS=<devnet tooling> npm run test:e2e [-- --only node,chromium,quickstarts,wallet,rust]
+//   ICEROOT_DEVNET_TOOLS=<devnet tooling> npm run test:e2e [-- --only node,chromium,tauri,quickstarts,wallet,rust]
 //
 // Node and Chromium run the scenario of scenario.js at the same time, each funded by its own
-// genesis wallet. Then the documentation's quickstarts (quickstarts.e2e.ts) run, funded by the third
-// genesis wallet, then the example wallet (wallet.e2e.ts) from the same one, and last the Rust
-// SDK's end-to-end test, which also verifies the messages the TypeScript scenarios signed and reads
-// their transactions back. The node allows 100 requests a
-// minute from one address, so only the two scenarios run at the same time. Build the package
-// first (npm run build).
+// genesis wallet. Then the same scenario runs through the Tauri plugin's entry in the Tauri example
+// on Linux (test/contexts/tauri-plugin/run.mjs --e2e, in its container, DOCKER="sudo docker" if
+// docker needs it), funded by the first genesis wallet again once the Node scenario is done. Then the documentation's quickstarts
+// (quickstarts.e2e.ts) run, funded by a team wallet, then the example wallet (wallet.e2e.ts) from the
+// same one, and last the Rust SDK's end-to-end test, which also verifies the messages the TypeScript
+// scenarios signed and reads their transactions back. The node allows 100 requests a minute from
+// one address, so only the first two scenarios run at the same time. Build the package first
+// (npm run build, and npm run build:test for the Tauri job).
 //
 // Without a devnet in the environment (ICEROOT_E2E_RELAY), this script runs itself through
 // sdk-rust's tools/e2e/devnet.sh, from the sdk-rust checkout next to this repository or from
@@ -24,7 +26,7 @@ import { parseArgs } from "node:util";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const sdkRust = resolve(process.env.SDK_RUST_DIR ?? join(root, "..", "sdk-rust"));
-const JOBS = ["node", "chromium", "quickstarts", "wallet", "rust"];
+const JOBS = ["node", "chromium", "tauri", "quickstarts", "wallet", "rust"];
 const { values } = parseArgs({ options: { only: { type: "string", default: JOBS.join(",") } } });
 const selected = new Set(values.only.split(",").map((name) => name.trim()));
 for (const name of selected) {
@@ -97,6 +99,10 @@ if (process.env.ICEROOT_E2E_RELAY === undefined) {
     );
   }
   await Promise.all(typescript);
+  if (selected.has("tauri")) {
+    const status = await run("tauri", process.execPath, ["test/contexts/tauri-plugin/run.mjs", "--e2e"], { ICEROOT_E2E_FUNDER: "genesis-1" });
+    scenarios.push(["Tauri plugin", status]);
+  }
   results.push(...scenarios);
   if (selected.has("quickstarts")) {
     const playwright = join(root, "node_modules", ".bin", "playwright");

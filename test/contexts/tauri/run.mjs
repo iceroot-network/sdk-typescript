@@ -20,7 +20,7 @@ import { crc32, deflateSync } from "node:zlib";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..", "..", "..");
 const work = join(root, "build", "tauri-check");
-const image = "iceroot-sdk-tauri-check:1";
+const image = "iceroot-sdk-tauri-check:2";
 const docker = (process.env.DOCKER ?? "docker").split(" ");
 const vectors = JSON.parse(readFileSync(join(root, "test", "vectors", "wasm-native.json"), "utf8"));
 const signatures = vectors.keys.reduce((sum, key) => sum + key.signatures.length, 0);
