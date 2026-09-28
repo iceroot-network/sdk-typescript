@@ -1,22 +1,25 @@
 # Integration guide: desktop wallet
 
-The desktop wallet (`iceroot-network/desktop-wallet`) is a Vite, React 19 and Tauri 2 app for Linux and macOS. Today its **Explore demo** reads `public/mock-test-api.json`, and transfers and votes change only that sample in memory. After wiring, a wallet in a profile is a real devnet account: balances, history, transfers to 1 to 256 recipients, votes, validator registration and resignation, all through the SDK.
+The desktop wallet (`iceroot-network/desktop-wallet`) is a Vite, React 19 and Tauri 2 app for Linux and macOS. Today its **Explore demo** reads `public/mock-test-api.json`, and transfers and votes change only that sample in memory. After wiring, a wallet in a profile is a real devnet account: created or imported from a recovery phrase, kept in an encrypted keystore, with balances, history, transfers to 1 to 256 recipients, votes, validator registration and resignation, all through the SDK.
 
-Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart](../quickstart/tauri.md), [Vite and React quickstart](../quickstart/vite-react.md). The order of work, file by file, is in [Step by step: the desktop wallet from sample data to the SDK](desktop-wallet-steps.md), with the [example wallet](../../examples/vite-react-wallet/README.md) as working code.
+The wallet uses the SDK's native Tauri plugin: it registers `tauri-plugin-iceroot` in `src-tauri` and imports `@iceroot-network/sdk/tauri`. Keys, signing, the keystore's Argon2id and every request to the node run in Rust; the page holds opaque key handles and reaches no node, and its CSP stays as it is.
+
+Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart](../quickstart/tauri.md). The order of work, file by file, is in [Step by step: the desktop wallet from sample data to the SDK](desktop-wallet-steps.md); the [Tauri example](../../examples/tauri-plugin/README.md) is a working plugin app, and the [example wallet](../../examples/vite-react-wallet/README.md) has every screen (on the WebAssembly entry, whose calls are the same).
 
 ## What to wire now and what waits
 
 | Part | Release 0.1.0 | Waits for |
 |---|---|---|
-| Network connection through Rust (HTTP plugin transport), pinned devnet identity | Wire now | |
+| The plugin, and the network connection through it with a pinned devnet identity | Wire now | |
 | Watch-only wallets with real address checks | Wire now | |
-| Create (24 words) and import (18, 21 or 24 words); keys held for the session only | Wire now | |
-| Keys kept across restarts (encrypted [keystore](../keystore.md)) | Do not build a vault | The native plugin, which runs the keystore natively with the desktop preset |
+| Create (24 words) and import (18, 21 or 24 words) | Wire now | |
+| Keys kept across restarts in the [keystore](../keystore.md), desktop preset, unlocked with a password | Wire now | |
 | Balances, history, validator directory | Wire now | |
 | Transfers (1 to 256 recipients, one memo), manual votes and vote withdrawal | Wire now | |
-| Vote modes (Diversity, Reliability, Maximum Rewards, Support Newcomers) with reasons | Wire now with the [vote library](../vote.md); keep the manual editor as the fifth choice | Indexer figures for Reliability, Maximum Rewards and Support Newcomers |
+| Vote modes (Diversity, Reliability, Maximum Rewards, Support Newcomers) with reasons | Wire now with the [vote library](../vote.md) (`@iceroot-network/sdk/tauri/vote`); keep the manual editor as the fifth choice | Indexer figures for Reliability, Maximum Rewards and Support Newcomers |
 | Validator registration, temporary and permanent resignation, revoke | Wire now (they are previews today) | |
 | Second key | Wire now if the product wants it | |
+| macOS builds | Build and test on a Mac: the plugin is checked on Linux | |
 | Names, swaps, time locks, key rotation, multisig, burn of other assets, asset details, finality, migrations | Hide | The capabilities of later networks |
 
 ## The current sample-data layer
@@ -55,9 +58,10 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 
 ### 1. Install and configure
 
-1. Install the SDK tarball and exclude it from Vite's `optimizeDeps` ([Vite quickstart](../quickstart/vite-react.md#2-configure-vite)). Keep `build.target: "safari14"`, and check the build on the oldest supported macOS (see the WebKit note in the [Tauri quickstart](../quickstart/tauri.md#2-allow-webassembly-in-the-webviews-csp)).
-2. Add `'wasm-unsafe-eval'` to `script-src` in `csp` and `devCsp` of `src-tauri/tauri.conf.json`.
-3. Add the Tauri HTTP plugin, register it in `src-tauri/src/lib.rs`, and allow the devnet URLs in `src-tauri/capabilities/main.json` ([Tauri quickstart, step 3](../quickstart/tauri.md#3-send-node-requests-through-rust)). With the plugin as transport, `connect-src` needs no node origin.
+1. Install the SDK tarball ([Installation](../installation.md)). The Tauri entry loads no WebAssembly, so Vite needs no `optimizeDeps` setting for it; keep `build.target: "safari14"`.
+2. Add `tauri-plugin-iceroot` to `src-tauri/Cargo.toml`, register `tauri_plugin_iceroot::init()` in `src-tauri/src/lib.rs`, and grant `iceroot:default` and the devnet relays in `src-tauri/capabilities/main.json` ([Tauri quickstart, steps 1 and 2](../quickstart/tauri.md#1-add-the-plugin)).
+3. Keep the CSP as it is (`script-src 'self'`, `connect-src 'self' ipc: http://ipc.localhost`): the page loads no WebAssembly and reaches no node. No HTTP plugin is needed.
+4. The browser preview (`npm run dev` in a normal browser) has no plugin: `init()` rejects with `SdkNotInitialized` there. Run the wallet with `tauri dev`, and keep the browser preview for the labelled Explore demo only.
 
 ### 2. The network
 
@@ -66,18 +70,13 @@ Replace the profile's `network: "mainnet" | "testnet"` preference with the netwo
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/network.ts
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { isTauri } from "@tauri-apps/api/core";
-import { init, connect, profiles, IceRootError, type Network } from "@iceroot-network/sdk";
+import { init, connect, profiles, IceRootError, type Network } from "@iceroot-network/sdk/tauri";
 
 export type NetworkSetting = { kind: "devnet"; relay: string; nethash?: string };
 
 export async function openNetwork(setting: NetworkSetting): Promise<{ net: Network; nethash: string }> {
-  await init();
-  const net = await connect(
-    profiles.devnet({ relays: [setting.relay], nethash: setting.nethash }),
-    { transport: isTauri() ? tauriFetch : globalThis.fetch },
-  );
+  await init();   // rejects with SdkNotInitialized outside the Tauri app
+  const net = await connect(profiles.devnet({ relays: [setting.relay], nethash: setting.nethash }));
   return { net, nethash: net.chain.nethash };   // save nethash in the profile on first contact
 }
 
@@ -86,53 +85,68 @@ export function isNetworkChanged(error: unknown): boolean {
 }
 ```
 
+- The relay must be allowed by the capability of step 1; a relay it does not name is refused with `InvalidProfile` (`details.reason: "not-allowed"`). A settings screen that lets the holder type a relay needs a matching `allow` entry (for example `http://127.0.0.1:*/api` for local devnets).
 - `src-tauri/src/lib.rs` validates the stored state strictly (`Network::Mainnet | Testnet`). Extend the Rust types and the TypeScript `UserProfile` together with the new network setting, and keep the migration of older state files.
 - Show "Testnet" and "Mainnet" as not yet available. There is no SDK profile for them until their geneses exist.
 - On `NetworkMismatch`, tell the holder the devnet changed and ask before pinning the new identity.
 
 ### 3. Wallets: watch, create, import
 
-- **Watch.** `WalletFlows.tsx` saves an address. Check it with `Address.check(text, net)` and store `Address.parse(text, net).toString()`. Drop "Address formats are not verified in this preview."
-- **Create.** Generate `Mnemonic.generate()` (24 words), show it for backup, confirm a few words, then derive `net.keys.fromPhrase(phrase, { account: 0, index: 0 })` and store the address in the `WalletReference`. Further addresses of the same phrase use `index: 1, 2, ...`.
-- **Import.** Replace "Import is coming soon." with phrase entry: `Mnemonic.check(text)` for feedback (18, 21 or 24 words; fewer give `PhraseTooShort`).
-- **Where the key lives.** `storage.ts` writes unencrypted JSON. Never put a phrase or key into it. Until the native plugin, hold the key handle in memory for the session: when the holder signs, ask for the phrase if no handle is open, and `release()` handles on lock, on window close and after a period of inactivity. Do not design a desktop key vault: the [keystore](../keystore.md) format exists, and the wallet adopts it with the native plugin, which runs it natively with the desktop preset.
+- **Watch.** `WalletFlows.tsx` saves an address. Check it with `await Address.check(text, net)` and store `(await Address.parse(text, net)).toString()`. Drop "Address formats are not verified in this preview."
+- **Create.** Generate `await Mnemonic.generate()` (24 words), show it for backup, confirm a few words, then ask for a password and encrypt the phrase into a keystore with the desktop preset. Store the keystore's text form with the wallet in the profile (it is encrypted; the password is never stored), and the address in the `WalletReference`. Further addresses of the same phrase use `index: 1, 2, ...`.
+- **Import.** Replace "Import is coming soon." with phrase entry: `await Mnemonic.check(text)` for feedback (18, 21 or 24 words; fewer give `PhraseTooShort`), then the same keystore as for a new wallet.
+- **Unlock.** Open the wallet's account with `net.keys.fromKeystore(keystore, password, { account: 0, index })`: the plugin decrypts the keystore and derives the key, and the phrase never enters the page. `release()` the account on lock, on window close and after a period of inactivity; the plugin also wipes every key the page opened when the page reloads or the window closes.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
-// src/keys.ts: session-only key handles, one per wallet id
-import { Address, Mnemonic, type Account, type Network } from "@iceroot-network/sdk";
+// src/keys.ts: keystores in the profile, keys in the plugin
+import { Address, Mnemonic, type Account, type Network } from "@iceroot-network/sdk/tauri";
+import { armor, encrypt, isWeakerThan, inspect, reencrypt, PRESETS } from "@iceroot-network/sdk/tauri/keystore";
 
 const open = new Map<string, Account>();
 
-export function newPhrase(): string {
+export function newPhrase(): Promise<string> {
   return Mnemonic.generate();
 }
 
-export function unlock(net: Network, walletId: string, phrase: string, index = 0): Account {
-  const check = Mnemonic.check(phrase);
+/** The keystore text to store with the wallet: the phrase, encrypted in the plugin with the desktop preset. */
+export async function keep(phrase: string, password: string): Promise<string> {
+  const check = await Mnemonic.check(phrase);
   if (!check.ok) throw new Error(check.reason === "too-short" ? "Use your 18, 21 or 24 word recovery phrase." : "This recovery phrase is not valid.");
-  open.get(walletId)?.release();
-  const account = net.keys.fromPhrase(phrase.trim(), { account: 0, index });
-  open.set(walletId, account);
-  return account;
+  return armor(await encrypt(phrase.trim(), password, "desktop"));
 }
 
-export function lockAll(): void {
-  for (const account of open.values()) account.release();
+/** Opens a wallet's account; a keystore written with weaker parameters is moved to the current preset. */
+export async function unlock(net: Network, walletId: string, keystore: string, password: string, index = 0) {
+  await open.get(walletId)?.release();
+  const account = await net.keys.fromKeystore(keystore, password, { account: 0, index });
+  open.set(walletId, account);
+  const upgraded = (await isWeakerThan(await inspect(keystore), PRESETS.desktop))
+    ? await armor(await reencrypt(keystore, password, "desktop"))
+    : undefined;
+  return { account, upgraded };   // store `upgraded` in place of the old keystore when it is set
+}
+
+export async function lockAll(): Promise<void> {
+  for (const account of open.values()) await account.release();
   open.clear();
 }
 
-export function watchAddress(net: Network, text: string): string {
-  const result = Address.check(text.trim(), net);
+export async function watchAddress(net: Network, text: string): Promise<string> {
+  const result = await Address.check(text.trim(), net);
   if (!result.ok) throw new Error(`Check the address (${result.reason}).`);
-  return Address.parse(text.trim(), net).toString();
+  return (await Address.parse(text.trim(), net)).toString();
 }
 ```
+
+- A wrong password is `WrongPasswordOrCorrupt` (from `@iceroot-network/sdk/tauri/keystore`); say "Wrong password" and nothing more.
+- `storage.ts` writes the profile as unencrypted JSON: only the keystore's text goes there, never a phrase, key or password.
+- The phrase crosses the IPC twice, when it is shown and when it is encrypted. Show it once, clear the text fields afterwards, and never read it back with `decrypt` except for a backup the holder asks for.
 
 ### 4. Balances, history and validators
 
 - Replace `loadDemoData` for real wallets with reads: `net.accounts.get(address)` for balances and the current vote, `net.history.forAccount(address, { page, limit })` for activity, `net.validators.list()` for the directory.
-- Replace `formatDemoAmount(number)` with `Amount.format(units, net.token.decimals, { grouping: true })`. No amount is a `number` any more.
+- Replace `formatDemoAmount(number)` with `await Amount.format(units, net.token.decimals, { grouping: true })`, formatted when the data is loaded rather than during a render. No amount is a `number` any more.
 - Refresh on new blocks (`net.watch` or a timer of one block time), not per screen render.
 - Keep **Explore demo** only if it stays fully separate: its screens read the fixture, never the network, and say "Demo". Real wallets never fall back to it.
 
@@ -143,25 +157,25 @@ export function watchAddress(net: Network, text: string): string {
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/transfer.ts
-import { Address, Amount, type Account, type Draft, type Network } from "@iceroot-network/sdk";
+import { Address, Amount, type Account, type Draft, type Network } from "@iceroot-network/sdk/tauri";
 
 export type TransferEntry = { recipient: string; amount: string };
 
 /** Details step: one transaction for all recipients, with one memo. */
-export function prepareTransfer(net: Network, from: string, entries: TransferEntry[], memo: string): Promise<Draft> {
-  return net.build.transfer({
-    from,
-    to: entries.map((entry) => ({
-      address: Address.parse(entry.recipient.trim(), net),
-      amount: Amount.parse(entry.amount.trim(), net.token.decimals),
-    })),
-    memo: memo.trim(),
-  });
+export async function prepareTransfer(net: Network, from: string, entries: TransferEntry[], memo: string): Promise<Draft> {
+  const to = [];
+  for (const entry of entries) {
+    to.push({
+      address: await Address.parse(entry.recipient.trim(), net),
+      amount: await Amount.parse(entry.amount.trim(), net.token.decimals),
+    });
+  }
+  return net.build.transfer({ from, to, memo: memo.trim() });
 }
 
-/** Result step: sign what the Review step showed, submit, and follow it to a block. */
+/** Result step: the plugin signs what the Review step showed; submit, and follow it to a block. */
 export async function sendTransfer(net: Network, draft: Draft, account: Account) {
-  const signed = draft.sign(account);
+  const signed = await draft.sign(account);
   const result = await net.submit(signed);
   if (result.status !== "accepted") return { state: "rejected" as const, reason: result.reason, id: signed.id };
   const status = await net.transactions.wait(signed.id, { until: "confirmed" });
@@ -184,7 +198,7 @@ The governance page's editor splits a vote evenly across the chosen validators. 
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/votes.ts
-import type { Network, VoteEntry } from "@iceroot-network/sdk";
+import type { Network, VoteEntry } from "@iceroot-network/sdk/tauri";
 
 /** Whole basis points summing to the network's total; the first names take any remainder. */
 export function evenVote(net: Network, names: string[]): VoteEntry[] {
@@ -212,8 +226,8 @@ export function prepareVote(net: Network, from: string, entries: VoteEntry[]) {
 
 - `validatorId` becomes the validator's `name` everywhere (`VoteEntry`, the fixture types, `sameVote`).
 - The wallet may keep proposing 20 validators at 500 basis points each as its default, which is valid on today's devnet and from the IceRoot genesis; the limits it enforces come from `net.rules.vote`.
-- A validator account cannot vote from the IceRoot genesis. Check `net.accounts.get(address).validatorName` and hide the vote editor for validator accounts, and let the builder enforce the rule.
-- `evenVote` is replaced by the [vote library](../vote.md)'s `split`, and the modes come from its `select` over `VoteSnapshot.fromNode(net)`, with each pick's reasons on the review screen and `check` of the saved selection when the wallet opens. Do not implement the modes in the app.
+- A validator account cannot vote from the IceRoot genesis. Check `(await net.accounts.get(address)).validatorName` and hide the vote editor for validator accounts, and let the builder enforce the rule.
+- `evenVote` is replaced by the [vote library](../vote.md)'s `split`, and the modes come from its `select` over `VoteSnapshot.fromNode(net)`, with each pick's reasons on the review screen and `check` of the saved selection when the wallet opens, all from `@iceroot-network/sdk/tauri/vote` and awaited. Do not implement the modes in the app.
 
 ### 6. Validator registration and resignation
 
@@ -229,11 +243,11 @@ Gate each later screen on `net.capabilities.has(...)`: names (`names`), swaps an
 - Amounts are `bigint` base units; the demo's `number` amounts go away ([rule 2](../rules.md)).
 - Addresses are checked against the connected network ([rule 4](../rules.md)).
 - "Confirmed", never "final", on today's devnet ([rule 5](../rules.md)).
-- No phrase or key in the profile state file, `localStorage` or any unencrypted file; keys for the session only until the native plugin and its keystore ([rule 12](../rules.md)).
+- No phrase, key or password in the profile state file, `localStorage` or any unencrypted file; phrases are kept only as keystores, and keys only in the plugin ([rule 12](../rules.md)).
 - The review screen shows the draft ([rule 15](../rules.md)); votes are never recast automatically ([rule 7](../rules.md)).
 
 ## Tests to add
 
-- Unit tests with a stub transport that returns recorded devnet responses: balances, history paging, a transfer draft to 3 recipients, a vote draft, a refused submission.
-- The browser preview (Playwright) against a local devnet: create a wallet, fund it from a devnet test account in a setup script, send a transfer, see it confirmed.
-- A test that no phrase reaches `app-state.json` or `localStorage`.
+- The app under `tauri-driver` against a local devnet, as the SDK's own Tauri check does (`test/contexts/tauri-plugin` in this repository): create a wallet, fund it from a devnet test account in a setup script, send a transfer, see it confirmed, lock, reload and unlock with the password.
+- Unit tests of the pages and the wallet's own logic with the SDK module replaced by a stub: the plugin makes the requests, so a stub transport does not reach it. The recorded devnet answers of sdk-rust's node API client fixtures make realistic stub data.
+- A test that no phrase or password reaches the profile state file or `localStorage`, and that a relay the capability does not allow is refused.

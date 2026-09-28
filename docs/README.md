@@ -31,13 +31,14 @@ Every code sample carries a status marker (see [Sample status](#sample-status)).
 
 Each integration guide lists what can be wired with release 0.1.0 and what waits for a later release, so that no app builds a temporary replacement it must remove again.
 
-The [example wallet](../examples/vite-react-wallet/README.md) (Vite and React) puts the pieces together against a devnet: create and restore, a keystore, balance and history, transfers, votes in the four modes with every pick's reasons and a later check, and sign-in.
+The [example wallet](../examples/vite-react-wallet/README.md) (Vite and React) puts the pieces together against a devnet: create and restore, a keystore, balance and history, transfers, votes in the four modes with every pick's reasons and a later check, and sign-in. The [Tauri example](../examples/tauri-plugin/README.md) is a Tauri app on the native plugin.
 
 ## What release 0.1.0 covers
 
 | Area | 0.1.0 | Later |
 |---|---|---|
 | Loading in Node, browsers, Next.js, Vite, Tauri webviews and Manifest V3 extensions | Yes | |
+| Tauri apps on the native plugin (`@iceroot-network/sdk/tauri` with `tauri-plugin-iceroot`): keys, signing, the keystore and node requests in Rust | Yes, checked on Linux; the plugin builds for Android | macOS and iOS builds, on a Mac |
 | Devnet profile with pinned network identity, capabilities, rules and economics | Yes | Profiles for later networks as they are created |
 | 24-word recovery phrases, import of 18, 21 or 24 words, hardened derivation | Yes | Post-quantum keys (ML-DSA-65) |
 | Import of the devnet's legacy passphrase keys (devnet profiles only) | Yes | Retired with the devnet formats |
@@ -47,9 +48,8 @@ The [example wallet](../examples/vite-react-wallet/README.md) (Vite and React) p
 | Node reads: status, accounts, history, blocks, transactions, validators, rounds, fees, supply; watching blocks and accounts by polling, watch-only accounts | Yes | Indexer history and pushed live events |
 | Message signing, sign-in challenge format | Yes | Post-quantum message signatures |
 | Vote selection library (Diversity, Reliability, Maximum Rewards, Support Newcomers), `check`, manual votes | Yes, on the node's validator list | Windowed figures, declarations and payouts from an indexer |
-| Keystore format: a recovery phrase encrypted under a password | Yes, in WebAssembly | Run natively by the Tauri plugin; the post-quantum key seed as a payload |
+| Keystore format: a recovery phrase encrypted under a password, and accounts opened straight from it | Yes, in WebAssembly and natively in the Tauri plugin | The post-quantum key seed as a payload |
 | Ownership proofs of Solar addresses (version 1, the Legacy Signer's format) | Yes | A separate legacy package once IceRoot's own formats replace today's |
-| Native Tauri plugin (keys and signing in Rust) | | A later release |
 
 ## Sample status
 

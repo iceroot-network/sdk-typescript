@@ -1,53 +1,29 @@
 # Quickstart: Tauri 2 desktop and mobile
 
-Tauri apps (the desktop wallet on Linux and macOS, the mobile wallet on Android and iOS) use the SDK in one of two ways. Both have the same TypeScript interface, so an app is wired once.
+Tauri apps (the desktop wallet on Linux and macOS, the mobile wallet on Android and iOS) use the SDK through its native plugin, `tauri-plugin-iceroot`, and the package's Tauri entry, `@iceroot-network/sdk/tauri`. The entry has the same interface as the WebAssembly entry; the plugin runs every call in Rust, outside the webview.
 
-| | WebAssembly in the webview | Native plugin |
+| | Native plugin (use this) | WebAssembly in the webview |
 |---|---|---|
-| Release | 0.1.0 | A later release |
-| Where keys and signing run | WebAssembly inside the webview | Rust, outside the webview |
-| Node requests | Through Rust with the Tauri HTTP plugin's `fetch`, or from the webview | Rust |
-| Import | `@iceroot-network/sdk` | `@iceroot-network/sdk/tauri` |
-| CSP change | `'wasm-unsafe-eval'` | None |
-| Keystore (encrypted keys on disk) | No | Yes |
+| Import | `@iceroot-network/sdk/tauri` | `@iceroot-network/sdk` |
+| Where keys and signing run | Rust, in the plugin; the page holds opaque handles | WebAssembly inside the webview |
+| Node requests | The plugin, with reqwest, to the relays the app's capabilities allow | Through Rust with the Tauri HTTP plugin's `fetch`, or from the webview |
+| CSP change | None | `'wasm-unsafe-eval'` (and the node origins, without the HTTP plugin) |
+| Keystore | Argon2id natively with the `"desktop"` or `"mobile"` preset, off the webview's thread; an account opens from a keystore without the phrase entering the page | The `"web"` preset in the webview |
+| Calls that compute | Return promises (they cross Tauri's IPC) | Return their result |
 
-Start with the WebAssembly path; switching to the plugin changes the import and the plugin registration, not the app's calls.
+Requirements: the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platforms, Node.js 22 or later, read access to `heartwood-core` for the Rust build (see [Installation](../installation.md#rust)), and a devnet (see [Devnet](../devnet.md)). The repository's [Tauri example](../../examples/tauri-plugin/README.md) is a working application of this page.
 
-Requirements: the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platforms, Node.js 22 or later, and a devnet (see [Devnet](../devnet.md)).
+## 1. Add the plugin
 
-## 1. Install and configure Vite
+In `src-tauri/Cargo.toml`, at the release tag of sdk-rust that matches the package:
 
-Follow steps 1 to 3 of the [Vite and React quickstart](vite-react.md): install the tarball, exclude the SDK from `optimizeDeps`, and call `init()` before the first render.
-
-## 2. Allow WebAssembly in the webview's CSP
-
-Add `'wasm-unsafe-eval'` to `script-src` in both `csp` and `devCsp` of `src-tauri/tauri.conf.json`. Keep everything else:
-
-<!-- sample: verified 0.1.0 -->
-```json
-{
-  "app": {
-    "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'none'"
-    }
-  }
-}
+<!-- sample: pending; needs: rust-release-tag -->
+```toml
+[dependencies]
+tauri-plugin-iceroot = { git = "https://github.com/iceroot-network/sdk-rust.git", tag = "v0.1.0" }
 ```
 
-- **Older WebKit.** `'wasm-unsafe-eval'` is recognised by WebKit from Safari 16 on. A macOS 11 system (the desktop wallet's minimum) or an iOS 15 device (the mobile wallet's minimum) may have an older WebKit that refuses to compile the module under this CSP. If the SDK's WebKit check confirms this, the fallback for those systems is `'unsafe-eval'` in `script-src`, which also allows JavaScript `eval`; the native plugin removes the question. Do not add `'unsafe-eval'` before the check says so.
-- **Android.** The system WebView is updated with Chrome, which recognises `'wasm-unsafe-eval'` from version 97 on.
-
-## 3. Send node requests through Rust
-
-Route the SDK's requests through the Tauri HTTP plugin. Requests then leave from Rust: the webview's `connect-src` stays unchanged, and the mobile platforms' web security rules do not apply to them.
-
-<!-- sample: plain -->
-```sh
-npm install @tauri-apps/plugin-http
-cd src-tauri && cargo add tauri-plugin-http && cd ..
-```
-
-Register the plugin:
+Add `git-fetch-with-cli = true` under `[net]` in `src-tauri/.cargo/config.toml`, as for any Rust app on the SDK ([Installation](../installation.md#rust)). Register the plugin:
 
 <!-- sample: plain -->
 ```rust
@@ -55,13 +31,15 @@ Register the plugin:
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_iceroot::init())
         .run(tauri::generate_context!())
         .expect("error while running the application");
 }
 ```
 
-Allow exactly the devnet URLs the app uses, in a capability file (`src-tauri/capabilities/main.json`, listed in `app.security.capabilities` of `tauri.conf.json`):
+## 2. Grant the plugin and the relays
+
+The app's capability grants the plugin's commands (`iceroot:default`) and names the relays the plugin may reach, as the `allow` scope of `iceroot:allow-net-connect`. No relay is reachable until an entry names it. An entry is a relay URL with its API base path; `*` matches any run of characters other than `/`.
 
 <!-- sample: plain -->
 ```json
@@ -70,22 +48,119 @@ Allow exactly the devnet URLs the app uses, in a capability file (`src-tauri/cap
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "iceroot:default",
     {
-      "identifier": "http:default",
+      "identifier": "iceroot:allow-net-connect",
       "allow": [
-        { "url": "http://127.0.0.1:6003/api/*" },
-        { "url": "https://<devnet host>/api/*" }
+        { "url": "http://127.0.0.1:6003/api" },
+        { "url": "https://<devnet host>/api" }
       ]
     }
   ]
 }
 ```
 
-Pass the plugin's `fetch` as the transport:
+List the capability in `app.security.capabilities` of `tauri.conf.json` (a mobile app without a capabilities file adds one now). A relay the capability does not allow is refused with `InvalidProfile` (`details.reason: "not-allowed"`) before any request.
+
+## 3. Keep the content security policy strict
+
+The page loads no WebAssembly and reaches no node, so the policy needs neither `'wasm-unsafe-eval'` nor a node origin. The IPC origins are all `connect-src` needs:
+
+<!-- sample: verified 0.1.0 -->
+```json
+{
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'none'"
+    }
+  }
+}
+```
+
+This also settles the older-WebKit question of the WebAssembly path (macOS 11 and iOS 15 may predate `'wasm-unsafe-eval'`): the plugin needs no `eval` of any kind.
+
+## 4. Use the SDK from the page
+
+Install the package as in [Installation](../installation.md) and import from `@iceroot-network/sdk/tauri`. Vite needs no `optimizeDeps` setting for this entry, since it loads no `.wasm` file. Call `init()` once at start-up: it checks that the page runs in a Tauri webview whose app registered and allows the plugin, and rejects with `SdkNotInitialized` otherwise.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/network.ts
+import { connect, init, profiles, type Network } from "@iceroot-network/sdk/tauri";
+
+export async function openNetwork(relay: string, nethash?: string): Promise<Network> {
+  await init();
+  // The plugin makes every request; no transport is passed.
+  return connect(profiles.devnet({ relays: [relay], nethash }));
+}
+```
+
+Every call that computes returns a promise; await it. Values that need no call stay synchronous: profiles, a draft's summary and fee, an account's address and public key, `net.rules`, `net.economics` and `net.stage` at the next block, and the text forms of snapshots and selections. Code that awaits every SDK call runs unchanged on either entry.
+
+<!-- sample: verified 0.1.0 -->
+```ts
+// src/send.ts
+import { Address, Amount, type Account, type Network } from "@iceroot-network/sdk/tauri";
+
+export async function sendRoot(net: Network, account: Account, to: string, amount: string) {
+  const draft = await net.build.transfer({
+    from: account,
+    to: [{ address: await Address.parse(to.trim(), net), amount: await Amount.parse(amount, net.token.decimals) }],
+  });
+  // The review screen shows draft.summary; then the plugin signs what it reads from the draft's bytes.
+  const signed = await draft.sign(account);
+  const result = await net.submit(signed);
+  if (result.status !== "accepted") return { state: "rejected" as const, reason: result.reason };
+  return { state: (await net.transactions.wait(signed.id, { until: "confirmed" })).state };
+}
+```
+
+## 5. Keys and the keystore
+
+Create a phrase, show it once to be written down, encrypt it with the platform's preset, and keep the keystore's bytes (or their `irks:` text) in the app's storage. Afterwards open the account straight from the keystore: the plugin decrypts it and derives the key, and the phrase never enters the page again.
+
+<!-- sample: verified 0.1.0 -->
+```ts
+// src/wallet.ts
+import { Mnemonic, type Account, type Network } from "@iceroot-network/sdk/tauri";
+import { armor, encrypt } from "@iceroot-network/sdk/tauri/keystore";
+
+/** A new wallet: the phrase to show once, and the keystore text to store. */
+export async function createWallet(password: string, preset: "desktop" | "mobile") {
+  const phrase = await Mnemonic.generate();
+  const stored = await encrypt(phrase, password, preset);   // Argon2id in the plugin, off the webview
+  return { phrase, keystore: await armor(stored) };
+}
+
+/** Unlocks the wallet's first account. */
+export function unlock(net: Network, keystore: string, password: string): Promise<Account> {
+  return net.keys.fromKeystore(keystore, password, { account: 0, index: 0 });
+}
+```
+
+- `account.release()` wipes the key in the plugin. The plugin also wipes every key a page opened when the webview loads another page or closes, so lock by releasing and, if the product wants, by reloading the page.
+- A key belongs to the webview that opened it; another window of the app cannot use its handle.
+- A phrase or password the page sends crosses Tauri's IPC, which nothing can wipe. Pass passwords as `Uint8Array` where the app can (the SDK overwrites them with zeros), and use `decrypt` only to show a phrase for a backup; an app that never does can deny it in its capability (`iceroot:deny-keystore-decrypt`).
+- The vote library and the ownership proofs have their Tauri entries too: `@iceroot-network/sdk/tauri/vote` and `@iceroot-network/sdk/tauri/ownership`.
+
+## 6. Desktop
+
+- Store the pinned network identity, the settings and the keystore text with the app's existing storage. Never store a phrase or key there.
+- Checked on Linux (WebKitGTK) with the SDK's test suites and the devnet scenario through the plugin. A macOS build needs a macOS machine; nothing in the plugin is platform-specific beyond Tauri itself.
+
+## 7. Mobile
+
+- **Relays.** Requests leave from the plugin's own HTTP client, so Android's cleartext rule and iOS App Transport Security, which govern the platform's HTTP stacks, do not stop plain HTTP; use the hosted devnet endpoint over HTTPS anyway for anything beyond a local emulator (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). The Android emulator reaches the host machine at `10.0.2.2`, the iOS simulator at `127.0.0.1`; allow those relay URLs in the capability.
+- **Keys.** The plugin is the native boundary the mobile wallet's architecture requires before create and import controls exist. Use the `"mobile"` keystore preset and the platform's secure storage for the keystore text.
+- **Builds.** The plugin builds for Android (`aarch64-linux-android`) with the Android NDK. An iOS build needs a macOS machine with Xcode.
+
+## The WebAssembly path
+
+The WebAssembly entry also works in a Tauri webview, for an app that is not ready to register the plugin or for a browser preview without Tauri. It needs `'wasm-unsafe-eval'` in `script-src` of `csp` and `devCsp` (WebKit before Safari 16 may refuse it; Android's WebView accepts it from Chrome 97), and node requests through the Tauri HTTP plugin (`@tauri-apps/plugin-http`, registered with `tauri_plugin_http::init()` and allowed with `http:default` for the devnet URLs):
+
+<!-- sample: verified 0.1.0 -->
+```ts
+// src/network-wasm.ts
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { isTauri } from "@tauri-apps/api/core";
 import { init, connect, profiles, type Network } from "@iceroot-network/sdk";
@@ -98,37 +173,4 @@ export async function openNetwork(relay: string, nethash?: string): Promise<Netw
 }
 ```
 
-The browser preview (`npm run dev` in a normal browser) has no Tauri plugin. It falls back to `fetch`, which needs the devnet's origin in the page's `connect-src` and works only with a devnet that answers CORS (a local one does).
-
-## 4. Desktop
-
-- Store the pinned network identity and the app's settings with the app's existing storage. Never store a phrase or key there: a desktop wallet holds keys for the session only (the holder enters the phrase each time) until the native plugin, which runs the [keystore](../keystore.md) natively.
-- Everything else is the Vite and React pattern: build drafts, render `draft.summary` on the review screen, sign, submit, follow.
-
-## 5. Mobile
-
-- **HTTPS.** Phones and emulators use the hosted devnet endpoint over HTTPS (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). The Android emulator reaches the host machine at `10.0.2.2`; the iOS simulator at `127.0.0.1`.
-- **No keys in the webview on mobile.** The mobile wallet's architecture requires a reviewed native key vault before any create or import control exists. With release 0.1.0, a mobile app wires the read side (balances, history, validators, watch-only accounts) and can build drafts to show real fees; creating, importing and signing wait for the native plugin and keystore.
-- **Capabilities.** A mobile app without a capabilities file must add one (step 3) for the HTTP plugin.
-
-## 6. Later: the native plugin
-
-When the native plugin is released, the app registers it and imports the Tauri entry point. The calls stay the same; keys and signing move to Rust, and node requests are made by the plugin.
-
-<!-- sample: later; needs: tauri-plugin-iceroot -->
-```rust
-// src-tauri/src/lib.rs
-tauri::Builder::default()
-    .plugin(tauri_plugin_iceroot::init())
-```
-
-<!-- sample: later; needs: sdk/tauri, tauri-plugin-iceroot, keystore -->
-```ts
-import { connect, profiles, Keystore } from "@iceroot-network/sdk/tauri";
-
-const net = await connect(profiles.devnet({ relays: [relay], nethash }));   // requests from Rust; no transport needed
-const stored = await Keystore.create(phrase, password);                       // encrypted by the plugin; the app stores the bytes
-const account = await net.keys.fromKeystore(stored, password, { account: 0, index: 0 });
-```
-
-With the plugin, remove `'wasm-unsafe-eval'` from the CSP and the HTTP plugin if nothing else uses them.
+Keys then live in WebAssembly memory inside the webview. The desktop and mobile wallets use the plugin: moving from this path changes the imports, adds `await` where the plugin returns promises, and removes `'wasm-unsafe-eval'` and the HTTP plugin if nothing else uses them.

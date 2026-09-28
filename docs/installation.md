@@ -68,7 +68,7 @@ Replace the version in both places of the URL and run `npm install` again. Read 
 | `@iceroot-network/sdk/iife` | A classic script for pages without a bundler. It defines the global `IceRootSdk`, with the vote library, the keystore and the ownership proofs as its namespaces `vote`, `keystore` and `ownership` |
 | `@iceroot-network/sdk/iife/bytes` | The WebAssembly module as an embedded byte array (global `IceRootSdkWasmBytes`), for contexts that cannot fetch a file: a Manifest V3 sandbox page or service worker |
 | `@iceroot-network/sdk/wasm` | The `.wasm` file of the web build, for hosts that serve it from their own location and pass its URL to `init` |
-| `@iceroot-network/sdk/tauri` | The same interface backed by the native Tauri plugin (a later release) |
+| `@iceroot-network/sdk/tauri` | The same interface backed by the native Tauri plugin, `tauri-plugin-iceroot` of sdk-rust, for Tauri apps: keys, signing, the keystore and node requests in Rust; the calls that compute return promises. `@iceroot-network/sdk/tauri/vote`, `/tauri/keystore` and `/tauri/ownership` are its vote library, keystore and ownership proofs ([Tauri quickstart](quickstart/tauri.md)) |
 
 Files in the tarball, for tools that copy them into an app (the browser wallet does):
 
@@ -81,6 +81,7 @@ package/dist/node/index.js             Node build
 package/dist/iife/iceroot-sdk.js       classic script (global IceRootSdk)
 package/dist/iife/iceroot-sdk_bg.wasm  its WebAssembly module (the same module)
 package/dist/iife/iceroot-sdk-bytes.js the same module as a byte array (global IceRootSdkWasmBytes)
+package/dist/tauri/index.js            the Tauri entry (vote.js, keystore.js, ownership.js likewise): no WebAssembly
 ```
 
 How each environment loads the module, and the settings it needs, is in its quickstart: [Node](quickstart/node.md), [Vite and React](quickstart/vite-react.md), [Next.js](quickstart/nextjs.md), [Manifest V3](quickstart/mv3-extension.md) and [Tauri](quickstart/tauri.md).

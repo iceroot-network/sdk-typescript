@@ -2,23 +2,21 @@
 
 The mobile wallet (`iceroot-network/mobile-wallet`) is one Vite, React 19 and Tauri 2 app for Android (minimum SDK 24) and iOS 15. Today its domain layer, `src/domain/wallet.ts`, reads `public/mock-test-api.json` and applies transfers and votes to that sample in memory.
 
-The app's architecture document requires a reviewed native key vault before any create or import control exists. That decides the order of wiring:
+The app's architecture document requires a reviewed native key vault before any create or import control exists. The SDK's native Tauri plugin, `tauri-plugin-iceroot`, is that boundary: keys are derived, held and used in Rust, the page holds opaque handles, recovery phrases are kept only as [keystores](../keystore.md) encrypted natively with the mobile preset, and every request to the node leaves from Rust. The wallet registers the plugin and imports `@iceroot-network/sdk/tauri`.
 
-- **With release 0.1.0:** the read side (balances, history, validators, receive addresses of watch-only wallets) and real fee quotes from drafts, over HTTPS with requests made from Rust.
-- **With the native plugin:** create, import, keys kept in the [keystore](../keystore.md) format, signing, transfers and votes. The plugin implements the same interface, so the code written for 0.1.0 stays. Vote selections (the [vote library](../vote.md)) need no key and can be wired now.
-
-Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart](../quickstart/tauri.md), [Devnet](../devnet.md).
+Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart](../quickstart/tauri.md), [Devnet](../devnet.md). The [Tauri example](../../examples/tauri-plugin/README.md) is a working plugin app.
 
 ## What to wire now and what waits
 
 | Part | Release 0.1.0 | Waits for |
 |---|---|---|
-| HTTPS connection to the hosted devnet endpoint, requests from Rust | Wire now | |
+| The plugin, and the connection to the hosted devnet endpoint through it | Wire now | |
 | Watch-only wallets: balances, activity, receive address with QR code | Wire now | |
 | Validator directory | Wire now | |
-| Transfer and vote quotes (fee, total) from drafts | Wire now | |
-| Create and import, keys, signing, submitting transfers and votes | No create or import controls | The native plugin, which runs the [keystore](../keystore.md) natively with the mobile preset |
-| Vote modes with reasons | Wire now with the [vote library](../vote.md) (no key needed to select); signing after the native plugin | Indexer figures for Reliability, Maximum Rewards and Support Newcomers |
+| Create and import, with the phrase kept as a keystore (mobile preset) in the platform's secure storage | Wire now, after the architecture document's review of the plugin as the vault | |
+| Signing and submitting transfers and votes | Wire now | |
+| Vote modes with reasons | Wire now with the [vote library](../vote.md) (`@iceroot-network/sdk/tauri/vote`) | Indexer figures for Reliability, Maximum Rewards and Support Newcomers |
+| Android and iOS builds | The plugin builds for Android (`aarch64-linux-android`) with the NDK | An iOS build, which needs a macOS machine with Xcode |
 | Names, assets other than ROOT, swaps, time locks, finality, migrations | Hide | The capabilities of later networks |
 
 ## The current sample-data layer
@@ -38,7 +36,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 | Sample | SDK | Notes |
 |---|---|---|
 | `loadDemoData`, `parseDemoData` | `connect` once, then the reads below | Keep `parseDemoData` only for a separate demo mode |
-| `Wallet.address` | `net.keys.watch(Address.parse(text, net))` now; `account.address` from the keystore later | |
+| `Wallet.address` | `account.address` of the wallet's keystore account, or `net.keys.watch(text)` for a watch-only wallet | |
 | `Wallet.balance`, `assets[]` holdings | `net.accounts.get(address).balances` | `bigint`; format with `Amount.format` |
 | `Wallet.votes` (`validatorId`) | `net.accounts.get(address).vote` (`validator`) | `validator` is the validator's name |
 | `Asset` with `id: "root"`, 18 decimals | `net.token` | 8 decimals on today's devnet |
@@ -46,8 +44,8 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 | `Validator`: `name`, `rank`, `status`, `votingBalance`, `validatedBlocks` | `(await net.validators.list()).items`: `name`, `rank`, `status`, `voteWeight`, `production.produced` | `uptime` from `production` (lifetime counters today); `tagline` is not chain data |
 | `formatAmount(decimalString)` | `Amount.format(units, decimals, { maxFraction, grouping: true })` | |
 | `prepareTransfer` returning `TransferQuote` | `net.build.transfer(...)` returning a draft: `draft.fee`, `draft.summary` | Works without a key: a draft needs the sender's address once the account has sent a transaction, and its public key before that |
-| `submitTransfer` | `draft.sign(account)`, `net.submit`, `net.transactions.wait` | After the native plugin |
-| `prepareVote`, `submitVote` | `net.build.vote`, then sign and submit | Signing after the native plugin |
+| `submitTransfer` | `draft.sign(account)` (in the plugin), `net.submit`, `net.transactions.wait` | |
+| `prepareVote`, `submitVote` | `net.build.vote`, then sign and submit | |
 | `splitVote` | The [vote library](../vote.md)'s `split` | |
 | `TRANSFER_FEE`, `VOTE_FEE`, `ROOT_DECIMALS`, vote limits | `draft.fee`, `net.token.decimals`, `net.rules.vote` | |
 | `snapshotAt` | The latest block's time | |
@@ -56,10 +54,11 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Tauri quickstart]
 
 ### 1. Configure the Tauri app
 
-1. Install the SDK tarball and exclude it from Vite's `optimizeDeps` ([Vite quickstart](../quickstart/vite-react.md#2-configure-vite)).
-2. Add `'wasm-unsafe-eval'` to `script-src` in `csp` and `devCsp` ([Tauri quickstart](../quickstart/tauri.md#2-allow-webassembly-in-the-webviews-csp)), and check WebAssembly loads on the iOS 15 floor (the WebKit note there).
-3. Add the HTTP plugin, register it, and create `src-tauri/capabilities/main.json` with `http:default` allowing the hosted devnet URL; list the capability in `app.security.capabilities` ([Tauri quickstart, step 3](../quickstart/tauri.md#3-send-node-requests-through-rust)).
-4. Connect to the hosted HTTPS devnet endpoint (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). Phones and emulators refuse plain HTTP to a remote host. Keep the endpoint's token out of the repository: the holder enters it in the app's settings, and the app stores it with its preferences.
+1. Install the SDK tarball ([Installation](../installation.md)). The Tauri entry loads no WebAssembly: no `optimizeDeps` setting and no CSP change.
+2. Add `tauri-plugin-iceroot` to `src-tauri/Cargo.toml` and register `tauri_plugin_iceroot::init()` in the builder of `src-tauri/src/lib.rs` ([Tauri quickstart, step 1](../quickstart/tauri.md#1-add-the-plugin)).
+3. Create `src-tauri/capabilities/main.json` granting `iceroot:default` and allowing the hosted devnet relay in the `allow` scope of `iceroot:allow-net-connect`, and list it in `app.security.capabilities`, which is empty today ([Tauri quickstart, step 2](../quickstart/tauri.md#2-grant-the-plugin-and-the-relays)).
+4. Connect to the hosted HTTPS devnet endpoint (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). The plugin's requests leave from Rust, so the platforms' cleartext rules do not apply to them, but a remote devnet is reached over HTTPS. Keep the endpoint's token out of the repository: the holder enters it in the app's settings, and the app stores it with its preferences.
+5. Android builds need the Android NDK for the plugin's C code (libsecp256k1, and aws-lc through the HTTP client's TLS); `tauri android build` finds it through `NDK_HOME`. iOS builds need a Mac with Xcode.
 
 ### 2. The domain layer on the SDK
 
@@ -68,22 +67,19 @@ Keep the domain layer's role (validated data for the UI, exact amounts), and bac
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/domain/network.ts
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { isTauri } from "@tauri-apps/api/core";
-import { init, connect, profiles, Address, balanceOf, type Network } from "@iceroot-network/sdk";
+import { init, connect, profiles, Address, balanceOf, type Network } from "@iceroot-network/sdk/tauri";
 
 export type Endpoint = { relay: string; token?: string; nethash?: string };
 
 export async function openNetwork(endpoint: Endpoint): Promise<Network> {
   await init();
   return connect(profiles.devnet({ relays: [endpoint.relay], nethash: endpoint.nethash }), {
-    transport: isTauri() ? tauriFetch : globalThis.fetch,
     headers: endpoint.token ? { authorization: `Bearer ${endpoint.token}` } : undefined,
   });
 }
 
 export async function loadWallet(net: Network, addressText: string) {
-  const address = Address.parse(addressText, net).toString();
+  const address = (await Address.parse(addressText, net)).toString();
   const [info, activity] = await Promise.all([
     net.accounts.get(address),
     net.history.forAccount(address, { page: 1, limit: 25 }),
@@ -100,63 +96,91 @@ export async function loadWallet(net: Network, addressText: string) {
 export const loadValidators = (net: Network) => net.validators.list();
 ```
 
-### 3. Quotes without keys
+### 3. Keys: create, import, unlock
 
-The send and vote flows show a quote before submission. Build the draft for the quote now; it gives the exact fee and the summary, and needs no key. `from` may be the sender's address once the account has sent a transaction, since the node then knows its public key; for an account that has never sent one, pass its public key (hex) instead, or the builder throws `InvalidArgument`:
+The phrase is shown once for the holder to write down, encrypted into a keystore with the mobile preset, and kept only as that keystore. Afterwards the plugin opens the account straight from the keystore: the phrase never enters the page again.
+
+<!-- sample: verified 0.1.0 -->
+```ts
+// src/domain/keys.ts
+import { Mnemonic, type Account, type Network } from "@iceroot-network/sdk/tauri";
+import { armor, encrypt, WrongPasswordOrCorrupt } from "@iceroot-network/sdk/tauri/keystore";
+
+/** Create: a new 24-word phrase, generated in Rust, to show once. */
+export const newPhrase = (): Promise<string> => Mnemonic.generate();
+
+/** Create and import: the keystore text to keep in the platform's secure storage. */
+export async function keep(phrase: string, password: Uint8Array): Promise<string> {
+  const check = await Mnemonic.check(phrase);
+  if (!check.ok) throw new Error(check.reason === "too-short" ? "Use your 18, 21 or 24 word recovery phrase." : "This recovery phrase is not valid.");
+  return armor(await encrypt(phrase.trim(), password, "mobile"));   // the password bytes are wiped
+}
+
+/** Unlock: the account, derived in the plugin; null for a wrong password. */
+export async function unlock(net: Network, keystore: string, password: Uint8Array): Promise<Account | null> {
+  try {
+    return await net.keys.fromKeystore(keystore, password, { account: 0, index: 0 });
+  } catch (error) {
+    if (error instanceof WrongPasswordOrCorrupt) return null;
+    throw error;
+  }
+}
+```
+
+- Keep the keystore text in the platform's secure storage (Android Keystore-backed storage, the iOS Keychain), never in `localStorage`. The password is never stored.
+- Read passwords into a `Uint8Array` where the input allows it; the SDK overwrites it with zeros. A string typed into a field cannot be wiped.
+- `account.release()` when the app goes to the background or locks. The plugin also wipes every key the page opened when the page reloads.
+- Add the create and import controls with the architecture document's review of this boundary.
+
+### 4. Quotes, signing and submitting
+
+The send and vote flows show a quote before submission. The draft is the quote: it gives the exact fee and the summary. Then the plugin signs what the review showed:
 
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/domain/quotes.ts
-import { Address, Amount, type Network, type VoteEntry } from "@iceroot-network/sdk";
+import { Address, Amount, type Account, type Draft, type Network, type VoteEntry } from "@iceroot-network/sdk/tauri";
 
-export async function quoteTransfer(net: Network, from: string, to: string, amount: string, memo: string) {
+export async function quoteTransfer(net: Network, from: Account, to: string, amount: string, memo: string) {
   const draft = await net.build.transfer({
     from,
-    to: [{ address: Address.parse(to.trim(), net), amount: Amount.parse(amount.trim(), net.token.decimals) }],
+    to: [{ address: await Address.parse(to.trim(), net), amount: await Amount.parse(amount.trim(), net.token.decimals) }],
     memo: memo.trim(),
   });
   return { draft, fee: draft.fee, summary: draft.summary };
 }
 
-export async function quoteVote(net: Network, from: string, entries: VoteEntry[]) {
+export async function quoteVote(net: Network, from: Account, entries: VoteEntry[]) {
   const draft = await net.build.vote({ from, entries });   // entries: [] withdraws
   return { draft, fee: draft.fee, summary: draft.summary };
 }
+
+export async function submit(net: Network, draft: Draft, account: Account) {
+  const signed = await draft.sign(account);
+  const result = await net.submit(signed);
+  if (result.status !== "accepted") return { state: "failed" as const, reason: result.reason };
+  const status = await net.transactions.wait(signed.id, { until: "confirmed" });
+  return { state: status.state === "confirmed" ? ("confirmed" as const) : ("pending" as const), id: signed.id };
+}
 ```
 
-Until the native plugin is released, the confirm button of these flows stays unavailable for real wallets, with a short note that signing arrives with the secure key store. Do not add a temporary signer in the webview.
+A watch-only wallet has no key: its quote can be built from its address once the account has sent a transaction (the node then knows its public key), and its confirm button stays unavailable.
 
-### 4. Receive
+### 5. Receive
 
-The receive page shows a watch-only wallet's parsed address (`Address.parse(...).toString()`) and its QR code. Remove the example address.
-
-### 5. Later: keys and signing
-
-When the native plugin and keystore are released:
-
-<!-- sample: later; needs: sdk/tauri, tauri-plugin-iceroot, keystore -->
-```ts
-import { connect, profiles, Keystore, Mnemonic } from "@iceroot-network/sdk/tauri";
-
-const phrase = Mnemonic.generate();                                  // generated in Rust
-const stored = await Keystore.create(phrase, password);             // encrypted in Rust; the app keeps the bytes in native storage
-const account = await net.keys.fromKeystore(stored, password, { account: 0, index: 0 });
-const signed = draft.sign(account);                                  // signed in Rust
-```
-
-- Register `tauri_plugin_iceroot::init()` in `src-tauri/src/lib.rs`, switch the import to `@iceroot-network/sdk/tauri`, and remove `'wasm-unsafe-eval'` and the HTTP plugin if nothing else uses them.
-- Add the create and import controls then, with the architecture document's review of the vault.
+The receive page shows the wallet's address (`account.address`, or a watch-only wallet's parsed address) and its QR code. Remove the example address.
 
 ## Rules that apply to the mobile wallet
 
-- No key material in the webview, `localStorage` or any file until the native vault exists ([rule 12](../rules.md), and the app's own architecture).
+- No key material in the webview, `localStorage` or any file: keys live in the plugin, phrases only as keystores in the platform's secure storage ([rule 12](../rules.md), and the app's own architecture).
 - Fees, decimals and vote limits come from the network ([rule 1](../rules.md)); amounts are `bigint` ([rule 2](../rules.md)).
 - Addresses are checked against the network ([rule 4](../rules.md)).
 - "Confirmed", never "final", on today's devnet ([rule 5](../rules.md)).
 - Node failures show an error and a retry; the sample never stands in for them ([rule 13](../rules.md)).
+- The review screen shows the draft that is signed ([rule 15](../rules.md)).
 
 ## Tests to add
 
-- The existing unit tests move from the fixture to a stub transport with recorded devnet responses.
-- A test that the send and vote flows show `draft.fee` and cannot submit without a key.
-- Android emulator and iOS simulator runs against the hosted endpoint: a watch-only wallet shows its balance and activity.
+- Unit tests of the domain layer with the SDK module replaced by a stub (the plugin makes the requests, so a stub transport does not reach it), fed with the recorded devnet answers of sdk-rust's node API client fixtures.
+- A test that the send and vote flows show `draft.fee`, and that a watch-only wallet cannot submit.
+- Android emulator and iOS simulator runs against the hosted endpoint: create a wallet, see it funded, send a transfer, lock and unlock with the password.

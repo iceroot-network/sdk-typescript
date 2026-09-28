@@ -1,8 +1,8 @@
 # IceRoot SDK (TypeScript)
 
-The IceRoot SDK for TypeScript and JavaScript: the Rust core compiled to WebAssembly with a thin, typed wrapper. It runs in browsers, Next.js, Vite and React, Tauri webviews and Manifest V3 extensions.
+The IceRoot SDK for TypeScript and JavaScript: the Rust core compiled to WebAssembly with a thin, typed wrapper. It runs in browsers, Next.js, Vite and React, Tauri webviews and Manifest V3 extensions. Tauri apps can run the same interface natively instead, through the SDK's Tauri plugin (`@iceroot-network/sdk/tauri`).
 
-The SDK is in early development and not yet published to a public registry. Today the package loads the WebAssembly module in every supported environment and offers, for today's devnet: `connect` with a pinned network identity, the network's rules and economics, every read of the node API as typed records, builders that read a draft's facts from the node and default to the exact fee floor, submission within the pool's limits, waiting for inclusion and watching by polling; recovery phrases and accounts, the legacy passphrase import, addresses, exact amounts, drafts of every operation with review summaries, signing in the same or another context, message signatures and the sign-in message; the vote library, which fills a vote in one of four modes and explains every pick (`@iceroot-network/sdk/vote`); the keystore, a recovery phrase encrypted under a password (`@iceroot-network/sdk/keystore`); and ownership proofs of Solar addresses in the Legacy Signer's format (`@iceroot-network/sdk/ownership`).
+The SDK is in early development and not yet published to a public registry. Today the package loads the WebAssembly module in every supported environment and offers, for today's devnet: `connect` with a pinned network identity, the network's rules and economics, every read of the node API as typed records, builders that read a draft's facts from the node and default to the exact fee floor, submission within the pool's limits, waiting for inclusion and watching by polling; recovery phrases and accounts, the legacy passphrase import, addresses, exact amounts, drafts of every operation with review summaries, signing in the same or another context, message signatures and the sign-in message; the vote library, which fills a vote in one of four modes and explains every pick (`@iceroot-network/sdk/vote`); the keystore, a recovery phrase encrypted under a password, from which an account opens without the phrase reaching JavaScript (`@iceroot-network/sdk/keystore`); and ownership proofs of Solar addresses in the Legacy Signer's format (`@iceroot-network/sdk/ownership`). For Tauri apps, `@iceroot-network/sdk/tauri` (with `/tauri/vote`, `/tauri/keystore` and `/tauri/ownership`) is the same interface backed by sdk-rust's native plugin, `tauri-plugin-iceroot`: keys, signing, the keystore and every node request run in Rust, the page loads no WebAssembly, and the calls that compute return promises.
 
 ## Install
 
@@ -44,6 +44,7 @@ The [documentation](docs/README.md) covers the API and how to wire the IceRoot a
 - Quickstarts: [Node](docs/quickstart/node.md), [Vite and React](docs/quickstart/vite-react.md), [Next.js](docs/quickstart/nextjs.md), [Manifest V3 extension](docs/quickstart/mv3-extension.md), [Tauri desktop and mobile](docs/quickstart/tauri.md), [Rust backend](docs/quickstart/rust-backend.md).
 - Integration guides: [explorer](docs/apps/explorer.md), [validators portal](docs/apps/validators.md), [desktop wallet](docs/apps/desktop-wallet.md) (and [step by step from sample data](docs/apps/desktop-wallet-steps.md)), [mobile wallet](docs/apps/mobile-wallet.md), [browser wallet](docs/apps/browser-wallet.md).
 - [Example wallet](examples/vite-react-wallet/README.md) (Vite and React): create and restore, a keystore, balance, transfers, votes in the four modes with every pick's reasons, a later check of the vote, and sign-in, tested against a local devnet.
+- [Tauri example](examples/tauri-plugin/README.md): a Tauri app on the native plugin.
 
 Every code sample in the documentation is marked with its verification status. `node scripts/check-docs.mjs` checks the markers and the links; `--list` shows the samples still to be verified against a build. `npm run check:samples` type-checks every TypeScript sample marked verified against the build.
 
@@ -116,15 +117,16 @@ Every error is an `IceRootError` with a stable `code` shared with the Rust core 
 | `@iceroot-network/sdk/iife` | `dist/iife/iceroot-sdk.js` | A classic script that defines one global, `IceRootSdk`, with the vote library, the keystore and the ownership proofs as `IceRootSdk.vote`, `IceRootSdk.keystore` and `IceRootSdk.ownership`; `IceRootSdk.init()` fetches `iceroot-sdk_bg.wasm` next to the script |
 | `@iceroot-network/sdk/iife/bytes` | `dist/iife/iceroot-sdk-bytes.js` | A classic script that defines `IceRootSdkWasmBytes`, the module as bytes, for `IceRootSdk.initSync(IceRootSdkWasmBytes)` where fetching is not possible |
 | `@iceroot-network/sdk/wasm` | `dist/web/iceroot_sdk_bg.wasm` | The module itself, for hosts that serve it elsewhere |
+| `@iceroot-network/sdk/tauri`, `/tauri/vote`, `/tauri/keystore`, `/tauri/ownership` | `dist/tauri` | No module: every call goes to the Tauri plugin through Tauri's IPC; `await init()` checks that the plugin is registered and allowed |
 
-All builds contain the same module; `dist/SHA256SUMS` lists every file.
+All the WebAssembly builds contain the same module; `dist/SHA256SUMS` lists every file.
 
 ### Settings per environment
 
 - **Content security policy.** Pages need `script-src 'self' 'wasm-unsafe-eval'`. Without `'wasm-unsafe-eval'` the browser refuses to compile the module.
 - **Vite.** Exclude the package from dependency pre-bundling, which would separate the JavaScript from its `.wasm` file: `optimizeDeps: { exclude: ["@iceroot-network/sdk"] }`.
 - **Manifest V3 extensions.** Add `'wasm-unsafe-eval'` to `content_security_policy.extension_pages`, to `content_security_policy.sandbox` and to the sandbox page's own policy. Extension pages load `iceroot-sdk.js` and call `IceRootSdk.init()`. The sandbox page keeps `connect-src 'none'` and loads `iceroot-sdk.js` and `iceroot-sdk-bytes.js`, then calls `IceRootSdk.initSync(IceRootSdkWasmBytes)`. The service worker does the same with `importScripts`, so the module is ready when the worker starts.
-- **Tauri 2.** Add `'wasm-unsafe-eval'` to `script-src` in `app.security.csp`.
+- **Tauri 2.** With the plugin (`@iceroot-network/sdk/tauri`), no change: register `tauri_plugin_iceroot::init()`, grant `iceroot:default` and the relays in a capability ([Tauri quickstart](docs/quickstart/tauri.md)). With the WebAssembly entry, add `'wasm-unsafe-eval'` to `script-src` in `app.security.csp`.
 
 ## Building from source
 
@@ -142,7 +144,7 @@ Consumers of the package need none of this. Builders need:
 <!-- sample: plain -->
 ```sh
 npm install
-npm run build          # dist/: the three builds, the embedded-bytes file, declarations, SHA256SUMS
+npm run build          # dist/: the three builds, the embedded-bytes file, the Tauri entry, declarations, SHA256SUMS
 npm run build:test     # build/test/dist/: the same with reproducible signatures, for tests only
 npm run pack           # build/pack/: the tarball, the module and SHA256SUMS for a release
 ```
@@ -162,12 +164,13 @@ npm run test:rust      # the bindings' unit tests in native Rust
 npm run check:vectors  # the vector file equals what native Rust produces now
 npm run check:differential  # 10,000 random cases and 10,000 random vote snapshots give the same results natively and in WebAssembly
 npm run check:types    # sources and an app's use of the declarations, TypeScript 7.0 and 5.7
-npm run check:size     # the module at most 400 KiB gzipped
+npm run check:size     # the module at most 416 KiB gzipped
 npm run check:notice   # NOTICE matches wasm/Cargo.lock and package-lock.json
 npm run test:node      # Node: the Node, browser and classic-script builds; drafts across instances; @noble cross-check; the node API client
 npm run test:browser   # Chromium: a page, a Vite and React app, a Manifest V3 extension
 npm run test:tauri     # a Tauri 2 webview (WebKitGTK) under tauri-driver, in a container
-npm run test:e2e       # Node, Chromium, the quickstarts and the Rust SDK against a local devnet (see below)
+npm run test:tauri-plugin  # the Tauri plugin (sdk-rust's tauri-plugin-iceroot) in the Tauri example, same container
+npm run test:e2e       # Node, Chromium, the Tauri plugin, the quickstarts and the Rust SDK against a local devnet (see below)
 ```
 
 | Environment | What runs |
@@ -177,14 +180,15 @@ npm run test:e2e       # Node, Chromium, the quickstarts and the Rust SDK agains
 | Vite and React in Chromium | The package installed from its tarball; the production build under the page policy, and the development server |
 | Manifest V3 extension | Playwright's persistent context: the wallet page (fetch), the sandbox page (`connect-src 'none'` kept, embedded bytes) and the service worker (embedded bytes); the same extension without `'wasm-unsafe-eval'` fails in all three |
 | Tauri 2 on Linux | A Tauri application driven by `tauri-driver` and WebKitWebDriver: the vectors in the webview, and `connect` with the Tauri HTTP plugin's `fetch` as the transport, to a relay the webview's own policy does not allow; the same application without `'wasm-unsafe-eval'` fails |
+| Tauri 2 on Linux, native plugin | `test:tauri-plugin`: the Tauri example (examples/tauri-plugin) built on sdk-rust's `tauri-plugin-iceroot` and driven by `tauri-driver`: its own page against a recorded devnet node; the native vectors through the published plugin, which refuses every test seam; then, through the plugin's test build (feature `test-seams`), the vectors byte for byte and the SDK's test suites (`test/suites`, the code the Node tests run through WebAssembly: the API, transactions, the vote library, the keystore, ownership proofs, the `@noble` and `@scure` cross-checks and the node API client against recorded nodes served over HTTP), and the plugin's own checks (relays limited to the capability, the page's own `fetch` reaching no node, released keys gone from the plugin, drafts read again from their bytes). The build runs in the container of `test:tauri`, as the invoking user, with the host's Cargo home fetched first |
 | Native and WebAssembly | `check:differential`: 10,000 random phrases, passphrase keys and message signatures, amounts, addresses, transfers and votes through the bindings compiled natively and through the WebAssembly build behind the wrapper; then 10,000 random vote snapshots, each with a selection in a random mode and vote rules, a check against a changed snapshot, an evaluation, a vote validated and names split, compared as canonical JSON with every reason's sentence; results and errors must be identical |
-| A local devnet | `test:e2e`, in Node and in Chromium at the same time: a new account from a recovery phrase, funded from a genesis wallet; a validator registration and a resignation, and a revoke that the node refuses because the new validator operates no node; transfers with a memo and to 256 recipients; a burn; a second key; votes; a transfer built in one WebAssembly instance and signed in another that cannot reach the network; the fee floor and one base unit below it. Every transaction is read back from the node and compared with what was signed. Then the documentation's quickstarts, assembled from their samples as a reader copies them and installed from the packed tarball: the Node script, the Manifest V3 extension in Playwright's persistent context, the Vite and React wallet, and the Next.js routes and client component (a webpack production build and the Turbopack development server). Then the Rust SDK's own devnet test, which also verifies the messages the TypeScript runs signed |
+| A local devnet | `test:e2e`, in Node and in Chromium at the same time, then through the Tauri plugin in the Tauri example: a new account from a recovery phrase, funded from a genesis wallet; a validator registration and a resignation, and a revoke that the node refuses because the new validator operates no node; transfers with a memo and to 256 recipients; a burn; a second key; votes; a transfer built in one WebAssembly instance and signed in another that cannot reach the network; the fee floor and one base unit below it. Every transaction is read back from the node and compared with what was signed. Then the documentation's quickstarts, assembled from their samples as a reader copies them and installed from the packed tarball: the Node script, the Manifest V3 extension in Playwright's persistent context, the Vite and React wallet, and the Next.js routes and client component (a webpack production build and the Turbopack development server). Then the Rust SDK's own devnet test, which also verifies the messages the TypeScript runs signed |
 
 The devnet test needs a local devnet of the reference implementation. `npm run test:e2e` starts one through sdk-rust's `tools/e2e/devnet.sh` (from the sdk-rust checkout next to this repository, or `SDK_RUST_DIR`), with `ICEROOT_DEVNET_TOOLS` pointing at the devnet tooling, and stops and removes it when the tests end; the chain never runs more than five rounds. The scenario reaches the node through the package's own client: `connect` (and a profile pinned to another chain, refused), the builders of `net.build`, which read each draft's facts from the node, `net.submit`, `net.transactions.wait` and the reads of histories, blocks, names and supply. Only the node's raw JSON of each forged transaction, which the test compares with what was signed, is read directly over `fetch` (`test/e2e/node-json.js`).
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs on pull requests to `dev` and `prod` and on pushes to `prod`. It checks out sdk-rust next to this repository at the branch the change targets, then runs every check and test above; the Tauri check runs as a job of its own. The packed tarball of each run is kept as a workflow artifact for a week.
+`.github/workflows/ci.yml` runs on pull requests to `dev` and `prod` and on pushes to `prod`. It checks out sdk-rust next to this repository at the branch the change targets, then runs every check and test above except the devnet test; the Tauri checks, of the webview and of the plugin, run as a job of their own. The packed tarball of each run is kept as a workflow artifact for a week.
 
 The bindings build on sdk-rust, which reads `heartwood-core` over SSH. The workflows use a read-only deploy key of `heartwood-core`, stored in this repository as the secret `HEARTWOOD_DEPLOY_KEY`; `scripts/ci/heartwood-access.sh` installs it under an SSH host alias of its own and rewrites `heartwood-core`'s `github.com` address to that alias, so the key serves that repository only. Pull requests from forks get no secrets, so their runs stop at that step. While `heartwood-core` is private, only pull request runs save the dependency cache: it holds Cargo's copy of `heartwood-core`, and a pull request from a fork can restore the caches of this repository's branches.
 

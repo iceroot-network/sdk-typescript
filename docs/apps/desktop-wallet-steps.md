@@ -1,6 +1,6 @@
 # Step by step: the desktop wallet from sample data to the SDK
 
-This page replaces the desktop wallet's sample-data layer, `src/mockData.ts` and `src/demoSession.ts`, with SDK calls, one step at a time, and says what changes in the files that use them (`src/vote.ts`, `src/App.tsx`, `src/SendFlow.tsx`, `src/DemoPages.tsx`). The [integration guide](desktop-wallet.md) says what to wire in this release and what waits; this page is the order of work. The [example wallet](../../examples/vite-react-wallet/README.md) in this repository is working code for every step: it creates and restores wallets, shows the balance and history, sends, votes in the four modes with a review screen and checks a vote later, and signs in to a website.
+This page replaces the desktop wallet's sample-data layer, `src/mockData.ts` and `src/demoSession.ts`, with SDK calls, one step at a time, and says what changes in the files that use them (`src/vote.ts`, `src/App.tsx`, `src/SendFlow.tsx`, `src/DemoPages.tsx`). The [integration guide](desktop-wallet.md) says what to wire in this release and what waits; this page is the order of work. The wallet uses the SDK's native Tauri plugin and imports `@iceroot-network/sdk/tauri`, whose calls return promises where the plugin computes. The [example wallet](../../examples/vite-react-wallet/README.md) in this repository is working code for every step on the WebAssembly entry, with the same calls not awaited: it creates and restores wallets, shows the balance and history, sends, votes in the four modes with a review screen and checks a vote later, and signs in to a website.
 
 Read first: [Integration guide: desktop wallet](desktop-wallet.md), [Vote selection](../vote.md), [Rules](../rules.md).
 
@@ -9,7 +9,7 @@ Read first: [Integration guide: desktop wallet](desktop-wallet.md), [Vote select
 | Today | After | Step |
 |---|---|---|
 | `src/mockData.ts`: `loadDemoData()`, `DemoData`, `DemoWallet`, `DemoAsset`, `DemoValidator`, `DemoTransaction` | `src/walletData.ts`: `loadWalletData(net, wallets)` over `AccountInfo`, `ValidatorInfo` and `TxRecord` | 2 |
-| `src/mockData.ts`: `formatDemoAmount(number)`, the `DEMO-` reference check | `Amount.format(units, net.token.decimals)`, `Address.check(text, net)` | 2 |
+| `src/mockData.ts`: `formatDemoAmount(number)`, the `DEMO-` reference check | `Amount.format(units, net.token.decimals)`, `Address.check(text, net)`, awaited | 2 |
 | `src/demoSession.ts`: `demoTransfer`, `DemoTransferEntry`, `DemoTransferResult`, `MAX_TRANSFER_RECIPIENTS`, `MAX_MEMO_BYTES`, `memoBytes`, 18 decimals | `src/session.ts`: `prepareTransfer` (build), the Review step shows the draft, `send` (sign, submit, wait); limits from `net.rules` | 3 |
 | `src/demoSession.ts`: `demoVote`, `DEMO_VOTE_FEE` | `src/session.ts`: `prepareVote` and `send`; the fee is `draft.fee` | 3 |
 | `src/vote.ts`: `VOTE_MIN_VALIDATORS`, `VOTE_MAX_VALIDATORS`, `VOTE_MAX_SHARE`, `VOTE_TOTAL`, `voteProblem`, `evenVote`, `sameVote`; `VoteEntry.validatorId` | `src/vote.ts` over the vote library: `VoteRules.of(net)`, `validateVote`, `split`; `VoteEntry.validator` | 4 |
@@ -19,11 +19,11 @@ Read first: [Integration guide: desktop wallet](desktop-wallet.md), [Vote select
 
 Every amount becomes a `bigint` of base units, and every limit, fee and rule comes from the network. Today's devnet has 8 decimals, not 18, and its vote rules differ from IceRoot's (1 to 53 entries, no per-validator cap), so the constants of `demoSession.ts` and `vote.ts` would be wrong there even before they were sample data.
 
-## 1. Connect and hold keys for the session
+## 1. Connect, and keep keys in the plugin
 
-Install the package and change the CSP and the HTTP plugin as in steps 1 to 3 of the [integration guide](desktop-wallet.md#wiring-steps): `src/network.ts` gives one connected `Network`, and `src/keys.ts` holds a key handle per wallet for the session. A profile's wallets keep their `WalletReference` (`kind` and `address`) in `storage.ts`, never a phrase or key.
+Install the package and register the plugin as in steps 1 to 3 of the [integration guide](desktop-wallet.md#wiring-steps): `src/network.ts` gives one connected `Network`, and `src/keys.ts` keeps each wallet's phrase as a [keystore](../keystore.md) with the desktop preset and opens its account in the plugin when the holder unlocks. A profile's wallets keep their `WalletReference` (`kind` and `address`) and the keystore's text in `storage.ts`, never a phrase, key or password.
 
-The example wallet keeps its phrase in a [keystore](../keystore.md) in the browser (`examples/vite-react-wallet/src/Setup.tsx` and `Unlock.tsx`). The desktop wallet adopts the same keystore calls with the native plugin, with the desktop preset; until then it asks for the phrase when it signs and releases the handle on lock.
+The example wallet does the same in the browser with the `web` preset (`examples/vite-react-wallet/src/Setup.tsx` and `Unlock.tsx`).
 
 ## 2. Replace `mockData.ts`
 
@@ -32,7 +32,7 @@ The fixture's types become the SDK's records. Keep the file's role, one module t
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/walletData.ts: replaces src/mockData.ts
-import { Address, Amount, balanceOf, type AccountInfo, type Network, type TxRecord, type ValidatorInfo } from "@iceroot-network/sdk";
+import { Address, Amount, balanceOf, type AccountInfo, type Network, type TxRecord, type ValidatorInfo } from "@iceroot-network/sdk/tauri";
 
 /** A wallet of the profile, as storage.ts keeps it. */
 export type WalletRef = { readonly id: string; readonly name: string; readonly address: string };
@@ -74,14 +74,14 @@ export async function historyOf(net: Network, address: string, page = 1): Promis
   return (await net.history.forAccount(address, { page, limit: 25 })).items;
 }
 
-/** Replaces formatDemoAmount(number). */
-export function formatAmount(net: Network, units: bigint): string {
-  return `${Amount.format(units, net.token.decimals, { grouping: true })} ${net.token.symbol}`;
+/** Replaces formatDemoAmount(number): formatted in the plugin, when the data is loaded. */
+export async function formatAmount(net: Network, units: bigint): Promise<string> {
+  return `${await Amount.format(units, net.token.decimals, { grouping: true })} ${net.token.symbol}`;
 }
 
 /** Replaces the DEMO- reference check, for wallets and contacts: null when the address is one of this network's. */
-export function addressProblem(net: Network, text: string): string | null {
-  const check = Address.check(text.trim(), net);
+export async function addressProblem(net: Network, text: string): Promise<string | null> {
+  const check = await Address.check(text.trim(), net);
   return check.ok ? null : `Check the address (${check.reason}).`;
 }
 
@@ -108,7 +108,7 @@ Field by field:
 | `snapshotAt`, `historyStartsAt` | `WalletData.height`; history is paged from the node |
 | The checks of `loadDemoData` (DEMO- references, the `^[a-z]{1,20}$` validator name, the vote rules) | Gone: the node's records are typed, addresses are checked with `Address.check` against the network, and votes with `validateVote` (step 4) |
 
-In `DemoPages.tsx`, the pages take `WalletData` instead of `DemoData`, and every `formatDemoAmount(x)` becomes `formatAmount(net, x)` with `x` a `bigint`. Arithmetic on amounts stays in `bigint` (the asset allocation bar's share of a total, for example, is `Number((part * 10_000n) / total) / 100`).
+In `DemoPages.tsx`, the pages take `WalletData` instead of `DemoData`, and every `formatDemoAmount(x)` becomes the text of `formatAmount(net, x)` with `x` a `bigint`, computed when the data loads (keep the formatted strings next to the amounts in the page's state). Arithmetic on amounts stays in `bigint` (the asset allocation bar's share of a total, for example, is `Number((part * 10_000n) / total) / 100`).
 
 ## 3. Replace `demoSession.ts`
 
@@ -117,7 +117,7 @@ In `DemoPages.tsx`, the pages take `WalletData` instead of `DemoData`, and every
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/session.ts: replaces src/demoSession.ts
-import { Address, Amount, IceRootError, type Account, type Draft, type Network, type VoteEntry } from "@iceroot-network/sdk";
+import { Address, Amount, IceRootError, type Account, type Draft, type Network, type VoteEntry } from "@iceroot-network/sdk/tauri";
 
 /** One row of the Details step, as typed. */
 export type TransferEntry = { readonly recipient: string; readonly amount: string };
@@ -131,15 +131,14 @@ export function transferLimits(net: Network) {
 export const memoBytes = (memo: string) => new TextEncoder().encode(memo).length;
 
 /** Details step of a transfer: one transaction to every recipient, with one memo and one fee. Replaces the first half of demoTransfer. */
-export function prepareTransfer(net: Network, from: Account, entries: readonly TransferEntry[], memo: string): Promise<Draft> {
-  return net.build.transfer({
-    from,
-    to: entries.map((entry) => ({
-      address: Address.parse(entry.recipient.trim(), net),
-      amount: Amount.parse(entry.amount.trim(), net.token.decimals),   // at most net.token.decimals fraction digits
+export async function prepareTransfer(net: Network, from: Account, entries: readonly TransferEntry[], memo: string): Promise<Draft> {
+  const to = await Promise.all(
+    entries.map(async (entry) => ({
+      address: await Address.parse(entry.recipient.trim(), net),
+      amount: await Amount.parse(entry.amount.trim(), net.token.decimals),   // at most net.token.decimals fraction digits
     })),
-    memo: memo.trim(),
-  });
+  );
+  return net.build.transfer({ from, to, memo: memo.trim() });
 }
 
 /** Details step of a vote: replaces the first half of demoVote. An empty vote withdraws the account's vote. */
@@ -152,9 +151,9 @@ export type SendResult =
   | { readonly state: "confirmed"; readonly id: string; readonly height: bigint | undefined }
   | { readonly state: "rejected" | "dropped" | "not-yet"; readonly id: string; readonly reason?: string };
 
-/** Result step: signs the draft the Review step showed, submits it and waits for a block. Replaces the second half of demoTransfer and demoVote. */
+/** Result step: the plugin signs the draft the Review step showed; submits it and waits for a block. Replaces the second half of demoTransfer and demoVote. */
 export async function send(net: Network, draft: Draft, account: Account): Promise<SendResult> {
-  const signed = draft.sign(account);
+  const signed = await draft.sign(account);
   const result = await net.submit(signed);
   if (result.status !== "accepted") return { state: "rejected", id: signed.id, reason: result.reason };
   try {
@@ -170,7 +169,7 @@ export async function send(net: Network, draft: Draft, account: Account): Promis
 
 What changes for the screens:
 
-- **Details.** `SendFlow.tsx`'s `canReview` drops the `DEMO-` and 18-decimal patterns: check each recipient with `Address.check(text, net)` and each amount with `Amount.parse` (its `InvalidAmount` says what is wrong). The recipient and memo limits come from `transferLimits(net)`.
+- **Details.** `SendFlow.tsx`'s `canReview` drops the `DEMO-` and 18-decimal patterns: check each recipient with `await Address.check(text, net)` and each amount with `await Amount.parse` (its `InvalidAmount` says what is wrong), as the fields change. The recipient and memo limits come from `transferLimits(net)`.
 - **Review.** Render `draft.summary.lines` (one line per effect, then the memo and the fee), `draft.fee` and `draft.summary.total`, all computed from the transaction's own fields. The demo's fee of 0.1 ROOT per recipient and `DEMO_VOTE_FEE` go away: the fee is `draft.fee`, resolved from the network's fee floor.
 - **Result.** "Confirmed in block N", never "final": today's devnet has no finality (`net.capabilities.has("finality")` is false). A `rejected` result with reason `nonce` means the account sent another transaction since the draft was built: build again and show the new review. A `not-yet` result says to check the history later; it is not a failure.
 - **Balances.** The demo subtracted amounts itself. After a confirmed result, read the account again (`loadWalletData`); never compute a balance locally.
@@ -182,24 +181,24 @@ The vote editor's constants and checks become the network's rules and the vote l
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/vote.ts: the rules come from the network
-import type { Network, VoteEntry } from "@iceroot-network/sdk";
-import { VoteRules, split, validateVote, type Voter } from "@iceroot-network/sdk/vote";
+import type { Network, VoteEntry } from "@iceroot-network/sdk/tauri";
+import { VoteRules, split, validateVote, type Voter } from "@iceroot-network/sdk/tauri/vote";
 
 export type { VoteEntry };   // { validator, basisPoints }: the validator's name, which the vote carries
 
 /** Replaces VOTE_MIN_VALIDATORS, VOTE_MAX_VALIDATORS and VOTE_MAX_SHARE. */
-export function voteLimits(net: Network) {
-  const rules = VoteRules.of(net);
+export async function voteLimits(net: Network) {
+  const rules = await VoteRules.of(net);
   return { min: rules.minEntries, max: rules.maxEntries, maxShare: rules.maxEntryBasisPoints };
 }
 
 /** Replaces voteProblem: the first problem's sentence, or null. An empty vote withdraws. */
-export function voteProblem(net: Network, entries: readonly VoteEntry[], voter: Voter = "ordinary"): string | null {
-  return validateVote(entries, VoteRules.of(net), voter)[0]?.text ?? null;
+export async function voteProblem(net: Network, entries: readonly VoteEntry[], voter: Voter = "ordinary"): Promise<string | null> {
+  return (await validateVote(entries, await VoteRules.of(net), voter))[0]?.text ?? null;
 }
 
 /** Replaces evenVote: whole basis points, the first names take the remainder, in the protocol's order. */
-export function evenVote(names: readonly string[]): VoteEntry[] {
+export async function evenVote(names: readonly string[]): Promise<VoteEntry[]> {
   return names.length === 0 ? [] : split(names);
 }
 
@@ -213,7 +212,7 @@ export function sameVote(a: readonly VoteEntry[], b: readonly VoteEntry[]): bool
 - `VOTE_TOTAL` goes away: `split` shares the whole vote.
 - `formatShare` and `shareSummary` stay as they are.
 - Rename `validatorId` to `validator` wherever a vote entry appears (`DemoPages.tsx`'s picker and the saved votes); the vote carries validator names.
-- A validator's account cannot vote from the IceRoot genesis. Pass `voterOf(snapshot, address)` as the voter (step 5), and hide the editor when `validateVote` reports `validator-account`.
+- A validator's account cannot vote from the IceRoot genesis. Pass `await voterOf(snapshot, address)` as the voter (step 5), and hide the editor when `validateVote` reports `validator-account`.
 
 ## 5. Add the vote modes to the governance page
 
@@ -222,8 +221,8 @@ The governance page asks for a hand-picked vote today. The vote library fills on
 <!-- sample: verified 0.1.0 -->
 ```ts
 // src/voteModes.ts: selections, their review, and the check of a kept selection
-import type { Account, Network } from "@iceroot-network/sdk";
-import { MODE_NAMES, Selection, VoteRules, VoteSnapshot, check, select, type Mode } from "@iceroot-network/sdk/vote";
+import type { Account, Network } from "@iceroot-network/sdk/tauri";
+import { MODE_NAMES, Selection, VoteRules, VoteSnapshot, check, select, type Mode } from "@iceroot-network/sdk/tauri/vote";
 
 /** Read once per visit of the page: on today's devnet one request per validator that has forged. */
 export function readSnapshot(net: Network): Promise<VoteSnapshot> {
@@ -231,8 +230,8 @@ export function readSnapshot(net: Network): Promise<VoteSnapshot> {
 }
 
 /** A selection for the review screen; `draw` is one higher for each "Draw again". */
-export function choose(net: Network, snapshot: VoteSnapshot, account: Account, mode: Mode, count: number, draw: number): Selection {
-  return select(snapshot, { mode, account: account.address, rules: VoteRules.of(net), count, draw });
+export async function choose(net: Network, snapshot: VoteSnapshot, account: Account, mode: Mode, count: number, draw: number): Promise<Selection> {
+  return select(snapshot, { mode, account: account.address, rules: await VoteRules.of(net), count, draw });
 }
 
 /** What the review screen shows for each pick: its share, where it came from, and every reason's sentence. */
@@ -247,7 +246,7 @@ export function reviewLines(selection: Selection) {
 
 /** When the wallet opens: the picks of the kept selection that no longer meet their criteria. Nothing is recast. */
 export async function stalePicks(net: Network, kept: string): Promise<string[]> {
-  const findings = check(Selection.deserialize(kept), await VoteSnapshot.fromNode(net));
+  const findings = await check(Selection.deserialize(kept), await VoteSnapshot.fromNode(net));
   return findings.filter((finding) => !finding.stillMeets).map((finding) => `${finding.validator}: ${finding.why}`);
 }
 ```
@@ -258,7 +257,7 @@ export async function stalePicks(net: Network, kept: string): Promise<string[]> 
 
 ## 6. Rewire `App.tsx` and the pages
 
-- `openDemo()` loaded the fixture into a demo profile. A wallet of a real profile unlocks instead: the holder enters the phrase (or, with the native plugin, the keystore's password), `src/keys.ts` opens a handle, and the pages load `loadWalletData(net, profile.wallets)`.
+- `openDemo()` loaded the fixture into a demo profile. A wallet of a real profile unlocks instead: the holder enters the keystore's password, `src/keys.ts` opens the account in the plugin, and the pages load `loadWalletData(net, profile.wallets)`.
 - `simulateTransfer(entries, memo)` becomes the Details, Review and Result steps of step 3, with the selected wallet's key: `prepareTransfer`, then `send`. `SendFlow`'s `onTransfer` becomes asynchronous, and `demoBalance?: number` becomes `balance?: bigint`, formatted with `formatAmount`.
 - `simulateVote(walletId, vote)` becomes `prepareVote` and `send`, with the entries of step 4 or 5.
 - `DemoOverview`, `DemoWallets`, `DemoAssets`, `DemoActivity`, `DemoGovernance` and `DemoReceive` read `WalletData` and `historyOf`. Rename them once they no longer read the fixture.
@@ -273,5 +272,5 @@ Then check the result against the [review checklist](../rules.md#checklist-for-a
 
 ## Tests
 
-- The example wallet's end-to-end test (`test/e2e/wallet.e2e.ts`, run by `npm run test:e2e`) shows the flows against a local devnet in Chromium: create, restore, reload and unlock, send to two recipients, a vote in each mode with every pick's reasons, a check that flags a resigned validator, and sign-in.
-- In the desktop wallet: unit tests of `walletData.ts` and `session.ts` with a stub transport that returns recorded devnet answers (a balance, a history page, a transfer to 3 recipients, a vote, a refused submission), and the Playwright preview against a local devnet, as the [integration guide](desktop-wallet.md#tests-to-add) lists.
+- The example wallet's end-to-end test (`test/e2e/wallet.e2e.ts`, run by `npm run test:e2e`) shows the flows against a local devnet in Chromium: create, restore, reload and unlock, send to two recipients, a vote in each mode with every pick's reasons, a check that flags a resigned validator, and sign-in. The same scenario of the SDK's own end-to-end test runs through the plugin in a Tauri app under `tauri-driver` (`npm run test:e2e -- --only tauri`).
+- In the desktop wallet: the app under `tauri-driver` against a local devnet, and unit tests of `walletData.ts` and `session.ts` with the SDK replaced by a stub fed with recorded devnet answers (a balance, a history page, a transfer to 3 recipients, a vote, a refused submission), as the [integration guide](desktop-wallet.md#tests-to-add) lists.

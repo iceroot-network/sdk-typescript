@@ -1,6 +1,6 @@
 # Keystore
 
-A keystore is a recovery phrase encrypted under a password, in one versioned format that every IceRoot wallet reads. `@iceroot-network/sdk/keystore` writes and opens it with the SDK's Rust core; the Rust crate is `iceroot_sdk::keystore`, and the native Tauri plugin will run the same format natively.
+A keystore is a recovery phrase encrypted under a password, in one versioned format that every IceRoot wallet reads. `@iceroot-network/sdk/keystore` writes and opens it with the SDK's Rust core; the Rust crate is `iceroot_sdk::keystore`, and in Tauri apps `@iceroot-network/sdk/tauri/keystore` runs the same format natively in the SDK's plugin, with the same functions returning promises.
 
 - **What is inside.** The entropy of the recovery phrase (24, 28 or 32 bytes for 18, 21 or 24 words), never its text and never a derived key. Opening a keystore gives the phrase back.
 - **How.** The key comes from the password by Argon2id; the entropy is sealed with XChaCha20-Poly1305. The header (the format version, the parameters, the salt, the nonce and the payload's kind and length) is readable without the password and authenticated with the payload, so any change to a keystore makes it fail to open. A wrong password and a damaged keystore are one error, `WrongPasswordOrCorrupt`, by design.
@@ -54,6 +54,16 @@ try {
 ```
 
 `opened.phrase` is the canonical phrase (words joined by single spaces) as UTF-8 bytes, a new array the app owns: pass it to `Keys.fromPhrase`, which overwrites it with zeros, or overwrite it yourself (`opened.phrase.fill(0)`) once shown for a backup.
+
+To unlock an account, open it straight from the keystore instead: `Keys.fromKeystore(stored, password, net.profile, { account: 0, index: 0 })`, or `net.keys.fromKeystore(stored, password)`, decrypts the keystore and derives the key inside the SDK, so the phrase never reaches JavaScript (with the Tauri plugin, it never enters the webview). Its refusals are `decrypt`'s, and it takes `maxMemoryKib` among its options.
+
+<!-- sample: verified 0.1.0 -->
+```ts
+import { Keys } from "@iceroot-network/sdk";
+
+const account = Keys.fromKeystore(stored, password, net.profile, { account: 0, index: 0 });
+account.address;                                     // the key stays in the SDK until account.release()
+```
 
 A keystore this release cannot open is refused before any work: `Malformed` (not a keystore; `error.reason` says why), `UnsupportedVersion`, `UnsupportedKdf`, `UnsupportedPayload`, or `ParamsOutOfRange` for parameters outside the bounds. `decrypt(stored, password, { maxMemoryKib })` lowers the memory a keystore may ask for, on a platform that cannot spare the format's ceiling: a keystore that asks for more is refused with `ParamsOutOfRange` rather than failing mid-way with `OutOfMemory`.
 
