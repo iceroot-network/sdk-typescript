@@ -5,8 +5,9 @@
 // or answers with a redirect is skipped), keeps to the node's request allowance with the Rust
 // client's request budget, and retries HTTP 429 with the Rust client's backoff. It asks the
 // transport not to follow redirects, as the Rust client follows none: a request, its headers and
-// its body go to the relays and nowhere else. It reads at most 4 MiB of an answer: a larger one is
-// refused before the Rust client decodes it, whatever it declares, and the next relay is asked.
+// its body go to the relays and nowhere else. It reads at most 8 MiB of an answer, as the Rust
+// client does: a larger one is refused before it is decoded, whatever it declares, and the next
+// relay is asked.
 
 import type { ConnectOptions, RateLimit, Transport } from "../client.js";
 import { BadResponse, IceRootError, InvalidArgument, NodeUnavailable, Timeout } from "../errors.js";
@@ -39,21 +40,22 @@ export const DEFAULT_RATE_LIMIT: RateLimit = { requests: 100, windowMs: 60_000 }
 export const DEFAULT_TIMEOUT_MS = 15_000;
 
 /**
- * The largest answer the client reads, in bytes once decoded (4 MiB). The largest answers of the
- * node API are pages of at most 100 records and the chain's configuration, far smaller; a larger
- * answer is refused before it is decoded, whatever it declares, and the next relay is asked.
+ * The largest answer the client reads, in bytes once decoded (8 MiB, the Rust client's limit). The
+ * largest answers of the node API are pages of at most 100 records and the chain's configuration,
+ * far smaller; a larger answer is refused before it is decoded, whatever it declares, and the next
+ * relay is asked.
  */
-export const MAX_ANSWER_BYTES = 4 * 1024 * 1024;
+export const MAX_ANSWER_BYTES = 8 * 1024 * 1024;
 
 /** The longest delay a timer keeps (2^31 - 1 ms, about 24.8 days); a longer one fires at once. */
 const MAX_DELAY_MS = 2_147_483_647;
 
 /**
- * The longest wait before retrying HTTP 429 on the same relay: the backoff's longest step (30
- * seconds). A relay whose `Retry-After` asks for longer counts as unavailable for this request, so
- * the next relay is asked, and the shared request budget is never blocked for longer.
+ * The longest `Retry-After` honoured before retrying HTTP 429 on the same relay: one minute, as
+ * the Rust client. A relay that asks for longer counts as unavailable for this request, so the
+ * next relay is asked, and the shared request budget is never blocked for longer.
  */
-const MAX_RETRY_WAIT_MS = 30_000;
+const MAX_RETRY_WAIT_MS = 60_000;
 
 /** The largest block height an answer's `X-Block-Height` may carry (2^64 - 1, as the Rust client reads it). */
 const MAX_U64 = 18_446_744_073_709_551_615n;
@@ -254,11 +256,11 @@ export class Relays {
   /**
    * Sends `request` and decodes the answer with `decode`. Relays are tried in order: one that
    * cannot be reached, times out, answers with a server error, answers with a redirect or answers
-   * with more than 4 MiB is skipped, and so is one whose chain identity differs or cannot be
+   * with more than 8 MiB is skipped, and so is one whose chain identity differs or cannot be
    * checked (see {@link Relays.requireIdentity}). HTTP 429 is retried on the same relay after the
-   * backoff, or after the node's `Retry-After` when it is longer, up to 30 seconds; a relay that
-   * asks for longer is skipped. When the retries are spent, or no other relay answers, the error
-   * is `RateLimited`.
+   * backoff, or after the node's `Retry-After` when it is longer, up to a minute; a relay that asks
+   * for longer, or whose retries are spent, is skipped, and the error is `RateLimited` when no
+   * other relay answers.
    */
   async send<T>(request: RequestJson, decode: (answer: Answer) => T): Promise<T> {
     let last: unknown = new NodeUnavailable("no relay was tried");
@@ -344,7 +346,7 @@ export class Relays {
           }
           const delay = call((module) => module.backoffDelay(attempt, wait));
           if (delay === undefined) {
-            throw error;
+            return { ok: false, error };
           }
           this.#budget?.blockFor(now(), delay);
           if (this.#budget === undefined) {

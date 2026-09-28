@@ -517,13 +517,13 @@ export default function suite(test, env) {
     }
   });
 
-  test("an answer larger than 4 MiB is refused before it is decoded, and the next relay is asked", async () => {
+  test("an answer larger than 8 MiB is refused before it is decoded, and the next relay is asked", async () => {
     // The plugin's requests are made in Rust; this is the WebAssembly entry's transport.
     if (!env.wasm) {
       return;
     }
     const node = await env.node();
-    const LIMIT = 4 * 1024 * 1024;
+    const LIMIT = 8 * 1024 * 1024;
     let pulled = 0;
     const answers = {
       // Declares its length.
@@ -592,7 +592,7 @@ export default function suite(test, env) {
     await assert.rejects(always.net.blocks.latest(), sdk.RateLimited);
   });
 
-  test("a Retry-After longer than the backoff's longest step moves on to the next relay", async () => {
+  test("a Retry-After longer than a minute, or retries spent, move on to the next relay", async () => {
     // The plugin's requests are made in Rust; this is the WebAssembly entry's transport.
     if (!env.wasm) {
       return;
@@ -629,6 +629,25 @@ export default function suite(test, env) {
     // Each request asked the limited relay once and never waited to retry it: four for each
     // connection and its status read, and the one refused.
     assert.equal(limited, 9);
+
+    // A relay that keeps answering 429 is left once its retries are spent (2, 4 and 8 seconds).
+    const busy = await env.node({ "*": "rate-limited" });
+    let busyNow = false;
+    const busyTransport = async (url, init) => {
+      const local = url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003");
+      if (url.startsWith("http://busy.example")) {
+        return (busyNow ? busy : node).options.transport(local, init);
+      }
+      return transport(url, init);
+    };
+    const net = await sdk.connect(sdk.profiles.devnet({ relays: ["http://busy.example/api", node.relay] }), {
+      transport: busyTransport,
+      rateLimit: false,
+    });
+    busyNow = true;
+    const retried = Date.now();
+    assert.equal((await net.node.status()).height, 80n);
+    assert.ok(Date.now() - retried >= 13_000, `${Date.now() - retried} ms`);
   });
 
   test("a wait longer than a timer can hold is not cut short", async () => {

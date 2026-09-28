@@ -43,7 +43,7 @@ export interface ConnectOptions {
    * a relay that answers with one, so a request, its headers and its body reach the relays only.
    * A transport that follows redirects anyway sends them to the redirect's target. An answer is
    * read from the response's `body` stream where it has one, and refused with `BadResponse` once
-   * it is larger than 4 MiB (the next relay is then asked).
+   * it is larger than 8 MiB (the next relay is then asked).
    */
   readonly transport?: Transport;
   /**
