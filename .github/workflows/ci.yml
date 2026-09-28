@@ -128,12 +128,14 @@ jobs:
           retention-days: 7
 
   # A Tauri 2 webview (WebKitGTK) under tauri-driver, in a container: the WebAssembly build in the
-  # webview, then the native plugin.
+  # webview, then the native plugin. The plugin check builds the example application three times
+  # (its own page, the published build, the test build) from a target directory no cache keeps,
+  # hence the longer limit.
   tauri:
     needs: production-merge
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.production-merge.result == 'success') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: sdk-typescript

@@ -117,7 +117,6 @@ async function assemble() {
     identifier: "main",
     windows: ["main"],
     permissions: [
-      "core:default",
       "iceroot:default",
       { identifier: "iceroot:allow-net-connect", allow: [{ url: "http://127.0.0.1:6003/n/*/api" }, { url: "http://127.0.0.1:*/api" }] },
     ],
