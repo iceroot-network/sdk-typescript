@@ -345,7 +345,10 @@ export class SignedTransaction {
 
   /**
    * The signed transaction in `bytes` (from {@link SignedTransaction.serialize}), for the profile
-   * of `source`, whose network hash must be pinned. It must verify.
+   * of `source`, whose network hash must be pinned. The sender's signature must verify. A second
+   * signature is not checked here, since that needs the account's second public key: check it with
+   * {@link SignedTransaction.verifySecondSignature} (a node refuses a transaction whose second
+   * signature does not verify).
    */
   static deserialize(bytes: Uint8Array, source: ProfileSource): SignedTransaction {
     const profile = profileHandleOf(source);

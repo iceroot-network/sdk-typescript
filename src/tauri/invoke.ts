@@ -3,8 +3,9 @@
 // The page calls the plugin through Tauri's IPC (`plugin:iceroot|<command>`), with the internal
 // invoke function every Tauri 2 webview has, so the package needs no runtime dependency. A
 // refusal of the plugin carries an SDK error code and becomes the SDK's error class of that code,
-// as a refusal of the WebAssembly module does. A call Tauri itself refuses (the plugin is not
-// registered, or the application's capabilities do not allow the command) is `SdkNotInitialized`.
+// as a refusal of the WebAssembly module does. A call whose arguments Tauri cannot read for the
+// command is `InvalidArgument`; any other call Tauri itself refuses (the plugin is not registered,
+// or the application's capabilities do not allow the command) is `SdkNotInitialized`.
 
 import { IceRootError, SdkNotInitialized } from "../errors.js";
 import { errorFromCode } from "../internal/error-codes.js";
@@ -25,7 +26,10 @@ function internals(): TauriInternals {
   return value as TauriInternals;
 }
 
-/** A refusal of the plugin as the SDK's error, or a refusal of Tauri as `SdkNotInitialized`. */
+/**
+ * A refusal of the plugin as the SDK's error; a refusal of Tauri as `InvalidArgument` when it could
+ * not read the command's arguments, and as `SdkNotInitialized` otherwise.
+ */
 export function fromPluginError(error: unknown): unknown {
   if (error instanceof IceRootError) {
     return error;
@@ -36,6 +40,10 @@ export function fromPluginError(error: unknown): unknown {
       const fields = typeof details === "object" && details !== null ? (details as Record<string, unknown>) : {};
       return errorFromCode(code, message, fields);
     }
+  }
+  // Tauri's own refusal of arguments it cannot read ("invalid args `x` for command `y`: ...").
+  if (typeof error === "string" && error.startsWith("invalid args ")) {
+    return new InvalidArgument(`the Tauri plugin iceroot could not read the call's arguments: ${error}`);
   }
   return new SdkNotInitialized(`the Tauri plugin iceroot refused the call: ${String(error)}`);
 }

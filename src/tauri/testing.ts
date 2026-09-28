@@ -11,7 +11,8 @@ import { signWith, type Draft, type SignedTransaction } from "./build.js";
 import { pluginHasTestSeams } from "./init.js";
 import { bytesOf, hex, invoke } from "./invoke.js";
 import { keyOf, type Account } from "./keys.js";
-import { solarKeyOf, type OwnershipProof, type SolarKey } from "./ownership.js";
+import type { OwnershipProof, SolarKey } from "./ownership.js";
+import { solarKeyOf } from "./solar-keys.js";
 import { proofOf } from "../internal/ownership-args.js";
 
 export * from "./index.js";

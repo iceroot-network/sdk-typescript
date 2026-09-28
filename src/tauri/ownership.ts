@@ -6,7 +6,6 @@
  * @module
  */
 
-import { InvalidArgument, KeyReleased } from "../errors.js";
 import {
   expectedAddress,
   milliseconds,
@@ -18,6 +17,7 @@ import {
 import type { OwnershipProof as Proof, ParsedAccount, ProofExpectations, ProofFields, ProofRequest } from "../ownership.js";
 import type { Hex } from "../types.js";
 import { dropWith, invoke, keep, withSecrets } from "./invoke.js";
+import { forgetSolarKey, holdSolarKey, solarKeyHeld, solarKeyOf } from "./solar-keys.js";
 
 export * from "../ownership-errors.js";
 export {
@@ -32,8 +32,6 @@ export type { AccountNetwork, ParsedAccount, ProofExpectations, ProofFields, Pro
 /** A signed ownership proof. */
 export type OwnershipProof = Proof;
 
-const handles = new WeakMap<SolarKey, number>();
-
 /** A Solar key from its passphrase, held by the plugin. It signs ownership proofs and nothing else. */
 export class SolarKey {
   /** The key's Solar mainnet address. */
@@ -42,7 +40,7 @@ export class SolarKey {
   readonly publicKey: Hex;
 
   private constructor(info: { key: number; address: string; publicKey: Hex }) {
-    handles.set(this, info.key);
+    holdSolarKey(this, info.key);
     this.address = info.address;
     this.publicKey = info.publicKey;
     dropWith(this, "proof_key_release", { key: info.key }, this);
@@ -63,32 +61,18 @@ export class SolarKey {
 
   /** Whether the key was released. */
   get released(): boolean {
-    return !handles.has(this);
+    return !solarKeyHeld(this);
   }
 
   /** Wipes the key in the plugin; signing afterwards throws `KeyReleased`. Calling it again does nothing. */
   async release(): Promise<void> {
-    const key = handles.get(this);
+    const key = forgetSolarKey(this);
     if (key === undefined) {
       return;
     }
-    handles.delete(this);
     keep(this);
     await invoke("proof_key_release", { key });
   }
-}
-
-/**
- * The plugin's number of `key`.
- *
- * @internal
- */
-export function solarKeyOf(key: SolarKey): number {
-  const handle = key instanceof SolarKey ? handles.get(key) : undefined;
-  if (handle === undefined) {
-    throw key instanceof SolarKey ? new KeyReleased() : new InvalidArgument("the key is not a SolarKey");
-  }
-  return handle;
 }
 
 function ownershipCall(operation: string, first = "", second = "", now = 0): Promise<string> {

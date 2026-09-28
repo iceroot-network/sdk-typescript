@@ -4,7 +4,8 @@
  *
  * The plugin makes every request, in Rust, with the SDK's node API client: the same request
  * builders and answer decoders as the WebAssembly entry, sent with reqwest to the relays the
- * application's capabilities allow. The webview reaches no node, so its content security policy
+ * application's capabilities allow and nowhere else (it follows no redirect: a relay that answers
+ * with one counts as unavailable). The webview reaches no node, so its content security policy
  * needs no node origin. The reads, waits, watches and draft facts are the same code as the
  * WebAssembly entry's.
  *
@@ -174,15 +175,26 @@ export async function connect(profile: NetworkProfile, options: ConnectOptions =
     positive(rateLimit.windowMs, "windowMs", 1);
   }
   const timeoutMs = positive(options.timeoutMs, "timeoutMs", DEFAULT_TIMEOUT_MS);
+  // The plugin reads whole numbers of fixed width: a larger value means the same as its largest.
   const connection = await invoke<Connection>("net_connect", {
     profile: profileJson(profile),
     options: {
       headers: Object.entries(options.headers ?? {}),
-      rateLimit: rateLimit === false ? false : { requests: rateLimit.requests, windowMs: Math.ceil(rateLimit.windowMs) },
-      timeoutMs: Math.ceil(timeoutMs),
+      rateLimit:
+        rateLimit === false
+          ? false
+          : { requests: Math.min(rateLimit.requests, MAX_U32), windowMs: whole(rateLimit.windowMs) },
+      timeoutMs: whole(timeoutMs),
     },
   });
   return new Network(connection);
+}
+
+const MAX_U32 = 0xffff_ffff;
+
+/** `ms` rounded up to a whole number the plugin reads (at most 2^53 - 1). */
+function whole(ms: number): number {
+  return Math.min(Math.ceil(ms), Number.MAX_SAFE_INTEGER);
 }
 
 /** A connected network, whose requests the plugin makes. */

@@ -1,6 +1,7 @@
 // What only the Tauri plugin's entry has: the plugin itself answers, relays are limited to the
 // application's capabilities, a keystore's account opens inside the plugin, released keys are gone
-// from it, drafts are read again from their bytes, and the page reaches no node.
+// from it, drafts are read again from their bytes, the page reaches no node, a secret in the wrong
+// form is refused without a trace of it, and arguments Tauri cannot read are InvalidArgument.
 
 const RELAY = "http://127.0.0.1:4003/api";
 const LOW = { memoryKib: 19_456, iterations: 2, parallelism: 1 };
@@ -58,6 +59,32 @@ export default function suite(test, env) {
     for (const key of [0, 2 ** 40, Number.MAX_SAFE_INTEGER]) {
       await assert.rejects(invoke("key_sign_message", { key, message: "00" }), (error) => error.code === "KeyReleased");
     }
+  });
+
+  test("a secret sent in another form is refused without a trace of it", async () => {
+    const profile = JSON.stringify(sdk.profiles.devnet({ relays: [RELAY] }));
+    for (const passphrase of ["correct horse battery staple", ["correct", "horse"], [104, 99999]]) {
+      const refusal = await invoke("key_from_legacy_passphrase", { profile, passphrase }).then(
+        () => "accepted",
+        (error) => (typeof error === "string" ? error : JSON.stringify(error)),
+      );
+      assert.ok(refusal.includes("a secret is an array of UTF-8 bytes"), refusal);
+      assert.ok(!refusal.includes("horse") && !refusal.includes("99999"), refusal);
+    }
+  });
+
+  test("arguments Tauri cannot read are InvalidArgument; larger numbers than the plugin reads are bounded", async () => {
+    await assert.rejects(
+      sdk.connect(sdk.profiles.devnet({ relays: [RELAY] }), { headers: { "x-count": 5 } }),
+      sdk.InvalidArgument,
+    );
+    const node = await env.node();
+    const net = await sdk.connect(sdk.profiles.devnet({ relays: [node.relay] }), {
+      ...node.options,
+      timeoutMs: 1e20,
+      rateLimit: { requests: 2 ** 32, windowMs: 1e20 },
+    });
+    assert.equal(typeof net.height, "bigint");
   });
 
   test("the plugin signs what it reads from a draft's bytes", async () => {
