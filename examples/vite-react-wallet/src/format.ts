@@ -19,6 +19,12 @@ export function problem(error: unknown, fallback: string): string {
       case "BadResponse":
       case "RateLimited":
         return "The network is unavailable. Try again in a moment.";
+      // The node's own text stays out of the wallet's words.
+      case "Refused":
+      case "NotFound":
+        return `${fallback}: the network refused the request.`;
+      case "NetworkMismatch":
+        return `${fallback}: the network is not the one this wallet was set up for.`;
       default:
         return `${fallback} (${error.message}).`;
     }

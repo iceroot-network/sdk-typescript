@@ -61,6 +61,7 @@ import {
   NotEnoughValidators,
   ValidatorCannotVote,
 } from "../vote-errors.js";
+import { displayText } from "./drafts.js";
 
 const ADDRESS_PROBLEMS: ReadonlySet<string> = new Set(["checksum", "length", "wrong-network", "format"]);
 const REJECTION_REASONS: ReadonlySet<string> = new Set([
@@ -127,9 +128,59 @@ const PLAIN: Readonly<Record<string, Plain>> = {
   InvalidProof,
 };
 
-/** The SDK error of a code, message and details, as the Rust core reports them. */
-export function errorFromCode(code: string, message: string, details: ErrorDetails): IceRootError {
+/** The longest text of a node's own that an error's details keep. */
+const MAX_NODE_TEXT = 200;
+
+/** The longest message, and the longest text of any detail, an error keeps. */
+const MAX_TEXT = 500;
+
+/** `text` cut to `max` characters, with `...` when it was longer. */
+function shortened(text: string, max: number): string {
+  if (text.length <= max) {
+    return text;
+  }
+  // Never end on the first half of a surrogate pair.
+  const cut = /[\uD800-\uDBFF]$/.test(text.slice(0, max)) ? max - 1 : max;
+  return `${text.slice(0, cut)}...`;
+}
+
+/** `details` with every text shortened to {@link MAX_TEXT} characters. */
+function shortenedDetails(details: ErrorDetails): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(details).map(([key, value]) => [key, typeof value === "string" ? shortened(value, MAX_TEXT) : value]),
+  );
+}
+
+/**
+ * The text a node sent with a refusal, for `details.message`: shortened, and on one line with its
+ * control, separator and invisible characters escaped as a review line escapes them.
+ */
+function nodeText(details: Record<string, unknown>): Record<string, unknown> {
+  const text = details["message"];
+  return typeof text === "string" ? { ...details, message: shortened(displayText(text), MAX_NODE_TEXT) } : details;
+}
+
+/**
+ * The SDK error of a code, message and details, as the Rust core reports them.
+ *
+ * Text a node chose never becomes the message, which apps show as it is: a refusal's message
+ * names its HTTP status and the node's own text is in `details.message`, shortened to 200
+ * characters; an answer that could not be read says so, with what was wrong in `details.reason`.
+ * Every message and every text of the details is at most 500 characters.
+ */
+export function errorFromCode(code: string, rawMessage: string, rawDetails: ErrorDetails): IceRootError {
+  const details = shortenedDetails(rawDetails);
+  const message = shortened(rawMessage, MAX_TEXT);
   switch (code) {
+    case "Refused": {
+      const status = details["status"];
+      const statusText = typeof status === "number" ? ` with HTTP ${status}` : "";
+      return new Refused(`the node refused the request${statusText}`, nodeText(details));
+    }
+    case "NotFound":
+      return new NotFound("the node has no such record", nodeText(details));
+    case "BadResponse":
+      return new BadResponse("the answer does not have the expected shape; details.reason says why", details);
     case "InvalidAddress": {
       const reason = details["reason"];
       const position = details["position"];

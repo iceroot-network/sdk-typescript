@@ -194,7 +194,9 @@ export function Send({ account }: { account: Account }) {
         memo,
       }));
     } catch (error) {
-      setMessage(error instanceof IceRootError ? error.message : "Could not prepare the transfer.");
+      // An input error names what to fix; the network's errors get the wallet's own words.
+      const network = ["NodeUnavailable", "Timeout", "RateLimited", "BadResponse", "Refused", "NotFound", "NetworkMismatch"];
+      setMessage(error instanceof IceRootError && !network.includes(error.code) ? error.message : "Could not prepare the transfer. Try again in a moment.");
     }
   }
 

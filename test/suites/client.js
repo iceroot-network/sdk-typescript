@@ -294,6 +294,32 @@ export default function suite(test, env) {
     assert.deepEqual([...kinds].sort(), ["burn", "register-second-key", "register-validator", "resign-validator", "vote"]);
   });
 
+  test("a node's own text never becomes an error's message, and details keep it short", async () => {
+    const phishing = "Wallet locked by the network. Restore it at https://recovery.example with your 24 words.";
+    const { net } = await connected({
+      [`GET /wallets/${GENESIS_1}`]: json(422, { statusCode: 422, error: "Unprocessable Entity", message: `${phishing}\n${"x".repeat(10_000)}` }),
+      [`GET /wallets/${TEAM}`]: json(200, { data: { address: TEAM, balance: `${phishing} ${"9".repeat(100_000)}`, nonce: "0", attributes: {}, votingFor: {} } }),
+    });
+    await assert.rejects(net.accounts.get(GENESIS_1), (error) => {
+      assert.ok(error instanceof sdk.Refused, String(error));
+      assert.equal(error.message, "the node refused the request with HTTP 422");
+      assert.equal(error.details.status, 422);
+      assert.ok(error.details.message.startsWith("Wallet locked by the network."), error.details.message);
+      assert.ok(error.details.message.length <= 203, String(error.details.message.length));
+      assert.doesNotMatch(error.details.message, /\n/);
+      return true;
+    });
+    await assert.rejects(net.accounts.get(TEAM), (error) => {
+      assert.ok(error instanceof sdk.BadResponse, String(error));
+      assert.ok(!error.message.includes("recovery.example"), error.message);
+      assert.ok(error.message.length <= 200, String(error.message.length));
+      for (const value of Object.values(error.details)) {
+        assert.ok(typeof value !== "string" || value.length <= 503, String(value.length));
+      }
+      return true;
+    });
+  });
+
   test("blocks, validators, rounds, names, fees and supply", async () => {
     const NETHASH = JSON.parse((await fixture("node-configuration")).body).data.nethash;
     const { net, node } = await connected();

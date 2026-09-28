@@ -395,6 +395,8 @@ const challenge = SignIn.build({ origin, publicKey, nonce, issuedAt, expiresAt }
 
 Every SDK error is an `IceRootError` with a stable `code`, a readable `message` and structured `details`. Subclasses exist for `instanceof` checks. The codes are part of the API.
 
+A message is the SDK's own text, never a node's: `Refused` names the HTTP status and keeps the node's text, escaped and cut to 200 characters, in `details.message`; `NotFound` does the same; `BadResponse` says what was wrong in `details.reason`. A message and every text of the details are at most 500 characters. A wallet shows its own words for the network's errors and shows a node's text, if at all, as the node's.
+
 | Group | Codes |
 |---|---|
 | Input | `InvalidPhrase`, `PhraseTooShort`, `InvalidPath`, `InvalidAddress`, `InvalidKey`, `InvalidAmount`, `MemoTooLong`, `NoRecipients`, `TooManyRecipients`, `InvalidVote`, `InvalidName`, `InvalidFee`, `InvalidDraft`, `InvalidTransaction`, `InvalidSignIn`, `InvalidRequest`, `InvalidProfile`, `InvalidArgument` |

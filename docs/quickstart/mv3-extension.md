@@ -179,6 +179,10 @@ Replace `http://127.0.0.1:6003` with your devnet's origin.
   "use strict";
   const Sdk = globalThis.IceRootSdk;
   const $ = (id) => document.getElementById(id);
+  // An input error names what to fix; the network's errors get the wallet's own words.
+  const NETWORK_ERRORS = ["NodeUnavailable", "Timeout", "RateLimited", "BadResponse", "Refused", "NotFound", "NetworkMismatch"];
+  const problem = (error, what) =>
+    error instanceof Sdk.IceRootError && !NETWORK_ERRORS.includes(error.code) ? `${what}: ${error.message}` : `${what}. Try again in a moment.`;
   const frame = $("signer");
   let sequence = 0;
   const pending = new Map();
@@ -219,7 +223,7 @@ Replace `http://127.0.0.1:6003` with your devnet's origin.
       $("review").textContent = JSON.stringify(reviewed.summary, null, 2) + `\nFee: ${Sdk.Amount.format(BigInt(reviewed.fee), decimals)} ${symbol}`;
       $("confirm").hidden = false;
     } catch (error) {
-      $("status").textContent = error.message;
+      $("status").textContent = problem(error, "Could not prepare the transfer");
     }
   });
 
@@ -236,7 +240,7 @@ Replace `http://127.0.0.1:6003` with your devnet's origin.
         ? "The network dropped the transaction. Send it again."
         : `Confirmed (${outcome.confirmations} confirmation). Not final: this devnet has no finality.`;
     } catch (error) {
-      $("status").textContent = error.message;
+      $("status").textContent = problem(error, "The transfer failed");
     } finally {
       draftBytes = null;
     }
