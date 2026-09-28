@@ -307,7 +307,7 @@ export default function suite(test, env) {
       assert.equal(error.message, "the node refused the request with HTTP 422");
       assert.equal(error.details.status, 422);
       assert.ok(error.details.message.startsWith("Wallet locked by the network."), error.details.message);
-      assert.ok(error.details.message.length <= 203, String(error.details.message.length));
+      assert.ok([...error.details.message].length <= 201, String(error.details.message.length));
       assert.doesNotMatch(error.details.message, /\n/);
       return true;
     });
@@ -316,7 +316,7 @@ export default function suite(test, env) {
       assert.ok(!error.message.includes("recovery.example"), error.message);
       assert.ok(error.message.length <= 200, String(error.message.length));
       for (const value of Object.values(error.details)) {
-        assert.ok(typeof value !== "string" || value.length <= 503, String(value.length));
+        assert.ok(typeof value !== "string" || [...value].length <= 501, String(value.length));
       }
       return true;
     });

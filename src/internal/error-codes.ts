@@ -61,7 +61,6 @@ import {
   NotEnoughValidators,
   ValidatorCannotVote,
 } from "../vote-errors.js";
-import { displayText } from "./drafts.js";
 
 const ADDRESS_PROBLEMS: ReadonlySet<string> = new Set(["checksum", "length", "wrong-network", "format"]);
 const REJECTION_REASONS: ReadonlySet<string> = new Set([
@@ -134,43 +133,54 @@ const MAX_NODE_TEXT = 200;
 /** The longest message, and the longest text of any detail, an error keeps. */
 const MAX_TEXT = 500;
 
-/** `text` cut to `max` characters, with `...` when it was longer. */
-function shortened(text: string, max: number): string {
-  if (text.length <= max) {
-    return text;
+/** Control, separator and format characters, and every space but the ASCII space. */
+const HIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Bidi_Control}]|(?! )\p{Zs}/u;
+
+/**
+ * `text` with every character of {@link HIDDEN} written as an escape (`\u{202e}`), cut to `max`
+ * characters, the escapes included, and then ending with `…`: the form in which the Rust SDK keeps
+ * a node's text, so text it already escaped stays as it is.
+ */
+function bounded(text: string, max: number): string {
+  let out = "";
+  let count = 0;
+  for (const char of text) {
+    const shown = HIDDEN.test(char) ? `\\u{${(char.codePointAt(0) ?? 0).toString(16)}}` : char;
+    const width = [...shown].length;
+    if (count + width > max) {
+      return `${out}…`;
+    }
+    count += width;
+    out += shown;
   }
-  // Never end on the first half of a surrogate pair.
-  const cut = /[\uD800-\uDBFF]$/.test(text.slice(0, max)) ? max - 1 : max;
-  return `${text.slice(0, cut)}...`;
+  return out;
 }
 
-/** `details` with every text shortened to {@link MAX_TEXT} characters. */
-function shortenedDetails(details: ErrorDetails): Record<string, unknown> {
+/** `details` with every text bounded to {@link MAX_TEXT} characters. */
+function boundedDetails(details: ErrorDetails): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(details).map(([key, value]) => [key, typeof value === "string" ? shortened(value, MAX_TEXT) : value]),
+    Object.entries(details).map(([key, value]) => [key, typeof value === "string" ? bounded(value, MAX_TEXT) : value]),
   );
 }
 
-/**
- * The text a node sent with a refusal, for `details.message`: shortened, and on one line with its
- * control, separator and invisible characters escaped as a review line escapes them.
- */
+/** `details` with the text a node sent with a refusal, `details.message`, bounded to 200 characters. */
 function nodeText(details: Record<string, unknown>): Record<string, unknown> {
   const text = details["message"];
-  return typeof text === "string" ? { ...details, message: shortened(displayText(text), MAX_NODE_TEXT) } : details;
+  return typeof text === "string" ? { ...details, message: bounded(text, MAX_NODE_TEXT) } : details;
 }
 
 /**
  * The SDK error of a code, message and details, as the Rust core reports them.
  *
  * Text a node chose never becomes the message, which apps show as it is: a refusal's message
- * names its HTTP status and the node's own text is in `details.message`, shortened to 200
+ * names its HTTP status and the node's own text is in `details.message`, bounded to 200
  * characters; an answer that could not be read says so, with what was wrong in `details.reason`.
- * Every message and every text of the details is at most 500 characters.
+ * Every message and every text of the details is at most 500 characters, with control,
+ * separator and invisible characters escaped.
  */
 export function errorFromCode(code: string, rawMessage: string, rawDetails: ErrorDetails): IceRootError {
-  const details = shortenedDetails(rawDetails);
-  const message = shortened(rawMessage, MAX_TEXT);
+  const details = boundedDetails(rawDetails);
+  const message = bounded(rawMessage, MAX_TEXT);
   switch (code) {
     case "Refused": {
       const status = details["status"];
