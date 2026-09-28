@@ -5,10 +5,11 @@
 // or answers with a redirect is skipped), keeps to the node's request allowance with the Rust
 // client's request budget, and retries HTTP 429 with the Rust client's backoff. It asks the
 // transport not to follow redirects, as the Rust client follows none: a request, its headers and
-// its body go to the relays and nowhere else.
+// its body go to the relays and nowhere else. It reads at most 4 MiB of an answer: a larger one is
+// refused before the Rust client decodes it, whatever it declares, and the next relay is asked.
 
 import type { ConnectOptions, RateLimit, Transport } from "../client.js";
-import { IceRootError, InvalidArgument, NodeUnavailable, Timeout } from "../errors.js";
+import { BadResponse, IceRootError, InvalidArgument, NodeUnavailable, Timeout } from "../errors.js";
 import { call, type RequestBudgetHandle } from "./bindings.js";
 
 /** A request as the Rust client writes it. */
@@ -36,6 +37,13 @@ export const DEFAULT_RATE_LIMIT: RateLimit = { requests: 100, windowMs: 60_000 }
 
 /** The default time allowed for one request. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
+
+/**
+ * The largest answer the client reads, in bytes once decoded (4 MiB). The largest answers of the
+ * node API are pages of at most 100 records and the chain's configuration, far smaller; a larger
+ * answer is refused before it is decoded, whatever it declares, and the next relay is asked.
+ */
+export const MAX_ANSWER_BYTES = 4 * 1024 * 1024;
 
 /** The longest delay a timer keeps (2^31 - 1 ms, about 24.8 days); a longer one fires at once. */
 const MAX_DELAY_MS = 2_147_483_647;
@@ -280,7 +288,7 @@ export class Relays {
         const message = `${request.method} ${url} answered with a redirect${status}, which the client does not follow`;
         throw new NodeUnavailable(message, { url });
       }
-      const body = new Uint8Array(await Promise.race([response.arrayBuffer(), timeout]));
+      const body = await Promise.race([readBody(response, `${request.method} ${url}`, url, controller), timeout]);
       const pairs: [string, string][] = [];
       for (const name of ANSWER_HEADERS) {
         const value = response.headers.get(name);
@@ -313,4 +321,65 @@ export class Relays {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function tooLarge(what: string, url: string): BadResponse {
+  return new BadResponse(`the answer to ${what} is larger than ${MAX_ANSWER_BYTES} bytes`, {
+    url,
+    limit: MAX_ANSWER_BYTES,
+  });
+}
+
+/**
+ * The body of `response`, refused with `BadResponse` once it is larger than
+ * {@link MAX_ANSWER_BYTES}: at once when its declared length is, and otherwise as soon as more
+ * than that has arrived, without reading further.
+ */
+async function readBody(
+  response: Response,
+  what: string,
+  url: string,
+  controller: AbortController | undefined,
+): Promise<Uint8Array> {
+  const declared = response.headers.get("content-length")?.trim();
+  if (declared !== undefined && /^[0-9]+$/.test(declared) && Number(declared) > MAX_ANSWER_BYTES) {
+    response.body?.cancel().catch(() => undefined);
+    controller?.abort();
+    throw tooLarge(what, url);
+  }
+  const stream = response.body;
+  if (stream === null || stream === undefined || typeof stream.getReader !== "function") {
+    // A transport whose answers have no stream: the whole body, checked once it is read.
+    const whole = new Uint8Array(await response.arrayBuffer());
+    if (whole.length > MAX_ANSWER_BYTES) {
+      throw tooLarge(what, url);
+    }
+    return whole;
+  }
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    total += value.byteLength;
+    if (total > MAX_ANSWER_BYTES) {
+      reader.cancel().catch(() => undefined);
+      controller?.abort();
+      throw tooLarge(what, url);
+    }
+    chunks.push(value);
+  }
+  if (chunks.length === 1 && chunks[0] !== undefined) {
+    return chunks[0];
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
 }

@@ -265,7 +265,10 @@ export async function connect(profile: NetworkProfile, options: ConnectOptions =
   return network;
 }
 
-/** Runs `use` with a prepared call, and frees the call afterwards. */
+/**
+ * Runs `use` with a prepared call, and frees the call afterwards. When `use` failed, its error is
+ * the one thrown, even if freeing the call fails too (as it does after the module trapped).
+ */
 async function withCall<T>(
   seats: number,
   operation: string,
@@ -273,11 +276,19 @@ async function withCall<T>(
   use: (prepared: ApiCall) => Promise<T>,
 ): Promise<T> {
   const prepared = call((module) => module.ApiCall.prepare(seats, operation, JSON.stringify(args)));
+  let result: T;
   try {
-    return await use(prepared);
-  } finally {
-    prepared.free();
+    result = await use(prepared);
+  } catch (error) {
+    try {
+      prepared.free();
+    } catch {
+      // The original error says what went wrong.
+    }
+    throw error;
   }
+  prepared.free();
+  return result;
 }
 
 function requestOf(prepared: { request(): string }): RequestJson {

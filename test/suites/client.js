@@ -422,6 +422,62 @@ export default function suite(test, env) {
     }
   });
 
+  test("an answer larger than 4 MiB is refused before it is decoded, and the next relay is asked", async () => {
+    // The plugin's requests are made in Rust; this is the WebAssembly entry's transport.
+    if (!env.wasm) {
+      return;
+    }
+    const node = await env.node();
+    const LIMIT = 4 * 1024 * 1024;
+    let pulled = 0;
+    const answers = {
+      // Declares its length.
+      "declared.example": () => new Response(null, { status: 200, headers: { "content-length": String(8_000_000_000) } }),
+      // Declares nothing and never ends.
+      "endless.example": () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              pulled += 1;
+              controller.enqueue(new Uint8Array(64 * 1024).fill(0x20));
+            },
+          }),
+          { status: 200 },
+        ),
+      // A whole body just over the limit, with no stream to read.
+      "whole.example": () => ({
+        type: "basic",
+        status: 200,
+        headers: new Headers(),
+        body: null,
+        arrayBuffer: async () => new ArrayBuffer(LIMIT + 1),
+      }),
+    };
+    const transport = async (url, init) => {
+      const host = new URL(url).host;
+      const path = new URL(url).pathname;
+      if (host in answers && path === "/api/node/status") {
+        return answers[host]();
+      }
+      return node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+    };
+    for (const host of Object.keys(answers)) {
+      const profile = sdk.profiles.devnet({ relays: [`http://${host}/api`] });
+      await assert.rejects(sdk.connect(profile, { transport, rateLimit: false }), (error) => {
+        assert.ok(error instanceof sdk.BadResponse, `${host}: ${error}`);
+        assert.equal(error.details.limit, LIMIT);
+        return true;
+      });
+    }
+    // The endless body was read no further than the limit.
+    assert.ok(pulled <= LIMIT / (64 * 1024) + 2, String(pulled));
+
+    // With another relay listed, the answer comes from it.
+    const both = sdk.profiles.devnet({ relays: ["http://endless.example/api", node.relay] });
+    const net = await sdk.connect(both, { transport, rateLimit: false });
+    assert.equal(net.height, 80n);
+  });
+
   test("the request budget spaces requests, and HTTP 429 is retried after the backoff", async () => {
     const { net } = await connected({}, { rateLimit: { requests: 3, windowMs: 400 } });
     // connect spent the three requests of the window; the next one waits for it to pass.
