@@ -43,8 +43,9 @@ export function Send({ account, onChanged }: { account: Account; onChanged: () =
     if (new TextEncoder().encode(memo).length > maxMemoBytes) return setMessage(`A memo holds at most ${maxMemoBytes} bytes.`);
     setWorking(true);
     try {
-      // The builder reads the nonce and the fee floor from the network.
-      setDraft(await net.build.transfer({ from: account, to, memo: memo.trim() }));
+      // The builder reads the nonce and the fee floor from the network. It needs no key, only the
+      // sender's public key; the key signs later, after the review.
+      setDraft(await net.build.transfer({ from: account.publicKey, to, memo: memo.trim() }));
     } catch (error) {
       setMessage(problem(error, "The transfer could not be prepared"));
     } finally {
