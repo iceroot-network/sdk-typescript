@@ -295,6 +295,9 @@ if (values.e2e) {
   if (!/^refused/.test(published.seam ?? "")) {
     problems.push(`the published plugin answered a test seam: ${published.seam}`);
   }
+  if (published.refusedThroughEntry !== "SdkNotInitialized") {
+    problems.push(`a command the plugin refuses did not read as SdkNotInitialized: ${published.refusedThroughEntry}`);
+  }
   if (!Array.isArray(published.entrySeams) || published.entrySeams.length !== 0) {
     problems.push(`the published entry exports test seams: ${JSON.stringify(published.entrySeams)}`);
   }

@@ -161,6 +161,13 @@ async function main() {
     report.seam = answered.length === 0 ? `refused: ${SEAMS.length} seams, ${refusal}` : `answered: ${answered.join(", ")}`;
     // Nor does the published entry export the test entry's seams.
     report.entrySeams = Object.keys(sdk).filter((name) => /^(seam|testing)|WithAux$|Seam/.test(name));
+    // A command the plugin refuses reads as SdkNotInitialized through the entry's own call path:
+    // a seam, through the test entry's wrapper, against the published plugin.
+    const testEntry = await import(new URL("./vendor/sdk-test/index.js", import.meta.url).href);
+    report.refusedThroughEntry = await testEntry.testing.sha256("refused").then(
+      () => "answered",
+      (error) => (error instanceof testEntry.SdkNotInitialized && error.code === "SdkNotInitialized" ? "SdkNotInitialized" : `${error?.name}: ${error?.message}`),
+    );
     report.version = await sdk.bindingsVersion();
     return report;
   }
