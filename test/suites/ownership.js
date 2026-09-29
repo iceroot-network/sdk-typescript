@@ -86,6 +86,43 @@ export default function suite(test, env) {
     await assert.rejects(async () => ownership.OwnershipProof.sign(key, message, now), (error) => error instanceof sdk.KeyReleased);
   });
 
+  test("a message signature never makes an ownership proof, even with the Solar key", async () => {
+    // A devnet account imported from a Solar passphrase has the Solar key itself.
+    const passphrase = "solar holder passphrase of a message signer";
+    const devnet = sdk.profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] });
+    const account = await sdk.Keys.fromLegacyPassphrase(passphrase, devnet);
+    const key = await ownership.SolarKey.fromPassphrase(passphrase);
+    assert.equal(account.publicKey, key.publicKey);
+    const now = new Date("2026-09-27T08:00:00.000Z");
+    const message = await ownership.OwnershipProof.build({
+      address: key.address,
+      account: "ice1q8y55x5z8dr5uepshat727uvt328lfkklzwvvmt4p42qlcrggxtsk8zw2r",
+      nonce: await ownership.OwnershipProof.randomNonce(),
+      issuedAt: now,
+    });
+    const refusedAsMessage = (text) =>
+      assert.rejects(async () => sdk.Messages.sign(account, text), (error) => {
+        assert.ok(error instanceof sdk.InvalidArgument, String(error));
+        assert.equal(error.details.reason, "an ownership proof is signed only as a proof, never as a message");
+        return true;
+      });
+    // The proof's text, as a string or as its bytes, and any text whose first line is the proof's.
+    await refusedAsMessage(message);
+    await refusedAsMessage(new TextEncoder().encode(message));
+    await refusedAsMessage("IceRoot migration ownership proof");
+    await refusedAsMessage("IceRoot migration ownership proof\nVersion: 2");
+    // Text that only mentions a proof, or whose first line merely begins like one, is a message.
+    for (const text of ["About the IceRoot migration ownership proof", "IceRoot migration ownership proof, version 1", "Hello\nIceRoot migration ownership proof"]) {
+      const signed = await sdk.Messages.sign(account, text);
+      assert.equal(await sdk.Messages.verify({ ...signed, message: text }, devnet), true);
+    }
+    // A proof is made by OwnershipProof.sign (or fromSignature, for a key held elsewhere).
+    const proof = await ownership.OwnershipProof.sign(key, message, now);
+    assert.equal((await ownership.OwnershipProof.verify(proof, now)).address, key.address);
+    await account.release();
+    await key.release();
+  });
+
   test("refusals carry the reason, and wrong arguments are InvalidArgument", async () => {
     assert.equal(
       (await outcome(() => ownership.IceRootAccount.parseCanonical("ICE1XXY02TYLS8D0P0JK8DWXNQJQTS8LY4E87648J8ZQDD7MNFNDXSYQV4QS2H"))).refused,

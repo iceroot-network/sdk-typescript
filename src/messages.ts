@@ -58,7 +58,12 @@ export const Messages = {
    * A message given as bytes must be UTF-8 text, or it is refused with `InvalidArgument`: in
    * today's format a message signature over a transaction's unsigned bytes would be a valid
    * signature of the transaction, and every transaction begins with the byte 0xff, which UTF-8
-   * text never contains. Sign only messages the holder was shown as text.
+   * text never contains. Text whose first line is an ownership proof's (`IceRoot migration
+   * ownership proof`) is refused with `InvalidArgument` too: a proof is signed exactly as a
+   * message is, and an account from `Keys.fromLegacyPassphrase` of a Solar passphrase has the
+   * Solar key. Proofs are made only by `OwnershipProof.sign` and `OwnershipProof.fromSignature`;
+   * the signature's `network` label cannot bind one. Sign only messages the holder was shown as
+   * text.
    */
   sign(account: Account, message: string | Uint8Array): MessageSignature {
     const handle = keyHandleOf(account);

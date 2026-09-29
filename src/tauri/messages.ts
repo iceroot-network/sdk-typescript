@@ -30,7 +30,10 @@ export const Messages = {
   /**
    * Signs `message` (text is signed as its UTF-8 bytes) with the key of `account`, in the plugin.
    * A message given as bytes must be UTF-8 text, which no transaction is, or it is refused with
-   * `InvalidArgument`.
+   * `InvalidArgument`, and so is text whose first line is an ownership proof's (`IceRoot migration
+   * ownership proof`), before anything reaches the plugin: proofs are made only by
+   * `OwnershipProof.sign` and `OwnershipProof.fromSignature` (see the WebAssembly entry's
+   * `Messages.sign`).
    */
   async sign(account: Account, message: string | Uint8Array): Promise<MessageSignature> {
     const key = keyOf(account);

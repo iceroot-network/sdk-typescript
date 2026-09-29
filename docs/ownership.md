@@ -48,6 +48,7 @@ try {
 
 - `SolarKey.fromPassphrase` hashes the text exactly as given (the SHA-256 of its UTF-8 bytes, as Solar derives a passphrase key). Trim a typed phrase and join its words with single spaces first, as the Legacy Signer does. A passphrase given as a `Uint8Array` is overwritten with zeros.
 - `OwnershipProof.sign` checks the message first (`OwnershipProof.parse` with the key's own address), signs with fresh randomness and checks the signature before it returns the proof.
+- A proof is made only by `OwnershipProof.sign`, or by `OwnershipProof.fromSignature` for a key held elsewhere. `Messages.sign` refuses text whose first line is a proof's with `InvalidArgument`, although an account imported with `Keys.fromLegacyPassphrase` from a Solar passphrase has the Solar key: a proof is signed exactly as a message is, so a wallet's message signature of a proof's text would otherwise verify as that proof. The `network` label of a message signature is not covered by the signature and cannot tell the two apart.
 
 ## A key held on a Ledger
 
