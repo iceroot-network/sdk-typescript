@@ -1,6 +1,6 @@
 import { IceRootError, type Account, type Draft, type Network } from "@iceroot-network/sdk";
 
-import { problem } from "./format";
+import { problem, safeText } from "./format";
 
 /** How a submission ended, in a sentence for the holder. */
 export type Outcome = { readonly ok: boolean; readonly text: string };
@@ -19,7 +19,7 @@ export async function signAndSubmit(net: Network, draft: Draft, account: Account
         text:
           result.reason === "nonce"
             ? "The account sent another transaction meanwhile. Review it again."
-            : `The network refused it (${result.reason}, ${result.nodeCode}): ${result.message}`,
+            : `The network refused it (${result.reason}, ${safeText(result.nodeCode)}): ${safeText(result.message)}`,
       };
     }
     progress("Submitted. Waiting for a block.");

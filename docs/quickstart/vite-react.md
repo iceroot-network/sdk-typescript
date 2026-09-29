@@ -189,7 +189,7 @@ export function Send({ account }: { account: Account }) {
     if (!address.ok) return setMessage(`Check the address (${address.reason}).`);
     try {
       setDraft(await net.build.transfer({
-        from: account,
+        from: account.publicKey,   // building needs no key; the key is used only in confirm()
         to: [{ address: Address.parse(to, net), amount: Amount.parse(amount, decimals) }],
         memo,
       }));
@@ -243,7 +243,7 @@ export function Send({ account }: { account: Account }) {
 }
 ```
 
-A real review screen renders the summary's fields (recipients with amounts, total, fee, memo) instead of JSON.
+A real review screen renders the summary's fields (recipients with amounts, total, fee, memo) instead of JSON. The lines of `draft.summary` are already safe to show. Text that comes from the chain in other places, such as a history memo or a validator name, is not: write control and bidirectional characters as escapes before showing it ([rule 16](../rules.md)). The [example wallet](../../examples/vite-react-wallet/README.md) does this in `src/format.ts`.
 
 ## 7. Put it together
 

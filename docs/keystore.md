@@ -65,6 +65,25 @@ const account = Keys.fromKeystore(stored, password, net.profile, { account: 0, i
 account.address;                                     // the key stays in the SDK until account.release()
 ```
 
+Opening a key needs a profile, not a connected network. `net.profile` is one, and so is `profiles.devnet({ relays, nethash })`, which needs no request, so a wallet unlocks with no connection and a sandbox page that never connects can derive a key. The derivation is offline; only the calls that read or submit need the node.
+
+Compare the account's address with the address the wallet saved, every time a wallet is reopened. A wrong account or index, the keystore of another wallet, or a changed key scheme each open without error and give a valid key of an address the holder never saw. Anything built and signed with it would act as that other account.
+
+<!-- sample: verified 0.1.0 -->
+```ts
+import { Keys, type NetworkProfile } from "@iceroot-network/sdk";
+
+/** Opens the saved wallet's key, only if it is the address the holder saw and saved. No connection is needed. */
+function unlockSaved(stored: string, password: Uint8Array, profile: NetworkProfile, savedAddress: string, index: number) {
+  const account = Keys.fromKeystore(stored, password, profile, { account: 0, index });
+  if (account.address !== savedAddress) {
+    account.release();                               // wipe the key of the other address
+    throw new Error("This keystore belongs to another wallet.");
+  }
+  return account;
+}
+```
+
 A keystore this release cannot open is refused before any work: `Malformed` (not a keystore; `error.reason` says why), `UnsupportedVersion`, `UnsupportedKdf`, `UnsupportedPayload`, or `ParamsOutOfRange` for parameters outside the bounds. `decrypt(stored, password, { maxMemoryKib })` lowers the memory a keystore may ask for, on a platform that cannot spare the format's ceiling: a keystore that asks for more is refused with `ParamsOutOfRange` rather than failing mid-way with `OutOfMemory`.
 
 ## Changing the password, and newer presets

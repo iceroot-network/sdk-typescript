@@ -16,6 +16,8 @@ What it does, and where:
 
 The key lives in WebAssembly memory while the wallet is unlocked and is wiped on lock. The browser keeps only the keystore, the account's address, the network's pinned identity and the last vote selection. A wallet app keeps its keystore where its platform keeps secrets best; the desktop and mobile wallets will run the same keystore format natively with the Tauri plugin.
 
+Two habits to copy. A draft is built from the account's public key, so building needs no open key, and the key is used only when the holder confirms. Text that comes from the chain, such as a memo or a validator's name, goes through `safeText` in `src/format.ts` before it is shown.
+
 ## Run it
 
 You need Node.js 22 or later and a devnet (see [Devnet](../../docs/devnet.md)); the wallet connects to `VITE_ICEROOT_RELAY`, by default `http://127.0.0.1:6003/api`.

@@ -18,12 +18,17 @@ Every IceRoot app follows these rules. The SDK enforces what it can; the rest is
 | 12 | Never store a phrase or key in `localStorage`, `sessionStorage`, IndexedDB or an unencrypted file. Accept only 18 words or more for new keys | Keys are opaque handles; `PhraseTooShort`; the [keystore](keystore.md), whose bytes may be stored where the platform keeps secrets |
 | 13 | Never show sample, cached or substitute data as if it were current. An unavailable node is an error state with a retry, not an empty list | Reads throw `NodeUnavailable`, `Timeout` or `BadResponse`; nothing is swallowed |
 | 14 | Never switch networks silently. A changed chain identity is a new chain; ask the holder before pinning it | `connect` throws `NetworkMismatch`, and a relay of another chain in the profile is never used |
-| 15 | Show exactly what will be signed, from the draft, on the review screen, and sign nothing the holder did not review | `draft.summary`; a deserialized draft recomputes its summary from its fields |
+| 15 | Show exactly what will be signed, from the draft, on the review screen, and sign nothing the holder did not review. Build the draft from the sender's public key or address, and open the key only after the review | `draft.summary`; `Draft.deserialize` recomputes the summary from the bytes, so a signing context can compare it with the one the holder saw |
+| 16 | Show text that comes from the chain (memos, names, addresses in records) without control or bidirectional characters | `draft.summary.lines` are escaped by the SDK; the app escapes the rest itself |
+| 17 | Check the saved address against the derived one every time a wallet is reopened | `account.address`; `Keys.fromPhrase`, `Keys.fromKeystore` and `Keys.fromLegacyPassphrase` take a profile and need no network |
 
 ## Notes on the rules
 
 - **Rule 1 and the current apps.** The apps hard-code 18 decimals, votes of 20 to 53 entries at 500 basis points at most, fixed fees and the portal calculator's reward constants. Today's devnet has 8 decimals, allows 1 to 53 entries with no per-validator cap, charges fees by size and has its own economics. A wallet may keep 20 picks at 500 basis points as its default vote, because that vote is valid under both rule sets; the limits it enforces and shows come from `net.rules.vote`.
 - **Rule 5 today.** Today's devnet has no finality. Show confirmations and say "confirmed", never "final". Do not invent a number of confirmations that counts as final.
+- **Rule 15 in one context and in two.** A wallet with one context signs the `Draft` object the review screen showed. A wallet with two (a Manifest V3 extension: the page builds and reviews, a sandbox signs) sends `draft.serialize()` to the signing context, which restores it with `Draft.deserialize(bytes, profile)` and shows the summary it recomputed. It signs only if that summary equals the one the holder approved, and `SignedTransaction.deserialize(bytes, profile)` restores the result on the page. `reviewDraft` and `signDraft` in the desktop wallet's `src/session.ts` are a worked example. Neither context needs the key to build: a public key or an address is enough, and an address works only once the account has sent a transaction.
+- **Rule 16 and what the SDK escapes.** The lines of `draft.summary` write control characters, line and paragraph separators and bidirectional formatting characters as `\uXXXX`, and a backslash as `\\`. The SDK does not touch other chain text: history memos, validator names and `details.name` arrive as they are. Escape them the same way before showing them. `safeText` in the desktop wallet's `src/walletData.ts` is a worked example.
+- **Rule 17 and the wrong key.** A wrong account or index, another wallet's phrase or a changed scheme each give a valid key of an address the holder never saw. A draft built from that key, and a message or sign-in it signs, speak for that other address. (A draft built from the saved public key refuses it with `WrongKey`, but a signed message does not.) The saved address is the check. Derive, compare, and release the key of another address before doing anything else.
 - **Rule 13 and demos.** An app may keep a clearly labelled demo mode that reads its fixture. The live path never falls back to the fixture, and demo data never appears on a screen that reads the network.
 
 ## Security notes
@@ -40,7 +45,10 @@ Every IceRoot app follows these rules. The SDK enforces what it can; the rest is
 - [ ] Every amount is a `bigint` or a decimal string of base units; no `Number` holds an amount.
 - [ ] Every address a user types is checked with `Address.check` or `Address.parse` against the connected network.
 - [ ] Features whose capability is absent are hidden, not shown as errors.
-- [ ] The review screen renders `draft.summary` and `draft.fee`.
+- [ ] The review screen renders `draft.summary` and `draft.fee`, and the key is opened only after it.
+- [ ] Drafts are built from a public key or an address; a signing context in another page compares the reviewed summary with the one it recomputes.
+- [ ] Memos, names and other chain text are escaped before they are shown.
+- [ ] A reopened wallet's derived address is compared with the saved one.
 - [ ] No screen says "final" unless `net.capabilities.has("finality")` and the state is `final`.
 - [ ] Node failures show an error and a retry; nothing falls back to sample data.
 - [ ] No phrase or key reaches storage unencrypted; key handles are released after use.

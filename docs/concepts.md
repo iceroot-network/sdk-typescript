@@ -33,7 +33,7 @@ const profile = profiles.devnet({
   nethash: savedNethash,                    // optional: the identity pinned on first contact
 });
 const net = await connect(profile, {
-  transport: fetch,                         // optional; default globalThis.fetch
+  // transport: (input, init) => fetch(input, init),  // optional; the default already does this
   headers: { authorization: `Bearer ${token}` },   // optional; for a relay behind a proxy that needs a token
   rateLimit: { requests: 100, windowMs: 60_000 }, // optional; this is the default, false turns it off
   timeoutMs: 15_000,                        // optional; the time allowed for one request
@@ -45,7 +45,7 @@ const pinned = net.profile.chain.nethash;   // store this; pass it as `nethash` 
 - **What `connect` reads.** The chain the node serves (`/node/configuration/crypto`: the network description, the milestones and the genesis block) and the node's configuration (`/node/configuration`: the milestone at its tip and the pool's limits), both checked against the profile, and the node's status for the current height. `net.configuration` keeps what the node reported, for example `net.configuration.pool.maxTransactionsPerRequest`.
 - **One chain per profile.** A devnet is pinned on first contact: the node's network identity (the nethash on today's devnet) is recorded, and a later connection that finds another identity throws `NetworkMismatch`. The app may pin again only after asking the holder, because a changed identity means a different chain (for example a devnet that was reset).
 - **Relays.** Every request goes to the first relay that answers: a relay that cannot be reached, times out, answers with a server error or answers with a redirect is skipped, and so is one whose answer is larger than 8 MiB (`BadResponse` when no other relay answers). Before the first answer of a relay other than the one the chain was read from is used, that relay is asked for its chain's identity (`/node/configuration`), and a relay of another chain is never used (`NetworkMismatch` when no other relay answers). The SDK follows no redirect, so a request, its headers and its body reach the listed relays only. The URL includes the API base path; the SDK appends route paths to it and never guesses the base path.
-- **Transport.** Any function with the signature of `fetch`. With the Tauri plugin's entry the plugin makes every request in Rust and takes no transport; a Tauri app on the WebAssembly entry passes the HTTP plugin's `fetch` (see the [Tauri quickstart](quickstart/tauri.md)).
+- **Transport.** Any function with the signature of `fetch`, and normally none at all: the default wraps the environment's `fetch`. The SDK calls the transport as a method of its own client, so `this` is not the window. Passing the built-in `fetch` itself (`transport: fetch` or `transport: globalThis.fetch`) therefore fails in Chromium with `Illegal invocation`. Pass an arrow function that calls it, `(input, init) => fetch(input, init)`, or leave the option out. A plain function such as the Tauri HTTP plugin's `fetch` works as it is. With the Tauri plugin's entry the plugin makes every request in Rust and takes no transport; a Tauri app on the WebAssembly entry passes the HTTP plugin's `fetch` (see the [Tauri quickstart](quickstart/tauri.md)).
 - **Headers.** A hosted devnet endpoint that needs a token takes it as a request header, passed in `headers` (see [Devnet](devnet.md)); the token is never part of the profile.
 - **Errors.** No relay answering is `NodeUnavailable`, a request that takes longer than `timeoutMs` is `Timeout`, and a node that keeps refusing for its rate limit is `RateLimited`.
 - **Built-in profiles.** Release 0.1.0 has `profiles.devnet(options)` only. Profiles for the public testnet and mainnet are added in the releases made when those chains' geneses are fixed; until then they do not exist, so no app can point at a guessed identity. Show them in a network selector as not yet available.
@@ -132,6 +132,7 @@ const legacy = net.keys.fromLegacyPassphrase(text);       // devnet profiles onl
 - **Derivation** is hardened only. On today's devnet the key is secp256k1 at `m/44'/1'/account'/0'/index'`. From the post-quantum formats the same phrase derives ML-DSA-65 keys through a different master key, so the same phrase gives unrelated classical and post-quantum keys. Apps keep one shape on every network: an account number and an address index.
 - **Coin type** `1'` is used on devnets and the public testnet. Mainnet will use IceRoot's registered coin type, so one phrase never gives the same keys on a test network and on mainnet.
 - **Legacy passphrase keys.** The devnet's funded test accounts and the browser wallet's existing devnet identities use the reference implementation's passphrase key (the SHA-256 of the text). `net.keys.fromLegacyPassphrase(text)` imports them, on devnet profiles only; the result has `legacy: true`. Offer it as an import, never as a way to create an account. It disappears with the devnet formats.
+- **Reopening a wallet.** Store the address, and the public key, when the wallet is created. Whenever the wallet is opened again, compare the derived `account.address` with the stored address, and release the key and refuse when they differ. A wrong account or index, another wallet's phrase and a changed scheme each give a valid key of an address the holder never saw.
 - **Secrets stay in WebAssembly memory.** JavaScript sees public keys, addresses and signatures only. A phrase is a string when it is typed, but the SDK also accepts it as a `Uint8Array`, which you can overwrite after use. Call `release()` as soon as signing is done.
 
 ### Contexts without network access
@@ -147,6 +148,8 @@ const account = Keys.fromPhrase(phrase, profile, { account: 0, index: 0 });
 const signature = Messages.sign(account, message);
 account.release();
 ```
+
+`Keys.fromPhrase`, `Keys.fromKeystore` and `Keys.fromLegacyPassphrase` need only the profile, so a sandbox that opens a key never needs a connection. Compare the derived address with the wallet's saved one before signing anything. A context that restores drafts with `Draft.deserialize(bytes, profile)` needs a profile with a pinned network hash.
 
 ## Addresses
 
@@ -284,7 +287,7 @@ Profile texts of validators (tagline, website, location) are not chain data. The
 
 ### Limits of today's devnet API
 
-The reference implementation's API allows about 100 requests per minute per client address. The SDK spends a request budget before each request (waiting when it is spent), retries HTTP 429 with backoff (2 seconds, doubling, three retries, or the node's `Retry-After` when it is longer, up to a minute), and reports `RateLimited` when the node keeps refusing. A relay whose `Retry-After` asks for more than a minute, or whose retries are spent, is skipped for that request, and `RateLimited` is the error when no other relay answers. Design screens to read once and refresh on a timer or on new blocks, not per row: for example read `validators.list()` once, not `validators.get(name)` for each validator.
+The reference implementation's API allows about 100 requests per minute per client address. The SDK spends a request budget before each request (waiting when it is spent), retries HTTP 429 with backoff (2 seconds, doubling, three retries, or the node's `Retry-After` when it is longer, up to a minute), and reports `RateLimited` when the node keeps refusing. A relay whose `Retry-After` asks for more than a minute, or whose retries are spent, is skipped for that request, and `RateLimited` is the error when no other relay answers. Design screens to read once and refresh on a timer or on new blocks, not per row: for example read `validators.list()` once, not `validators.get(name)` for each validator. The vote library's `VoteSnapshot.fromNode` makes one request for each validator that forged, so on a devnet it can take a minute or more; read it once per visit of the vote page ([Devnet](devnet.md#a-new-devnet-and-its-first-round)).
 
 ## Transactions: build, review, sign, submit, follow
 
@@ -295,7 +298,7 @@ A build call resolves everything online (nonce, fee, the rules in force) and ret
 import { Address, Amount } from "@iceroot-network/sdk";
 
 const draft = await net.build.transfer({
-  from: account,                      // the sender's Account, or its public key
+  from: publicKey,                    // the sender's public key (hex): no key needs to be open to build
   to: [{ address: Address.parse(recipient, net), amount: Amount.parse("2.5", net.token.decimals) }],   // 1 to 256
   memo: "invoice 42",                 // at most net.rules.memo.maxBytes UTF-8 bytes
   fee: "minimum",                     // the default: the exact floor; or a bigint, or { multiplierBasisPoints }
@@ -327,6 +330,7 @@ await net.build.registerValidator({ from, name: "bergschrund" });      // the su
 await net.build.resignValidator({ from, resignation: "temporary" });   // "temporary", "permanent" or "revoke"
 ```
 
+- **Who `from` may be.** The sender's public key, which works for every account and needs no open key; its `Account`, which the app should not open just to build; or its address, which works only once the account has sent a transaction, since the node learns the public key from that transaction. For a new account an address throws `InvalidArgument`. A wallet keeps the public key with the address when it creates or imports the wallet (`account.publicKey`) and builds from it. Signing needs the key, and comes after the review.
 - **Online facts.** Each builder reads the sender's account (for its nonce and second key) and the node's status (for the next block's height), and refuses with `WrongKey` when the node knows another public key for the sender's address. The draft is checked against the rules of that next block.
 - **Votes** name validators by their name. Entries are whole basis points summing to `net.rules.vote.totalBasisPoints`. The builder checks `net.rules.vote` and throws `InvalidVote` with the problem in `details`.
 - **Fees.** `fee: "minimum"` is the exact floor, computed by Heartwood Core's own function from the transaction's size and the milestone in force at the next block (`draft.summary.fee.source` is `floor`); burns and resignations have a floor of zero. Surcharges (validator registration, and later names and reward-sharing declarations) are part of the floor. A node admits a transaction to its pool by the same rule whenever the milestone enables dynamic fees, as today's devnet does, and `net.configuration.poolFees` then reports the milestone's figures. On a network whose milestone has no enabled dynamic fees, a node admits by its own pool settings (or by a fixed fee) instead, which the SDK cannot know: there is no floor (`net.rules.fees.floorAvailable` is `false`, `draft.summary.fee.floor` is absent), `"minimum"` and `{ multiplierBasisPoints }` throw `FeeUnavailable`, and an app passes an exact `bigint` fee. `{ multiplierBasisPoints }` pays a multiple of the floor. A draft's fee never comes from `net.fees.statistics()`, which is for display only. Show `draft.fee` on the review screen; never a constant.
@@ -359,6 +363,8 @@ await net.submit(signedTx);
 ```
 
 The summary comes from the transaction's own bytes: the operation, the recipients and amounts, the nonce, the fee and the memo are exactly what will be signed. The fee's source (`floor`) and the token symbol in the review lines come from the network configuration that travels with the draft; the pinned network hash identifies the chain but does not cover that configuration. A signing context that does not trust the context that built the draft judges the fee by its amount, not by its source. The symbol cannot change what a line says: a configuration whose symbol is not 1 to 10 ASCII letters and digits does not load (`BadResponse`), and the review lines escape every space but the ASCII space and every invisible character, so no text hides in blank space.
+
+Approval and signing are usually two calls of the signing context. In the second call, deserialize the bytes again and compare the recomputed summary with the one the holder approved (the network, sender, nonce, every line, the fee and the total), and refuse to sign when they differ. Then release the key. `reviewDraft` and `signDraft` in the desktop wallet's `src/session.ts` do this.
 
 ## Messages and sign-in
 

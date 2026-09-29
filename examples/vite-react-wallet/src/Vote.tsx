@@ -20,7 +20,7 @@ import {
   type Mode,
 } from "@iceroot-network/sdk/vote";
 
-import { amount, problem, share } from "./format";
+import { amount, problem, safeText, share } from "./format";
 import { useNetwork } from "./network";
 import { loadSelection, saveSelection } from "./storage";
 import { signAndSubmit, type Outcome } from "./submit";
@@ -107,7 +107,7 @@ export function Vote({ account, onChanged }: { account: Account; onChanged: () =
     setSelection(picked);
     setWorking(true);
     try {
-      setDraft(await net.build.vote({ from: account, entries: picked.vote }));
+      setDraft(await net.build.vote({ from: account.publicKey, entries: picked.vote }));
     } catch (error) {
       setMessage(problem(error, "The vote could not be prepared"));
     } finally {
@@ -149,12 +149,12 @@ export function Vote({ account, onChanged }: { account: Account; onChanged: () =
         <h2>Review your vote: {MODE_NAMES[selection.mode]}</h2>
         {selection.topUpNotice && (
           <p className="notice" role="note" aria-label="Top-up notice">
-            {selection.topUpNotice}
+            {safeText(selection.topUpNotice)}
           </p>
         )}
         {selection.sizeNotice && (
           <p className="notice" role="note">
-            {selection.sizeNotice}
+            {safeText(selection.sizeNotice)}
           </p>
         )}
         {selection.snapshotSource === "relay-approximate" && (
@@ -164,13 +164,13 @@ export function Vote({ account, onChanged }: { account: Account; onChanged: () =
           {selection.entries.map((pick) => (
             <li key={pick.validator}>
               <div className="pick">
-                <strong>{pick.validator}</strong>
+                <strong>{safeText(pick.validator)}</strong>
                 <span>{share(pick.basisPoints)}</span>
                 <span className="meta">{pick.source === "top-up" ? "Top-up from Diversity" : `From ${MODE_NAMES[selection.mode]}`}</span>
               </div>
-              <ul aria-label={`Why ${pick.validator}`}>
+              <ul aria-label={`Why ${safeText(pick.validator)}`}>
                 {pick.reasons.map((reason, index) => (
-                  <li key={index}>{reason.text}</li>
+                  <li key={index}>{safeText(reason.text)}</li>
                 ))}
               </ul>
             </li>
@@ -271,7 +271,7 @@ export function Vote({ account, onChanged }: { account: Account; onChanged: () =
                   <ul className="flagged" aria-label="No longer meet their criteria">
                     {flagged.map((finding) => (
                       <li key={finding.validator}>
-                        <strong>{finding.validator}</strong>: {finding.why}
+                        <strong>{safeText(finding.validator)}</strong>: {safeText(finding.why)}
                       </li>
                     ))}
                   </ul>

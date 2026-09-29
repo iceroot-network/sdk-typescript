@@ -40,7 +40,7 @@ console.log(`New account ${alice.address}. Devnet only: keep the phrase out of l
 
 async function send(from, to, amountText, memo) {
   const draft = await net.build.transfer({
-    from,                                   // the sender's Account: a new account has no public key on chain yet
+    from,                                   // an Account here, since the script holds the keys; its public key works too, its address only once it has sent a transaction
     to: [{ address: to, amount: Amount.parse(amountText, decimals) }],
     memo,
     fee: "minimum",

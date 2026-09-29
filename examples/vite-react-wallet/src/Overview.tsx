@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { balanceOf, type AccountInfo, type Network, type TxRecord } from "@iceroot-network/sdk";
 
-import { amount, problem } from "./format";
+import { amount, problem, safeText } from "./format";
 import { useNetwork } from "./network";
 
 type Loaded = { readonly info: AccountInfo; readonly history: readonly TxRecord[] };
@@ -13,13 +13,13 @@ function describe(net: Network, tx: TxRecord, address: string): string {
     case "transfer": {
       const paid = details.recipients.filter((payment) => tx.direction !== "received" || payment.address === address);
       const total = paid.reduce((sum, payment) => sum + payment.amount, 0n);
-      const who = tx.direction === "received" ? `from ${tx.sender}` : `to ${details.recipients.length === 1 ? details.recipients[0]!.address : `${details.recipients.length} recipients`}`;
+      const who = tx.direction === "received" ? `from ${safeText(tx.sender)}` : `to ${details.recipients.length === 1 ? safeText(details.recipients[0]!.address) : `${details.recipients.length} recipients`}`;
       return `${tx.direction === "received" ? "Received" : "Sent"} ${amount(net, total)} ${who}`;
     }
     case "vote":
       return details.entries.length === 0 ? "Withdrew the vote" : `Voted for ${details.entries.length} validators`;
     case "register-validator":
-      return `Registered as validator ${details.name}`;
+      return `Registered as validator ${safeText(details.name)}`;
     case "resign-validator":
       return `Validator resignation (${details.resignation})`;
     case "burn":
@@ -81,7 +81,7 @@ export function Overview({ address, version }: { address: string; version: numbe
           {history.map((tx) => (
             <li key={tx.id}>
               <span>{describe(net, tx, address)}</span>
-              {tx.memo && <span className="memo">{tx.memo}</span>}
+              {tx.memo && <span className="memo">{safeText(tx.memo)}</span>}
               <span className="meta">
                 {tx.block ? `Block ${tx.block.height}` : "Pending"}
                 {tx.direction !== "received" && ` · fee ${amount(net, tx.fee)}`}

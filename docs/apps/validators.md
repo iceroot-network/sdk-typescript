@@ -107,7 +107,8 @@ fn challenge_message(profile: &Profile, origin: &str, public_key: &str, nonce: &
 1. Connect the backend to the devnet (the [Rust backend quickstart](../quickstart/rust-backend.md) shows the setup) and cache `net.api.validators(PageRequest::first(100))`, refreshed once per round (53 blocks of 8 seconds). One request per round keeps well inside the API's rate limit.
 2. Link a signed identity to its validator: when a signed-in account's address equals the address of a registered validator, the portal shows that profile with the chain's rank and status. Status and rank are never taken from the profile or set by the holder.
 3. Drop `seed.rs`'s sample validators from the directory once the chain is connected; keep them only in a clearly separate demo mode, if at all.
-4. When the network is unavailable, show the portal's own data with the chain figures marked unavailable. Never show old chain figures as current, and never fill them with sample numbers.
+4. Show chain text safely. A validator's name and any address or memo read from the chain are chosen by others, and a control character or a bidirectional formatting character (U+202E, for example) reorders or splits what the reader sees. Write those characters as `\uXXXX` and a backslash as `\\` before the text is shown, with one function for every component that prints it (`safeText` in the reference [desktop wallet](desktop-wallet.md)'s `src/walletData.ts` is one; see [rule 16](../rules.md)). The portal's own profile texts (tagline, location, website) are typed by validators and get the same treatment. Match a signed-in address to a validator with the exact text, never the escaped one.
+5. When the network is unavailable, show the portal's own data with the chain figures marked unavailable. Never show old chain figures as current, and never fill them with sample numbers.
 
 ## The rewards calculator
 
@@ -159,9 +160,11 @@ async fn network(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 - Never take rank, status or vote weight from a profile; they come from the chain.
 - Never show sample or stale chain figures as current ([rule 13](../rules.md)).
 - Read the economics from the network ([rule 1](../rules.md)).
+- Chain text and profile text are shown with control and bidirectional characters written out ([rule 16](../rules.md)).
 
 ## Tests to add
 
 - Sign-in: the existing tests plus a challenge built by `SignIn::build` and signed by the browser wallet through the SDK; a tampered message and a wrong key are refused.
+- Directory: a name or profile text with U+202E or a line break is shown escaped and does not reorder its row.
 - Directory: with the relay unreachable, chain figures show as unavailable and nothing falls back to samples.
 - Calculator: the page reads the economics endpoint, and its figures match `net.economics` on a local devnet.

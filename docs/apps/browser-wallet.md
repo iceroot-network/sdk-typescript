@@ -6,6 +6,17 @@ After wiring, the SDK does all of this: one implementation of keys, addresses, m
 
 Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Manifest V3 quickstart](../quickstart/mv3-extension.md), [Devnet](../devnet.md).
 
+The flow this guide builds has two contexts: the wallet page has the network and never holds a key, and the sandbox has the key and never has a network. The wallet page builds a draft from the identity's public key, the identity page reviews it and asks the sandbox to sign, and the wallet page submits the result. The desktop wallet (`iceroot-network/desktop-wallet`) is a worked example of the same calls in one context. Its modules carry over almost as they are:
+
+| Desktop wallet module | Where it goes in the browser wallet |
+|---|---|
+| `src/session.ts`: `senderOf`, the prepare functions, `reviewDraft`, `signDraft`, `submitSigned` | The prepare functions and `submitSigned` in `wallet.js` (steps 6 and 7). `reviewDraft` and `signDraft` in `sandbox.js` (step 4) |
+| `src/keys.ts`: `deriveAccount`, `openWallet` with its address check | `withAccount` in `sandbox.js`, for one operation (step 4). No session map: the wallet page never holds an `Account` |
+| `src/walletData.ts`: the reads, `safeText` | The same calls and `safeText` in `wallet.js` (step 6) |
+| `src/network.ts` | `openDevnet` in `wallet.js`, with no transport (step 6) |
+| `src/vote.ts`, `src/voteModes.ts` | The same library through `IceRootSdk.vote` (step 7, Votes) |
+| `src/lifecycle.ts`, `src/storage.ts` | Connecting, the pinned identity and the checks of stored settings, in the wallet page and the extension's storage |
+
 ## What to wire now and what waits
 
 | Part | Release 0.1.0 | Waits for |
@@ -143,12 +154,19 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
 
   // scheme "legacy-passphrase": identities created before the SDK (12 words, key = SHA-256 of the phrase).
   // scheme "bip32": new identities (24 words, hardened derivation at account and index).
-  function withAccount(args, use) {
+  // Both need the profile only: no network, so this runs in a page with `connect-src 'none'`.
+  // `args.address` is the address the holder saw and the wallet saved. A wrong scheme, index or phrase
+  // still gives a valid key, of another address, so a key of any other address is refused. Only
+  // `newIdentity` (create and import) passes `checkAddress = false`: it has no saved address yet.
+  function withAccount(args, use, checkAddress = true) {
     const profile = profileFor(args.devnet);
     const account = args.scheme === "legacy-passphrase"
       ? Sdk.Keys.fromLegacyPassphrase(args.phrase, profile)
       : Sdk.Keys.fromPhrase(args.phrase, profile, { account: args.account ?? 0, index: args.index ?? 0 });
-    try { return use(account, profile); } finally { account.release(); }
+    try {
+      if (checkAddress && account.address !== args.address) throw new Error("This recovery phrase belongs to another identity.");
+      return use(account, profile);
+    } finally { account.release(); }
   }
   // The public identity a website receives from `connect`: { publicKey, address, network, algorithm }.
   const publicIdentity = (account, profile) => ({
@@ -156,9 +174,18 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
     network: Sdk.messageNetworkOf(profile), algorithm: Sdk.messageAlgorithmOf(profile),
   });
 
+  // What the holder saw, as text to compare: the network, sender, nonce, every line, the amount, the fee and the total.
+  const reviewText = (summary) => JSON.stringify([
+    summary.nethash, summary.kind, summary.from, summary.publicKey, String(summary.nonce),
+    summary.lines, String(summary.amount), String(summary.total), String(summary.fee.amount), summary.secondSignature,
+  ]);
+
   const ops = {
     ping: () => ({ ready: true }),
     generatePhrase: () => Sdk.Mnemonic.generate(),
+    // Create and import: the identity page saves the returned publicKey and address with the identity.
+    newIdentity: (args) => withAccount(args, publicIdentity, false),
+    // A saved identity, for a website's `connect`: checked against the saved address like every other operation.
     identity: (args) => withAccount(args, publicIdentity),
     // `args.expected` is { origin, address, publicKey }: the requesting origin and the selected identity.
     parseSignIn: (args) => toJson(Sdk.SignIn.parse(args.message, profileFor(args.devnet), { ...args.expected, now: new Date() })),
@@ -167,13 +194,19 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
       const signed = Sdk.Messages.sign(account, args.message);   // { publicKey, signature, network, algorithm }
       return { publicKey: signed.publicKey, signature: signed.signature, network: signed.network, algorithm: signed.algorithm };
     }),
+    // The summary and fee are recomputed from the draft's own bytes; `args.devnet.nethash` must be pinned.
     reviewDraft: (args) => {
       const draft = Sdk.Draft.deserialize(args.draft, profileFor(args.devnet));   // refuses another network
       return { summary: toJson(draft.summary), fee: draft.fee.toString() };
     },
+    // `args.reviewed` is the summary `reviewDraft` returned and the holder approved. The bytes are
+    // read again, and the draft is signed only if they still give that summary.
     signDraft: (args) => withAccount(args, (account, profile) => {
       const draft = Sdk.Draft.deserialize(args.draft, profile);
-      return { signed: draft.sign(account).serialize() };
+      if (reviewText(toJson(draft.summary)) !== reviewText(args.reviewed)) {
+        throw new Error("This is not the transaction you reviewed. Review it again.");
+      }
+      return { signed: draft.sign(account).serialize() };   // WrongKey if the draft names another sender
     }),
   };
 
@@ -201,6 +234,7 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
 - **Existing identities.** A vault saved before the SDK holds a 12-word phrase whose key is the SHA-256 of the phrase. Treat every existing vault as `scheme: "legacy-passphrase"`; the SDK's legacy import gives the same public key and address as today. Keep a word-count and word-list check on this restore path, because the legacy import itself accepts any text.
 - **New identities.** Create with `generatePhrase` (24 words) and store `scheme: "bip32"` with `account: 0, index: 0`. Restore accepts 18, 21 or 24 words.
 - **Vault format.** Add `scheme`, `account` and `index` to the authenticated identity metadata (the AES-GCM additional data), under a new vault key version. The same phrase gives different keys under the two schemes, so the scheme must never be guessed.
+- **Public identity next to the vault.** When an identity is created or imported, the `newIdentity` operation returns its `publicKey` and `address`. Save both with the metadata (they are public, so they need no encryption). The wallet page builds drafts from the saved public key with no key open, and every later sandbox operation, `identity` included, gets the saved `address`, so the sandbox can refuse a key of another address ([rule 17](../rules.md)). Before it builds, the wallet page checks that the saved public key gives the saved address (`Sdk.Address.fromPublicKey(publicKey, net).toString()`, as `senderOf` in the desktop wallet does) and refuses the identity if it does not; the identity page has no SDK of its own for that.
 - **Approval screens.** The identity page asks the sandbox (`parseSignIn`) for the checked fields it displays, so it needs no SDK of its own and its CSP stays unchanged.
 - **Devnet setting.** The identity page passes the devnet setting (`{ relay, nethash }`) to every sandbox operation as `devnet`. The network hash in it is what the sandbox refuses other networks' drafts by, so it must not come from the context that builds the drafts: keep it in the vault's authenticated identity metadata, written once when the holder confirms the network on first connection (and again only when the holder confirms a new chain, [rule 14](../rules.md)), and take it from there, never from the wallet page's request. For the public testnet and mainnet the SDK's profiles carry the hash themselves.
 - Keep the rest: the password rules, the idle lock, the storage event handling, the manual sign-in flow (its output JSON keeps the `publicKey`, `signature`, `network` and `algorithm` fields the portal accepts).
@@ -217,8 +251,11 @@ let net = null;
 
 async function openDevnet(settings) {
   await Sdk.init(new URL("vendor/iceroot-sdk/iceroot-sdk_bg.wasm", location.href));
+  // No transport: the SDK's default calls the page's own `fetch`. Never pass `fetch` itself as the
+  // transport: the SDK calls it as a method, and Chromium throws "Illegal invocation".
+  const token = (settings.token ?? "").trim();   // a header value may not hold a line break or non-ASCII text
   net = await Sdk.connect(Sdk.profiles.devnet({ relays: [settings.relay], nethash: settings.nethash }), {
-    headers: settings.token ? { authorization: "Bearer " + settings.token } : {},
+    headers: token ? { authorization: "Bearer " + token } : {},
   });
   return net.chain.nethash;   // store with the settings on first contact
 }
@@ -240,23 +277,49 @@ async function loadAccount(address) {
 }
 ```
 
-- The devnet account is the identity's address; the wallet page gets it from the identity metadata, never from a key.
+- The devnet account is the identity's address; the wallet page gets it, and the public key, from the identity metadata, never from a key.
+- `connect` throws `InvalidArgument` for a token that HTTP does not allow in a header, and names the header without showing the value. Check it when the holder saves the settings.
+- Text from the chain is not safe to show as it is. A memo, a validator name or an address in a record can hold control characters or bidirectional formatting that reorders what the holder reads. Show `history.items[].memo`, validator names and the rest of it as text (`textContent`, never `innerHTML`) through `safeText`. The lines of `draft.summary` are escaped by the SDK already.
 - `index.html`'s settings get the devnet relay, the pinned identity and, for the hosted endpoint, the token.
 - The demo stays separate: its screens never read the network, and the devnet screens never read the fixture.
+
+<!-- sample: verified 0.1.0 -->
+```js
+// wallet.js: the same escaping as the SDK gives draft.summary.lines
+function safeText(text) {
+  return String(text).replace(/[\\\p{Cc}\p{Zl}\p{Zp}\p{Bidi_Control}]/gu, (char) =>
+    char === "\\" ? "\\\\" : "\\u" + char.codePointAt(0).toString(16).toUpperCase().padStart(4, "0"));
+}
+```
 
 ### 7. Transfers and votes
 
 The wallet page builds the draft; the identity page reviews and signs it through the sandbox; the wallet page submits it:
 
-1. `wallet.js` builds `net.build.transfer({ from, to: [...1 to 256 recipients], memo })` or `net.build.vote({ from, entries })`, and serializes it with `draft.serialize()`. `from` is the identity's public key from its metadata: the builder reads the nonce from the node. The address alone works only once the identity has sent a transaction, because the node learns the public key from it.
+1. `wallet.js` builds `net.build.transfer({ from, to: [...1 to 256 recipients], memo })` or `net.build.vote({ from, entries })`, and serializes it with `draft.serialize()`. `from` is the identity's public key from its metadata, so no key is open while the holder fills in the form: the builder reads the nonce from the node. The address alone works only once the identity has sent a transaction, because the node learns the public key from it; for a new identity it throws `InvalidArgument`.
 2. It hands the bytes to the identity page as a transaction request. In the extension this goes through the service worker's pending-request store, like website requests, but only from the extension's own wallet page: refuse a transaction request from any other sender, and never accept one from a website. In the web build the wallet page opens the identity page with the request.
-3. The identity page unlocks the vault if needed, calls the sandbox's `reviewDraft`, and shows the recomputed summary and fee. On approval it calls `signDraft` with the phrase and scheme, and returns the signed bytes.
+3. The identity page unlocks the vault if needed, calls the sandbox's `reviewDraft`, and shows the recomputed summary and fee. On approval it calls `signDraft` with the phrase, the scheme, the saved address and the summary it showed (`reviewed`), and returns the signed bytes. The sandbox reads the bytes again and signs only if they still give the summary the holder approved.
 4. `wallet.js` restores them with `SignedTransaction.deserialize(bytes, net.profile)`, checks with `signed.matches(draft)` that they are the draft it sent, calls `net.submit`, and follows `net.transactions.wait(id, { until: "confirmed" })`.
 
 <!-- sample: verified 0.1.0 -->
 ```js
+// identity.js: the approval of a transaction request. `cryptoCall(op, args)` is the round trip to the
+// sandbox, `showForApproval` resolves to true when the holder approves, and `identity` is the saved
+// metadata: { phrase (from the unlocked vault), scheme, account, index, address, devnet }.
+async function approveTransaction(request, identity, cryptoCall, showForApproval) {
+  const keyArgs = { phrase: identity.phrase, scheme: identity.scheme, account: identity.account, index: identity.index, address: identity.address, devnet: identity.devnet };
+  const review = await cryptoCall("reviewDraft", { draft: request.draft, devnet: identity.devnet });
+  if (review.summary.from !== identity.address) throw new Error("This transaction is not from the selected identity.");
+  if (!(await showForApproval(review))) return null;      // review.summary.lines, review.fee and review.summary.total
+  const { signed } = await cryptoCall("signDraft", { ...keyArgs, draft: request.draft, reviewed: review.summary });
+  return signed;                                          // Uint8Array: back to the wallet page
+}
+```
+
+<!-- sample: verified 0.1.0 -->
+```js
 // wallet.js: build and submit; `approveInIdentityPage` is the request round trip of step 2
-async function sendTransfer(from, recipients, memo) {
+async function sendTransfer(from, recipients, memo) {   // `from`: the identity's saved public key
   const draft = await net.build.transfer({
     from,
     to: recipients.map((r) => ({ address: Sdk.Address.parse(r.to, net), amount: Sdk.Amount.parse(r.amount, net.token.decimals) })),
@@ -294,6 +357,8 @@ function voteEntries(basket) {
 }
 ```
 
+On a new devnet a vote for any validator is refused with `ERR_OFFLINE` until the node has seen that validator's node running, which takes the first round ([Devnet](../devnet.md#a-new-devnet-and-its-first-round)). Show the node's message and offer a retry later. The vote library's snapshot (`VoteSnapshot.fromNode`) makes one request per validator that forged, within the node's allowance of about 100 requests per minute, so on a devnet it is slow: read it once per visit of the vote page and show that it is loading ([Vote](../vote.md)).
+
 The basket's `shareMax()` comes from `net.rules.vote.maxBasisPointsPerEntry` (10,000 on today's devnet, so no cap; 500 from the IceRoot genesis).
 
 ### 8. Remove what the SDK replaces
@@ -311,8 +376,10 @@ The legacy signer keeps its own files. When the SDK's ownership-proof functions 
 - The provider offers `connect` and `signMessage` only; transaction requests come only from the wallet's own page, never from a website ([rule 6](../rules.md)).
 - Every sign-in message passes `SignIn.parse` before the holder sees an approval screen, with the real sender origin.
 - Keys exist only in the sandbox, for one operation, and are released; the vault stays encrypted ([rule 12](../rules.md)).
-- The approval screen shows the summary the sandbox recomputed from the draft's bytes ([rule 15](../rules.md)), and the fee as an amount: the floor it is compared with comes from the configuration the draft carries.
+- The approval screen shows the summary the sandbox recomputed from the draft's bytes, with the fee as an amount (the floor it is compared with comes from the configuration the draft carries), and the sandbox signs only a draft that still gives that summary ([rule 15](../rules.md)).
 - `wallet.js` submits a signed transaction only when `signed.matches(draft)`.
+- The wallet page builds from the public key and never holds a key. The sandbox refuses a key of any address but the saved one ([rule 17](../rules.md)).
+- Memos, names and other chain text are shown through `safeText` ([rule 16](../rules.md)).
 - Fees, decimals and vote limits come from the network ([rule 1](../rules.md)); amounts are `bigint` ([rule 2](../rules.md)).
 - "Confirmed", never "final", on today's devnet ([rule 5](../rules.md)).
 
@@ -323,3 +390,5 @@ The legacy signer keeps its own files. When the SDK's ownership-proof functions 
 - A transfer and a vote on a local devnet: built in the wallet page, signed in the sandbox, confirmed.
 - The legacy identity test of step 8.
 - A test that the service worker refuses a transaction request from a website origin.
+- A test that `signDraft` refuses a draft whose bytes give another summary than the reviewed one, and a phrase whose address differs from the saved one.
+- A test that `safeText` writes `\u202E`, a line break and a backslash as escapes.
