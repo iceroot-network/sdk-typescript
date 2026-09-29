@@ -701,6 +701,23 @@ export default function suite(test, env) {
     // connection and its status read, and the one refused.
     assert.equal(limited, 9);
 
+    // The transport reads the wait itself, as the Rust client reads it: whole seconds, with an
+    // optional "+", so this one is over a minute too.
+    const plus = async (url, init) =>
+      url.startsWith("http://plus.example")
+        ? new Response(JSON.stringify({ statusCode: 429, error: "Too Many Requests", message: "slow down" }), {
+            status: 429,
+            headers: { "retry-after": " +61 " },
+          })
+        : node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+    const skipped = Date.now();
+    const past = await sdk.connect(sdk.profiles.devnet({ relays: ["http://plus.example/api", node.relay] }), {
+      transport: plus,
+      rateLimit: false,
+    });
+    assert.equal(past.height, 80n);
+    assert.ok(Date.now() - skipped < 2_000, `${Date.now() - skipped} ms`);
+
     // A relay that keeps answering 429 is left once its retries are spent (2, 4 and 8 seconds).
     const busy = await env.node({ "*": "rate-limited" });
     let busyNow = false;

@@ -8,6 +8,11 @@
 // its body go to the relays and nowhere else. It reads at most 8 MiB of an answer, as the Rust
 // client does: a larger one is refused before it is decoded, whatever it declares, and the next
 // relay is asked.
+//
+// Its own bounds do not depend on the module it runs with: the answer limit, the one-minute
+// ceiling on a `Retry-After` (read from the answer here, as the Rust client reads it) and the
+// number of retries are this module's, and a wait the module's backoff gives is honoured only up
+// to that ceiling.
 
 import type { ConnectOptions, RateLimit, Transport } from "../client.js";
 import { BadResponse, IceRootError, InvalidArgument, NodeUnavailable, Timeout } from "../errors.js";
@@ -28,6 +33,14 @@ export interface Answer {
   /** The headers the client reads, as JSON `[name, value]` pairs. */
   readonly headers: string;
   readonly body: Uint8Array;
+}
+
+/** An answer, with what the transport itself reads of its headers. */
+interface Received extends Answer {
+  /** Its `X-Block-Height`, as sent. */
+  readonly height: string | null;
+  /** Its `Retry-After` in milliseconds, when it is whole seconds (see {@link retryAfterMs}). */
+  readonly retryAfterMs: number | undefined;
 }
 
 /** The headers of an answer the Rust client reads. */
@@ -53,9 +66,13 @@ const MAX_DELAY_MS = 2_147_483_647;
 /**
  * The longest `Retry-After` honoured before retrying HTTP 429 on the same relay: one minute, as
  * the Rust client. A relay that asks for longer counts as unavailable for this request, so the
- * next relay is asked, and the shared request budget is never blocked for longer.
+ * next relay is asked, and the shared request budget is never blocked for longer. No wait before
+ * a retry is longer, whatever the module's backoff answers.
  */
 const MAX_RETRY_WAIT_MS = 60_000;
+
+/** The retries of HTTP 429 on one relay for one request: three, as the Rust client's backoff. */
+const MAX_RETRIES = 3;
 
 /** The largest block height an answer's `X-Block-Height` may carry (2^64 - 1, as the Rust client reads it). */
 const MAX_U64 = 18_446_744_073_709_551_615n;
@@ -182,9 +199,19 @@ function isServerError(error: unknown): boolean {
   return typeof status === "number" && status >= 500;
 }
 
-function retryAfterMs(error: IceRootError): number | undefined {
-  const seconds = error.details["retryAfterSeconds"];
-  return typeof seconds === "number" ? seconds * 1000 : undefined;
+/**
+ * A `Retry-After` in milliseconds, read as the Rust client reads it: whole seconds, a number of
+ * at most 2^64 - 1 with an optional `+`, around which white space is ignored (the characters of a
+ * header value Rust's `trim` removes). Anything else, such as an HTTP date, is no wait at all, and
+ * the backoff alone spaces the retries.
+ */
+function retryAfterMs(value: string | null): number | undefined {
+  const text = value?.replace(/^[\t\n\v\f\r \u0085\u00a0]+|[\t\n\v\f\r \u0085\u00a0]+$/g, "");
+  if (text === undefined || !/^\+?[0-9]+$/.test(text)) {
+    return undefined;
+  }
+  const seconds = BigInt(text.startsWith("+") ? text.slice(1) : text);
+  return seconds > MAX_U64 ? undefined : Number(seconds) * 1000;
 }
 
 /** One relay's attempt at a request: the value, or the error that skips the relay. */
@@ -329,7 +356,7 @@ export class Relays {
   async #attempt<T>(relay: string, request: RequestJson, decode: (answer: Answer) => T): Promise<Attempt<T>> {
     for (let attempt = 0; ; attempt += 1) {
       await this.#spend();
-      let answer: Answer & { readonly height: string | null };
+      let answer: Received;
       try {
         answer = await this.#fetch(relay, request);
       } catch (error) {
@@ -340,11 +367,7 @@ export class Relays {
         value = decode(answer);
       } catch (error) {
         if (error instanceof IceRootError && error.code === "RateLimited") {
-          const wait = retryAfterMs(error);
-          if (wait !== undefined && wait > MAX_RETRY_WAIT_MS) {
-            return { ok: false, error };
-          }
-          const delay = call((module) => module.backoffDelay(attempt, wait));
+          const delay = retryDelay(attempt, answer.retryAfterMs);
           if (delay === undefined) {
             return { ok: false, error };
           }
@@ -381,7 +404,7 @@ export class Relays {
     }
   }
 
-  async #fetch(relay: string, request: RequestJson): Promise<Answer & { readonly height: string | null }> {
+  async #fetch(relay: string, request: RequestJson): Promise<Received> {
     const headers: Record<string, string> = { ...this.#headers };
     for (const [name, value] of request.headers) {
       headers[name] = value;
@@ -423,7 +446,13 @@ export class Relays {
           pairs.push([name, value]);
         }
       }
-      return { status: response.status, headers: JSON.stringify(pairs), body, height: response.headers.get("x-block-height") };
+      return {
+        status: response.status,
+        headers: JSON.stringify(pairs),
+        body,
+        height: response.headers.get("x-block-height"),
+        retryAfterMs: retryAfterMs(response.headers.get("retry-after")),
+      };
     } catch (error) {
       if (error instanceof IceRootError) {
         throw error;
@@ -449,6 +478,21 @@ export class Relays {
   }
 }
 
+/**
+ * The wait before retry number `attempt` (from 0) of HTTP 429, when the node asked for `asked`
+ * milliseconds (its `Retry-After`) or for nothing: the module's backoff (2 s doubling up to 30 s,
+ * or the node's wait when longer), within this module's own bounds. `undefined`, so that the
+ * next relay is asked, once the retries are spent, when the node asks for more than a minute, and
+ * for a wait the module gives that is not a number of milliseconds up to a minute.
+ */
+function retryDelay(attempt: number, asked: number | undefined): number | undefined {
+  if (attempt >= MAX_RETRIES || (asked !== undefined && asked > MAX_RETRY_WAIT_MS)) {
+    return undefined;
+  }
+  const delay: unknown = call((module) => module.backoffDelay(attempt, asked));
+  return typeof delay === "number" && delay >= 0 && delay <= MAX_RETRY_WAIT_MS ? delay : undefined;
+}
+
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -462,8 +506,11 @@ function tooLarge(what: string, url: string): BadResponse {
 
 /**
  * The body of `response`, refused with `BadResponse` once it is larger than
- * {@link MAX_ANSWER_BYTES}: at once when its declared length is, and otherwise as soon as more
- * than that has arrived, without reading further.
+ * {@link MAX_ANSWER_BYTES}: before anything is read when a length it declares is, and otherwise as
+ * soon as more than that has arrived, without reading further. The body is read chunk by chunk
+ * from a web stream (`getReader`) or from any other async iterable of bytes, such as the Node.js
+ * stream of `node-fetch`; only a response with neither is read whole, with `arrayBuffer()`, and
+ * checked once it is read.
  */
 async function readBody(
   response: Response,
