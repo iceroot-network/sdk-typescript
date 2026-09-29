@@ -37,7 +37,7 @@ git-fetch-with-cli = true
 use std::sync::Arc;
 
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
-use iceroot_sdk::api::{HttpClient, PageRequest, Relay, SolarCompat};
+use iceroot_sdk::api::{HttpClient, HttpOptions, PageRequest, Relay, SolarCompat};
 use iceroot_sdk::profile::DevnetOptions;
 use iceroot_sdk::{Chain, Error, Profile};
 use serde_json::{Value, json};
@@ -52,13 +52,18 @@ pub struct Network {
 /// Reads the node's configuration and the chain it serves, loads the chain for `profile` and checks
 /// the node against it. A devnet profile without a network hash is pinned now (store
 /// `chain.profile().chain().nethash`); a node of another chain is refused with `NetworkMismatch`.
+/// Every later request goes through a client that checks each relay's chain before its first use.
 pub async fn connect(profile: &Profile) -> Result<Network, Error> {
     let relays = profile.endpoints().relays.iter().map(|relay| Relay::parse(relay)).collect::<Result<Vec<_>, _>>()?;
-    let client = HttpClient::new(relays)?;
-    let configuration = client.send(&SolarCompat::new(0).node_configuration()).await?;
+    // Loading the chain: any relay may answer, so the node's configuration is checked against it.
+    let loader = HttpClient::new(relays.clone())?;
+    let configuration = loader.send(&SolarCompat::new(0).node_configuration()).await?;
     let api = SolarCompat::for_configuration(&configuration);
-    let chain = Chain::from_node(profile, &client.send(&api.crypto_configuration()).await?)?;
+    let chain = Chain::from_node(profile, &loader.send(&api.crypto_configuration()).await?)?;
     chain.check_node(&configuration)?;
+    // Everything else: a relay of another chain is never asked, even when the first one fails over.
+    let options = HttpOptions { identity: Some(chain.relay_identity()), ..HttpOptions::default() };
+    let client = HttpClient::with_options(relays, options)?;
     Ok(Network { client, api, chain })
 }
 
@@ -95,7 +100,7 @@ async fn validators(State(net): State<Arc<Network>>) -> Result<Json<Value>, (Sta
 }
 ```
 
-Each `client.send` is one request, and the client keeps to the node's allowance of requests. A call that can refuse its arguments (an account's address, a transaction id) returns a `Result` before anything is sent: `net.client.send(&net.api.account(&address)?)`.
+Each `client.send` is one request, and the client keeps to the node's allowance of requests. The TypeScript `connect`, the Tauri plugin and the Go SDK check every relay's chain before its first use whatever the application does; the Rust `HttpClient` checks only when its options carry the chain's identity (`HttpOptions::identity`), so a client of more than one relay is always built with it, as `connect` above does. A call that can refuse its arguments (an account's address, a transaction id) returns a `Result` before anything is sent: `net.client.send(&net.api.account(&address)?)`.
 
 ## 3. Check a sign-in signature
 
