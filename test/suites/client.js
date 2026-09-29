@@ -718,6 +718,33 @@ export default function suite(test, env) {
     assert.equal(past.height, 80n);
     assert.ok(Date.now() - skipped < 2_000, `${Date.now() - skipped} ms`);
 
+    // Around the number, the white space the Rust client's trim ignores is ignored too: a real
+    // answer's header carries only ASCII, but a custom transport's may carry any.
+    let spaced = 0;
+    const spacedTransport = async (url, init) => {
+      if (!url.startsWith("http://spaced.example")) {
+        return node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+      }
+      spaced += 1;
+      const body = new TextEncoder().encode(JSON.stringify({ statusCode: 429, error: "Too Many Requests", message: "slow down" }));
+      return {
+        type: "basic",
+        status: 429,
+        headers: { get: (name) => (name === "retry-after" ? "\u2000+61\u3000" : null) },
+        body: null,
+        arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+      };
+    };
+    const beyond = Date.now();
+    const spacedNet = await sdk.connect(sdk.profiles.devnet({ relays: ["http://spaced.example/api", node.relay] }), {
+      transport: spacedTransport,
+      rateLimit: false,
+    });
+    assert.equal(spacedNet.height, 80n);
+    assert.ok(Date.now() - beyond < 2_000, `${Date.now() - beyond} ms`);
+    // Asked once for each of the connection's requests, never retried.
+    assert.equal(spaced, 3);
+
     // A relay that keeps answering 429 is left once its retries are spent (2, 4 and 8 seconds).
     const busy = await env.node({ "*": "rate-limited" });
     let busyNow = false;

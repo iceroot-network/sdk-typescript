@@ -74,6 +74,12 @@ const MAX_RETRY_WAIT_MS = 60_000;
 /** The retries of HTTP 429 on one relay for one request: three, as the Rust client's backoff. */
 const MAX_RETRIES = 3;
 
+/** The white space Rust's `trim` removes (Unicode `White_Space`), as a character class. */
+const WHITE_SPACE = "\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+
+/** White space at either end of a header value, as Rust's `trim` removes it. */
+const TRIMMED = new RegExp(`^[${WHITE_SPACE}]+|[${WHITE_SPACE}]+$`, "g");
+
 /** The largest block height an answer's `X-Block-Height` may carry (2^64 - 1, as the Rust client reads it). */
 const MAX_U64 = 18_446_744_073_709_551_615n;
 
@@ -201,12 +207,13 @@ function isServerError(error: unknown): boolean {
 
 /**
  * A `Retry-After` in milliseconds, read as the Rust client reads it: whole seconds, a number of
- * at most 2^64 - 1 with an optional `+`, around which white space is ignored (the characters of a
- * header value Rust's `trim` removes). Anything else, such as an HTTP date, is no wait at all, and
- * the backoff alone spaces the retries.
+ * at most 2^64 - 1 with an optional `+`, around which white space is ignored (every character
+ * Rust's `trim` removes: a real answer's header carries only ASCII, a custom transport's value
+ * may carry any). Anything else, such as an HTTP date, is no wait at all, and the backoff alone
+ * spaces the retries.
  */
 function retryAfterMs(value: string | null): number | undefined {
-  const text = value?.replace(/^[\t\n\v\f\r \u0085\u00a0]+|[\t\n\v\f\r \u0085\u00a0]+$/g, "");
+  const text = value?.replace(TRIMMED, "");
   if (text === undefined || !/^\+?[0-9]+$/.test(text)) {
     return undefined;
   }
