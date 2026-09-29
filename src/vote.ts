@@ -292,7 +292,14 @@ export function voterOf(snapshot: VoteSnapshot, address: string): Voter {
 export type Dimension = "operator" | "hosting" | "region" | "rank-band";
 
 type Described<K extends string, F = object> = { readonly kind: K } & { readonly [P in keyof F]: F[P] } & {
-  /** The plain English sentence for the review screen. Declared names appear quoted, with control and invisible characters escaped. */
+  /**
+   * The plain English sentence for the review screen. Declared names (operator, hosting provider)
+   * appear quoted, as the validator's own statements, written as Rust writes a string literal:
+   * control, invisible and direction characters, every space but the ASCII space, quotes and
+   * backslashes are escaped (`\u{202e}`, `\n`, `\"`), and so is every space of a run of two or
+   * more ASCII spaces (`\u{20}`), so no name can rearrange its sentence or set text apart with
+   * blank space. Show each sentence on one line, or wrap it with the continuation indented.
+   */
   readonly text: string;
 };
 

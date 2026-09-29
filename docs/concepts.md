@@ -407,7 +407,7 @@ const challenge = SignIn.build({ origin, publicKey, nonce, issuedAt, expiresAt }
 
 Every SDK error is an `IceRootError` with a stable `code`, a readable `message` and structured `details`. Subclasses exist for `instanceof` checks. The codes are part of the API.
 
-A message is the SDK's own text, never a node's: `Refused` names the HTTP status and keeps the node's text, escaped and cut to 200 characters, in `details.message`; `NotFound` does the same; `BadResponse` says what was wrong in `details.reason`. A message and every text of the details are at most 500 characters. A wallet shows its own words for the network's errors and shows a node's text, if at all, as the node's.
+A message is the SDK's own text, never a node's: `Refused` names the HTTP status and keeps the node's text, escaped and cut to 200 characters, in `details.message`; `NotFound` does the same; `BadResponse` says what was wrong in `details.reason`. A message and every text of the details are at most 500 characters. Escaped means that every control, format, line separator and paragraph separator character, and every space but the ASCII space, is written as its code point (`\u{202e}`); the Tauri plugin, the Rust SDK and the Go SDK keep a node's text in the same form. A wallet shows its own words for the network's errors and shows a node's text, if at all, as the node's.
 
 | Group | Codes |
 |---|---|

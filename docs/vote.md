@@ -60,7 +60,7 @@ selection.sizeNotice;           // a sentence when fewer picks than asked for fi
 
 ### The review screen
 
-Each pick carries its reasons: the criteria it meets, its groups and its chance at the step it was drawn. Each reason has a `kind`, its values and `text`, a plain English sentence for the screen. Names a validator declared (operator, hosting provider) appear in quotes, with control and invisible characters escaped, since they are the validator's statements.
+Each pick carries its reasons: the criteria it meets, its groups and its chance at the step it was drawn. Each reason has a `kind`, its values and `text`, a plain English sentence for the screen. Names a validator declared (operator, hosting provider) appear in quotes, since they are the validator's statements, written as Rust writes a string literal: control, invisible and direction characters, every space but the ASCII space, quotes and backslashes are escaped (`\u{202e}`, `\n`, `\"`), and so is every space of a run of two or more ASCII spaces (`\u{20}`), so no name can rearrange its sentence or set text apart with blank space. Show each sentence on one line, or wrap it with the continuation indented.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
