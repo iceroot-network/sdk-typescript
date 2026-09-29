@@ -388,6 +388,10 @@ const fields = SignIn.parse(message, net, { origin: senderOrigin, address, publi
 // Every expected field is required (a missing one throws InvalidArgument); a context that knows only
 // the public key derives the address with Address.fromPublicKey(publicKey, profile).
 
+// The wallet signs it once the holder approves: the same checks again, where the key signs, then the signature.
+const signedIn = SignIn.sign(account, message, { origin: senderOrigin, now: new Date() });
+// throws InvalidSignIn with the reason for a challenge of another origin or identity, or a lapsed one
+
 // A server that issues sign-in challenges:
 const challenge = SignIn.build({ origin, publicKey, nonce, issuedAt, expiresAt }, net);   // the network and address come from the profile and the key
 ```
@@ -397,7 +401,7 @@ const challenge = SignIn.build({ origin, publicKey, nonce, issuedAt, expiresAt }
 - An ownership proof of a Solar address ([Ownership proofs](ownership.md)) is signed the same way too, and an account imported with `Keys.fromLegacyPassphrase` from a Solar passphrase has the Solar key itself. So `Messages.sign` also refuses text whose first line is a proof's, `IceRoot migration ownership proof`, with `InvalidArgument`: a proof is made only by `OwnershipProof.sign`, or by `OwnershipProof.fromSignature` for a key held elsewhere. A message signature's `network` label cannot bind a proof to IceRoot either, because the signature does not cover it.
 - `messageNetworkOf` and `messageAlgorithmOf` give the identifiers of a profile's message format without signing anything. A wallet's `connect` answer and a server's challenge use them.
 - A signature's `network` and `algorithm` are labels next to it: the signature covers the message only. A protocol that must bind a message to one network names the network in the message's text, as the sign-in message does.
-- A wallet never signs a transaction for a website, and signs for a website only a message it shows the holder as text. A website provider offers `connect` and `signMessage` only, takes the message as text, never as bytes or hex, and the wallet runs `SignIn.parse` before it asks the holder.
+- A wallet never signs a transaction for a website, and signs for a website only a message it shows the holder as text. A website provider offers `connect` and `signMessage` only, takes the message as text, never as bytes or hex, and the wallet runs `SignIn.parse` before it asks the holder. It signs a sign-in message with `SignIn.sign`, which checks it again against the asking page's origin and the account where the key signs, never with `Messages.sign` from a generic prompt: a page of another origin can relay a website's challenge, and the Rust SDK, the Tauri plugin and the Go SDK sign a sign-in the same checked way.
 
 ## Errors
 

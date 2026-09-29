@@ -15,6 +15,7 @@ import {
   Messages,
   Mnemonic,
   SignIn,
+  type SignInSigning,
   SignedTransaction,
   TxRejected,
   balanceOf,
@@ -114,10 +115,12 @@ export async function transactions(configuration: string, account: AccountInfo):
   );
   const fields = await SignIn.parse(message, chain, { origin: "https://example.com", address: sender.address, publicKey: sender.publicKey, now: new Date() });
   const expires: Date = fields.expiresAt;
+  const signing: SignInSigning = { origin: "https://example.com", now: new Date() };
+  const signedIn: MessageSignature = await SignIn.sign(sender, message, signing);
   const algorithm: "secp256k1-bip340-sha256" | "ml-dsa-65" = await messageAlgorithmOf(chain);
   const hasFinality: boolean = (await capabilitiesOf(chain)).has("finality");
   await sender.release();
-  void [feedback, back.id, second, text, expires, algorithm, hasFinality, AssetId.ROOT, source];
+  void [feedback, back.id, second, text, expires, signedIn, algorithm, hasFinality, AssetId.ROOT, source];
   return summary.fee.amount + BigInt(rules.memo.maxBytes);
 }
 

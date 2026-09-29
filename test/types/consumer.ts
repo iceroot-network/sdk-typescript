@@ -14,6 +14,7 @@ import {
   Messages,
   Mnemonic,
   SignIn,
+  type SignInSigning,
   SignedTransaction,
   TxRejected,
   balanceOf,
@@ -132,10 +133,12 @@ export function transactions(configuration: string, statistics: FeeStatistics, a
     now: new Date(),
   });
   const expires: Date = fields.expiresAt;
+  const signing: SignInSigning = { origin: "https://example.com", now: new Date() };
+  const signedIn: MessageSignature = SignIn.sign(sender, message, signing);
   const algorithm: "secp256k1-bip340-sha256" | "ml-dsa-65" = messageAlgorithmOf(chain);
   const hasFinality: boolean = capabilitiesOf(chain).has("finality");
   sender.release();
-  void [feedback, rules, back.id, vote.fee, text, message, expires, algorithm, hasFinality, AssetId.ROOT, shown, source, floorInForce];
+  void [feedback, rules, back.id, vote.fee, text, message, expires, signedIn, algorithm, hasFinality, AssetId.ROOT, shown, source, floorInForce];
   return summary.fee.amount + BigInt(rules.memo.maxBytes);
 }
 

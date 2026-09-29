@@ -238,4 +238,53 @@ export default function suite(test, env) {
     }
     await account.release();
   });
+
+  test("a sign-in message is signed only once it passes its checks, where the key signs", async () => {
+    const devnet = sdk.profiles.devnet({ relays: [RELAY] });
+    const account = await sdk.Keys.fromLegacyPassphrase("probe passphrase", devnet);
+    const other = await sdk.Keys.fromLegacyPassphrase("another passphrase", devnet);
+    const origin = "https://validators.example";
+    const message = await sdk.SignIn.build(
+      {
+        origin,
+        publicKey: account.publicKey,
+        nonce: "cd".repeat(32),
+        issuedAt: new Date("2026-09-27T10:00:00Z"),
+        expiresAt: new Date("2026-09-27T10:05:00Z"),
+      },
+      devnet,
+    );
+    const now = new Date("2026-09-27T10:01:00Z");
+    const signature = await sdk.SignIn.sign(account, message, { origin, now });
+    assert.ok(Object.isFrozen(signature));
+    assert.equal(signature.publicKey, account.publicKey);
+    assert.equal(signature.network, "heartwood-devnet-v90");
+    assert.equal(await sdk.Messages.verify({ ...signature, message }, devnet), true);
+
+    // A challenge a page of another origin relays, one made for another account, a lapsed one and
+    // text that is no sign-in message are refused with the reason.
+    for (const [key, text, signing, reason] of [
+      [account, message, { origin: "https://other.example", now }, "mismatch"],
+      [other, message, { origin, now }, "mismatch"],
+      [account, message, { origin, now: new Date("2026-09-27T10:10:00Z") }, "expired"],
+      [account, "Sign in to validators.example", { origin, now }, "format"],
+    ]) {
+      await assert.rejects(async () => sdk.SignIn.sign(key, text, signing), (error) => {
+        assert.ok(error instanceof sdk.InvalidSignIn, String(error));
+        assert.equal(error.details.reason, reason);
+        return true;
+      });
+    }
+    // The origin and the time are always given.
+    await assert.rejects(async () => sdk.SignIn.sign(account, message, { now }), (error) => {
+      assert.ok(error instanceof sdk.InvalidArgument, String(error));
+      assert.equal(error.details.field, "origin");
+      return true;
+    });
+    await assert.rejects(async () => sdk.SignIn.sign(account, message, { origin, now: new Date(Number.NaN) }), sdk.InvalidArgument);
+    await assert.rejects(async () => sdk.SignIn.sign(account, new TextEncoder().encode(message), { origin, now }), sdk.InvalidArgument);
+    await account.release();
+    await assert.rejects(async () => sdk.SignIn.sign(account, message, { origin, now }), sdk.KeyReleased);
+    await other.release();
+  });
 }

@@ -22,7 +22,7 @@ The flow this guide builds has two contexts: the wallet page has the network and
 | Part | Release 0.1.0 | Waits for |
 |---|---|---|
 | SDK loaded in the wallet page, the sandbox page and the service worker | Wire now | |
-| Sign-in check with `SignIn.parse` in the service worker and the sandbox; `signing-protocol.js` retired | Wire now | |
+| Sign-in check with `SignIn.parse` in the service worker, signing with `SignIn.sign` in the sandbox; `signing-protocol.js` retired | Wire now | |
 | Existing 12-word devnet identities, through the legacy passphrase import | Wire now | Retired with the devnet formats |
 | New identities: 24 words, hardened derivation | Wire now | |
 | Live devnet wallet: balances, history, validators, transfers (1 to 256 recipients, one memo), votes, signed in the sandbox | Wire now | |
@@ -56,7 +56,7 @@ The flow this guide builds has two contexts: the wallet page has the network and
 | `IceRootSigning.siteOrigin` | Stays in the wallet: it is the settings list's rule, not the sign-in format (`site-policy.js`) |
 | `generateMnemonic` (12 words) | `Mnemonic.generate()` (24 words) |
 | `heartwoodIdentity` (SHA-256 of the phrase) | `Keys.fromLegacyPassphrase(phrase, profile)` for existing identities; `Keys.fromPhrase(phrase, profile, { account, index })` for new ones |
-| `heartwoodSignChallenge` | `SignIn.parse`, then `Messages.sign(account, message)` |
+| `heartwoodSignChallenge` | `SignIn.sign(account, message, { origin, now })`, which checks the challenge where the key signs and signs only if it passes |
 | Demo `walletData = { balance, nonce, votingFor, attributes }` | `net.accounts.get(address)`: `balances`, `nonce`, `vote`, `validator` |
 | `FEES` | `draft.fee` |
 | `decimals()`, `toAtomic`, `fromAtomic` | `net.token.decimals`, `Amount.parse`, `Amount.format` |
@@ -189,9 +189,10 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
     identity: (args) => withAccount(args, publicIdentity),
     // `args.expected` is { origin, address, publicKey }: the requesting origin and the selected identity.
     parseSignIn: (args) => toJson(Sdk.SignIn.parse(args.message, profileFor(args.devnet), { ...args.expected, now: new Date() })),
-    signSignIn: (args) => withAccount(args, (account, profile) => {
-      Sdk.SignIn.parse(args.message, profile, { origin: args.origin, address: account.address, publicKey: account.publicKey, now: new Date() });
-      const signed = Sdk.Messages.sign(account, args.message);   // { publicKey, signature, network, algorithm }
+    // `args.origin` is the requesting page's origin as the service worker received it. The message is
+    // checked against it and the selected identity where the key signs, and signed only if it passes.
+    signSignIn: (args) => withAccount(args, (account) => {
+      const signed = Sdk.SignIn.sign(account, args.message, { origin: args.origin, now: new Date() });
       return { publicKey: signed.publicKey, signature: signed.signature, network: signed.network, algorithm: signed.algorithm };
     }),
     // The summary and fee are recomputed from the draft's own bytes; `args.devnet.nethash` must be pinned.
@@ -375,7 +376,7 @@ The legacy signer keeps its own files. When the SDK's ownership-proof functions 
 ## Rules that apply to the browser wallet
 
 - The provider offers `connect` and `signMessage` only; transaction requests come only from the wallet's own page, never from a website ([rule 6](../rules.md)).
-- Every sign-in message passes `SignIn.parse` before the holder sees an approval screen, with the real sender origin.
+- Every sign-in message passes `SignIn.parse` before the holder sees an approval screen, with the real sender origin, and is signed only with `SignIn.sign`, which checks it again against that origin and the selected identity where the key signs; never with `Messages.sign`.
 - Keys exist only in the sandbox, for one operation, and are released; the vault stays encrypted ([rule 12](../rules.md)).
 - The approval screen shows the summary the sandbox recomputed from the draft's bytes, with the fee as an amount, and the sandbox signs only a draft that still gives that summary ([rule 15](../rules.md)). The sandbox has no network, so the floor it compares the fee with comes from the configuration the draft carries, and `summary.fee.source` reads `unverified` for a fee at that floor: the screen never calls it "the network minimum". The wallet page, which is connected, can check the same bytes with `Draft.deserialize(bytes, net)`, which reads `floor` and refuses a draft built under another configuration.
 - `wallet.js` submits a signed transaction only when `signed.matches(draft)`.

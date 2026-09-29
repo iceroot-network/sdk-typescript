@@ -4,7 +4,7 @@
 // transaction signed.
 
 import { useState, type FormEvent } from "react";
-import { IceRootError, Messages, SignIn, type Account, type SignInFields } from "@iceroot-network/sdk";
+import { IceRootError, SignIn, type Account, type SignInFields } from "@iceroot-network/sdk";
 
 import { useNetwork } from "./network";
 
@@ -16,6 +16,14 @@ export function SignInPage({ account }: { account: Account }) {
   const [signature, setSignature] = useState("");
   const [refusal, setRefusal] = useState("");
 
+  function refuse(error: unknown) {
+    setRefusal(
+      error instanceof IceRootError
+        ? `Do not sign this message: ${error.message}${typeof error.details["reason"] === "string" ? ` (${error.details["reason"]})` : ""}.`
+        : "Do not sign this message.",
+    );
+  }
+
   function checkMessage(): SignInFields | null {
     try {
       return SignIn.parse(message, net, {
@@ -25,11 +33,7 @@ export function SignInPage({ account }: { account: Account }) {
         now: new Date(),
       });
     } catch (error) {
-      setRefusal(
-        error instanceof IceRootError
-          ? `Do not sign this message: ${error.message}${typeof error.details["reason"] === "string" ? ` (${error.details["reason"]})` : ""}.`
-          : "Do not sign this message.",
-      );
+      refuse(error);
       return null;
     }
   }
@@ -42,11 +46,14 @@ export function SignInPage({ account }: { account: Account }) {
   }
 
   function sign() {
-    // Checked again at the moment of signing: the message may have lapsed meanwhile.
-    const checked = checkMessage();
-    setFields(checked);
-    if (checked === null) return;
-    setSignature(JSON.stringify(Messages.sign(account, message)));
+    // Checked again where the key signs, at the moment of signing: the message may have lapsed
+    // meanwhile. SignIn.sign signs only a message that passes, for this origin and this account.
+    try {
+      setSignature(JSON.stringify(SignIn.sign(account, message, { origin: origin.trim(), now: new Date() })));
+    } catch (error) {
+      setFields(null);
+      refuse(error);
+    }
   }
 
   return (

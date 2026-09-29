@@ -70,7 +70,7 @@ export {
   type MessageSignature,
   type SignedMessage,
 } from "./messages.js";
-export { SignIn, type SignInExpectations, type SignInFields, type SignInRequest } from "./signin.js";
+export { SignIn, type SignInExpectations, type SignInFields, type SignInRequest, type SignInSigning } from "./signin.js";
 export {
   Network,
   balanceOf,

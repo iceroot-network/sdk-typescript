@@ -177,6 +177,40 @@ mod tests {
     }
 
     #[test]
+    fn a_sign_in_message_is_signed_only_once_it_passes_its_checks() {
+        let profile = ProfileHandle::from_json(PROFILE).unwrap();
+        let key = KeyHandle::from_legacy_passphrase(&profile, "sender".to_owned()).unwrap();
+        let request = json!({
+            "origin": "https://validators.example",
+            "publicKey": hex::encode(key.public_key().unwrap()),
+            "nonce": "ab".repeat(32),
+            "issuedAt": 1_790_000_000,
+            "expiresAt": 1_790_000_300,
+        });
+        let message = build_sign_in(&profile, &request.to_string()).unwrap();
+        let now = 1_790_000_060_000.0;
+        let signed: Value = serde_json::from_str(
+            &key.sign_sign_in(&message, "https://validators.example", now)
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(verify_message(
+            message.as_bytes(),
+            signed["publicKey"].as_str().unwrap(),
+            signed["signature"].as_str().unwrap(),
+            signed["algorithm"].as_str().unwrap(),
+        ));
+        for (origin, now, reason) in [
+            ("https://other.example", now, "mismatch"),
+            ("https://validators.example", now + 600_000.0, "expired"),
+        ] {
+            let refused = key.sign_sign_in(&message, origin, now).unwrap_err();
+            assert_eq!(refused.code(), "InvalidSignIn");
+            assert_eq!(refused.details()["reason"], reason);
+        }
+    }
+
+    #[test]
     fn errors_keep_their_code_and_details() {
         let profile = ProfileHandle::from_json(PROFILE).unwrap();
         let error = parse_address("dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNX", &profile).unwrap_err();

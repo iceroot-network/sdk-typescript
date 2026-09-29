@@ -33,7 +33,8 @@ export const Messages = {
    * `InvalidArgument`, and so is text whose first line is an ownership proof's (`IceRoot migration
    * ownership proof`), before anything reaches the plugin: proofs are made only by
    * `OwnershipProof.sign` and `OwnershipProof.fromSignature` (see the WebAssembly entry's
-   * `Messages.sign`).
+   * `Messages.sign`). A website's sign-in message is signed with `SignIn.sign`, never with this
+   * function from a generic prompt.
    */
   async sign(account: Account, message: string | Uint8Array): Promise<MessageSignature> {
     const key = keyOf(account);

@@ -45,7 +45,7 @@ Read first: [Concepts](../concepts.md), [Rules](../rules.md), [Rust backend quic
 | `NETWORK` | `profile.message_network()`; `heartwood-devnet-v90` on today's devnet |
 | The algorithm string in `components/auth.tsx` | The value the backend returns with the challenge |
 
-The challenge format does not change: version 1, the same 12 lines, the same checks. The wallet runs `SignIn.parse` from the same SDK before it signs, so the two sides cannot disagree.
+The challenge format does not change: version 1, the same 12 lines, the same checks. The wallet runs `SignIn.parse` from the same SDK before it asks the holder, and signs with `SignIn.sign`, which checks the message again where the key signs, so the two sides cannot disagree.
 
 ### Steps
 

@@ -140,6 +140,18 @@ impl KeyHandle {
         self.key.sign_message_with(message, Aux::random())
     }
 
+    /// The signature of the sign-in `message`, for the website of `origin` (the origin of the page
+    /// that asks, as the browser reports it), at `now_ms` (milliseconds since
+    /// 1970-01-01T00:00:00Z), with fresh auxiliary randomness. The message is checked first, as
+    /// `parseSignIn` checks it, against that origin and this account's own public key and address,
+    /// and signed only if every check passes. JSON as [`KeyHandle::sign_message`]; a refusal is
+    /// `InvalidSignIn` with the reason.
+    #[wasm_bindgen(js_name = signSignIn)]
+    pub fn sign_sign_in(&self, message: &str, origin: &str, now_ms: f64) -> Result<String> {
+        self.key
+            .sign_sign_in_with(message, origin, now_ms, Aux::random())
+    }
+
     /// Wipes the secret key. Every later call that needs the key fails with `KeyReleased`.
     pub fn release(&mut self) {
         self.key.release();

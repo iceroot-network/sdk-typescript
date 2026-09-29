@@ -2,7 +2,7 @@
 // Tauri plugin's entry.
 
 import { InvalidArgument } from "../errors.js";
-import type { SignInExpectations, SignInFields, SignInRequest } from "../signin.js";
+import type { SignInExpectations, SignInFields, SignInRequest, SignInSigning } from "../signin.js";
 
 const EXPECTED_FIELDS = ["origin", "address", "publicKey"] as const;
 
@@ -43,6 +43,25 @@ export function expectedWire(expected: SignInExpectations): { json: string; now:
     address: expected.address,
   });
   return { json, now };
+}
+
+/**
+ * The arguments of `SignIn.sign` in the bindings' form: the message, which must be text, the
+ * origin, which is required, and the current time in milliseconds.
+ */
+export function signingWire(message: string, signing: SignInSigning): { message: string; origin: string; now: number } {
+  if (typeof message !== "string") {
+    throw new InvalidArgument("a sign-in message is signed as text", { field: "message" });
+  }
+  const origin: unknown = signing?.origin;
+  if (typeof origin !== "string" || origin === "") {
+    throw new InvalidArgument("the origin of the page that asks is required", { field: "origin" });
+  }
+  const now = signing.now instanceof Date ? signing.now.getTime() : Number.NaN;
+  if (!Number.isFinite(now)) {
+    throw new InvalidArgument("now is not a valid date", { field: "now" });
+  }
+  return { message, origin, now };
 }
 
 /** The checked fields of a sign-in message from the bindings' JSON. */
