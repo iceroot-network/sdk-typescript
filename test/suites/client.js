@@ -525,7 +525,22 @@ export default function suite(test, env) {
     }
     const node = await env.node();
     const LIMIT = 8 * 1024 * 1024;
+    const CHUNK = 64 * 1024;
     let pulled = 0;
+    let iterated = 0;
+    let closed = 0;
+    // How many times a response without a body to read in chunks was read whole, by host.
+    const wholeReads = {};
+    const whole = (host, headers, size) => ({
+      type: "basic",
+      status: 200,
+      headers: new Headers(headers),
+      body: null,
+      arrayBuffer: async () => {
+        wholeReads[host] = (wholeReads[host] ?? 0) + 1;
+        return new ArrayBuffer(size);
+      },
+    });
     const answers = {
       // Declares its length.
       "declared.example": () => new Response(null, { status: 200, headers: { "content-length": String(8_000_000_000) } }),
@@ -535,19 +550,43 @@ export default function suite(test, env) {
           new ReadableStream({
             pull(controller) {
               pulled += 1;
-              controller.enqueue(new Uint8Array(64 * 1024).fill(0x20));
+              controller.enqueue(new Uint8Array(CHUNK).fill(0x20));
             },
           }),
           { status: 200 },
         ),
-      // A whole body just over the limit, with no stream to read.
-      "whole.example": () => ({
+      // Never ends either, as an async iterable of bytes that is no web stream (as a Node.js
+      // stream is): it is read in chunks too, never whole.
+      "iterable.example": () => ({
         type: "basic",
         status: 200,
         headers: new Headers(),
-        body: null,
-        arrayBuffer: async () => new ArrayBuffer(LIMIT + 1),
+        body: {
+          [Symbol.asyncIterator]() {
+            return {
+              next: async () => {
+                iterated += 1;
+                return { done: false, value: new Uint8Array(CHUNK).fill(0x20) };
+              },
+              return: async () => {
+                closed += 1;
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        },
+        arrayBuffer: async () => {
+          wholeReads["iterable.example"] = (wholeReads["iterable.example"] ?? 0) + 1;
+          return new ArrayBuffer(LIMIT + 1);
+        },
       }),
+      // No stream to read, and a declared length over the limit: refused before it is read, also
+      // when a transport joined the header's values.
+      "whole-declared.example": () => whole("whole-declared.example", { "content-length": String(LIMIT + 1) }, LIMIT + 1),
+      "whole-joined.example": () =>
+        whole("whole-joined.example", { "content-length": `${8_000_000_000}, ${8_000_000_000}` }, LIMIT + 1),
+      // A whole body just over the limit, with no stream to read and no length: read, then refused.
+      "whole.example": () => whole("whole.example", {}, LIMIT + 1),
     };
     const transport = async (url, init) => {
       const host = new URL(url).host;
@@ -565,8 +604,39 @@ export default function suite(test, env) {
         return true;
       });
     }
-    // The endless body was read no further than the limit.
-    assert.ok(pulled <= LIMIT / (64 * 1024) + 2, String(pulled));
+    // The endless bodies were read no further than the limit, and the iteration was ended.
+    assert.ok(pulled <= LIMIT / CHUNK + 2, String(pulled));
+    assert.ok(iterated > 0 && iterated <= LIMIT / CHUNK + 1, String(iterated));
+    assert.equal(closed, 1);
+    // Only the body that declared nothing and had no chunks to read was read whole.
+    assert.deepEqual(wholeReads, { "whole.example": 1 });
+
+    // An answer in chunks of an async iterable is read as it is sent.
+    const chunked = async (url, init) => {
+      const response = await node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      return {
+        type: "basic",
+        status: response.status,
+        headers: response.headers,
+        body: {
+          async *[Symbol.asyncIterator]() {
+            for (let offset = 0; offset < bytes.length; offset += 7) {
+              yield bytes.slice(offset, offset + 7);
+            }
+          },
+        },
+        arrayBuffer: async () => {
+          throw new Error("read whole");
+        },
+      };
+    };
+    const inChunks = await sdk.connect(sdk.profiles.devnet({ relays: ["http://chunks.example/api"] }), {
+      transport: chunked,
+      rateLimit: false,
+    });
+    assert.equal(inChunks.height, 80n);
+    assert.equal((await inChunks.node.status()).height, 80n);
 
     // With another relay listed, the answer comes from it.
     const both = sdk.profiles.devnet({ relays: ["http://endless.example/api", node.relay] });

@@ -41,12 +41,14 @@ export interface ConnectOptions {
    * The transport; `globalThis.fetch` by default. The SDK asks it not to follow redirects
    * (`redirect: "manual"`, and `maxRedirections: 0` for the Tauri HTTP plugin's `fetch`) and skips
    * a relay that answers with one, so a request, its headers and its body reach the relays only.
-   * A transport that follows redirects anyway sends them to the redirect's target. An answer is
-   * read from the response's `body` stream where it has one, and refused with `BadResponse` once
-   * it is larger than 8 MiB (the next relay is then asked). Only a streaming transport keeps that
-   * bound before the body is in memory: a response without a `body` stream (some custom
-   * transports, and fetch polyfills) is read whole with `arrayBuffer()` and checked afterwards,
-   * unless its `content-length` already says it is too large.
+   * A transport that follows redirects anyway sends them to the redirect's target. An answer
+   * larger than 8 MiB is refused with `BadResponse` (the next relay is then asked): before any of
+   * it is read when its `content-length` says so, and otherwise as soon as more than 8 MiB has
+   * arrived, without reading further. The answer is read chunk by chunk from the response's
+   * `body`, a web stream or any other async iterable of bytes (such as the Node.js stream of
+   * `node-fetch`). Only a response with no such `body` (some fetch polyfills and custom
+   * transports) is read whole with `arrayBuffer()` and checked afterwards, so only a transport
+   * that gives the body in chunks keeps the bound before a whole answer is in memory.
    */
   readonly transport?: Transport;
   /**

@@ -410,7 +410,7 @@ export class Relays {
       const response = await Promise.race([this.#transport(url, init), timeout]);
       // A browser reports a redirect it did not follow as an "opaqueredirect" answer of status 0.
       if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
-        response.body?.cancel().catch(() => undefined);
+        discard(response.body);
         const status = response.status === 0 ? "" : ` (HTTP ${response.status})`;
         const message = `${request.method} ${url} answered with a redirect${status}, which the client does not follow`;
         throw new NodeUnavailable(message, { url });
@@ -471,45 +471,146 @@ async function readBody(
   url: string,
   controller: AbortController | undefined,
 ): Promise<Uint8Array> {
-  const declared = response.headers.get("content-length")?.trim();
-  if (declared !== undefined && /^[0-9]+$/.test(declared) && Number(declared) > MAX_ANSWER_BYTES) {
-    response.body?.cancel().catch(() => undefined);
+  const body: unknown = response.body;
+  if (declaresMoreThanLimit(response.headers.get("content-length"))) {
+    discard(body);
     controller?.abort();
     throw tooLarge(what, url);
   }
-  const stream = response.body;
-  if (stream === null || stream === undefined || typeof stream.getReader !== "function") {
-    // A transport whose answers have no stream: the whole body, checked once it is read.
+  let next: () => Promise<{ readonly done?: boolean; readonly value?: unknown }>;
+  let stop: () => unknown;
+  if (isWebStream(body)) {
+    const reader = body.getReader();
+    next = () => reader.read();
+    stop = () => reader.cancel();
+  } else if (isAsyncIterable(body)) {
+    // Ending the iteration destroys a Node.js stream, so nothing more is read.
+    const chunks = body[Symbol.asyncIterator]();
+    next = () => chunks.next();
+    stop = () => chunks.return?.();
+  } else {
+    // A transport whose answers have no body to read in chunks: the whole body, checked once it
+    // is read.
     const whole = new Uint8Array(await response.arrayBuffer());
     if (whole.length > MAX_ANSWER_BYTES) {
       throw tooLarge(what, url);
     }
     return whole;
   }
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  const collected = new Collected();
+  let finished = false;
+  try {
+    for (;;) {
+      const { done, value } = await next();
+      if (done === true) {
+        finished = true;
+        return collected.bytes();
+      }
+      if (!collected.add(chunkBytes(value))) {
+        controller?.abort();
+        throw tooLarge(what, url);
+      }
+      if (controller?.signal.aborted === true) {
+        // The request timed out: its answer is no longer read.
+        throw new Timeout(`${what} was cancelled`, { url });
+      }
     }
-    total += value.byteLength;
-    if (total > MAX_ANSWER_BYTES) {
-      reader.cancel().catch(() => undefined);
-      controller?.abort();
-      throw tooLarge(what, url);
+  } finally {
+    if (!finished) {
+      try {
+        Promise.resolve(stop()).catch(() => undefined);
+      } catch {
+        // The body is not read further either way.
+      }
     }
-    chunks.push(value);
   }
-  if (chunks.length === 1 && chunks[0] !== undefined) {
-    return chunks[0];
+}
+
+/**
+ * Whether a `Content-Length` declares more than {@link MAX_ANSWER_BYTES}: any of its values, when a
+ * transport joined several (`"n, n"`), a whole number above the limit.
+ */
+function declaresMoreThanLimit(declared: string | null): boolean {
+  if (declared === null) {
+    return false;
   }
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
+  return declared.split(",").some((value) => {
+    const text = value.trim();
+    return /^[0-9]+$/.test(text) && Number(text) > MAX_ANSWER_BYTES;
+  });
+}
+
+/** The chunks of an answer's body, kept while their total is within {@link MAX_ANSWER_BYTES}. */
+class Collected {
+  readonly #chunks: Uint8Array[] = [];
+  #total = 0;
+
+  /** Keeps `chunk`; `false`, keeping nothing, once the body is larger than the limit. */
+  add(chunk: Uint8Array): boolean {
+    this.#total += chunk.byteLength;
+    if (this.#total > MAX_ANSWER_BYTES) {
+      this.#chunks.length = 0;
+      return false;
+    }
+    this.#chunks.push(chunk);
+    return true;
   }
-  return body;
+
+  /** The body: the chunks joined. */
+  bytes(): Uint8Array {
+    const [first] = this.#chunks;
+    if (this.#chunks.length === 1 && first !== undefined) {
+      return first;
+    }
+    const body = new Uint8Array(this.#total);
+    let offset = 0;
+    for (const chunk of this.#chunks) {
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return body;
+  }
+}
+
+/** A chunk of a body as bytes; a chunk of anything else is not an answer the client reads. */
+function chunkBytes(chunk: unknown): Uint8Array {
+  if (chunk instanceof Uint8Array) {
+    return chunk;
+  }
+  if (chunk instanceof ArrayBuffer) {
+    return new Uint8Array(chunk);
+  }
+  if (ArrayBuffer.isView(chunk)) {
+    return new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+  }
+  throw new TypeError("the transport gave a chunk of the answer's body that is not bytes");
+}
+
+function isWebStream(body: unknown): body is ReadableStream<unknown> {
+  return typeof body === "object" && body !== null && typeof (body as ReadableStream).getReader === "function";
+}
+
+function isAsyncIterable(body: unknown): body is AsyncIterable<unknown> {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    typeof (body as Partial<AsyncIterable<unknown>>)[Symbol.asyncIterator] === "function"
+  );
+}
+
+/** Stops the transfer of a body that will not be read, whatever kind of body it is. */
+function discard(body: unknown): void {
+  if (typeof body !== "object" || body === null) {
+    return;
+  }
+  const stream = body as { cancel?: () => Promise<void>; destroy?: () => void };
+  try {
+    if (typeof stream.cancel === "function") {
+      Promise.resolve(stream.cancel()).catch(() => undefined);
+    } else if (typeof stream.destroy === "function") {
+      stream.destroy();
+    }
+  } catch {
+    // The body is not read either way.
+  }
 }
