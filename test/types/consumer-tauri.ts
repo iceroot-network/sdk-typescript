@@ -177,7 +177,8 @@ export async function keys(phrase: string, password: Uint8Array, stored: Uint8Ar
   const opened: keystore.DecryptedPhrase = await keystore.decrypt(stored, password, { maxMemoryKib: 131_072 });
   opened.phrase.fill(0);
   const upgrade: boolean = await keystore.isWeakerThan(header, keystore.PRESETS.mobile);
-  const text: string = await keystore.armor(await keystore.reencrypt(bytes, password, "mobile"));
+  const text: string = await keystore.armor(await keystore.reencrypt(bytes, password, "mobile", { maxMemoryKib: 131_072 }));
+  const changed: Uint8Array = await keystore.changePassword(bytes, password, "new password", "mobile", { maxMemoryKib: 131_072 });
   try {
     await keystore.decrypt(text, "wrong");
   } catch (error) {
@@ -185,7 +186,7 @@ export async function keys(phrase: string, password: Uint8Array, stored: Uint8Ar
       return error.code;
     }
   }
-  return `${opened.words} ${upgrade} ${text.length}`;
+  return `${opened.words} ${upgrade} ${text.length} ${changed.length}`;
 }
 
 export async function proofs(passphrase: string, typedAccount: string, now: Date): Promise<string> {

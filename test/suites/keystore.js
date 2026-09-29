@@ -241,6 +241,39 @@ export default function suite(test, env) {
     assert.equal(weak.details.param, "memory");
   });
 
+  test("a password change and a re-encryption keep to a lowered memory ceiling", async () => {
+    const encoder = new TextEncoder();
+    const ceiling = { maxMemoryKib: 19_456 };
+    const over = { param: "memory", value: 20_480, minimum: 19_456, maximum: 19_456 };
+    // A keystore that asks for more memory than the platform can spare: refused before any work,
+    // and the passwords given as bytes are wiped all the same.
+    const larger = await keystore.encrypt(PHRASE_24, "correct horse", { ...LOW, memoryKib: 20_480 });
+    const old = encoder.encode("correct horse");
+    const next = encoder.encode("battery staple");
+    const changed = await refusal(() => keystore.changePassword(larger, old, next, LOW, ceiling));
+    assert.ok(changed instanceof keystore.ParamsOutOfRange, String(changed));
+    assert.deepEqual(changed.details, over);
+    assert.ok(wiped(old) && wiped(next));
+    const same = encoder.encode("correct horse");
+    const moved = await refusal(() => keystore.reencrypt(larger, same, LOW, ceiling));
+    assert.ok(moved instanceof keystore.ParamsOutOfRange, String(moved));
+    assert.deepEqual(moved.details, over);
+    assert.ok(wiped(same));
+
+    // New parameters that ask for more are refused too, before the keystore is opened.
+    const stored = await keystore.encrypt(PHRASE_24, "correct horse", LOW);
+    const higher = { ...LOW, memoryKib: 20_480 };
+    assert.deepEqual((await refusal(() => keystore.changePassword(stored, "wrong", "battery staple", higher, ceiling))).details, over);
+    assert.deepEqual((await refusal(() => keystore.reencrypt(stored, "wrong", higher, ceiling))).details, over);
+    assert.ok((await refusal(() => keystore.reencrypt(stored, "correct horse", LOW, { maxMemoryKib: 1.5 }))) instanceof sdk.InvalidArgument);
+
+    // Within the ceiling, both work.
+    const kept = await keystore.changePassword(stored, "correct horse", "battery staple", LOW, ceiling);
+    assert.equal(text((await keystore.decrypt(kept, "battery staple")).phrase), PHRASE_24);
+    const again = await keystore.reencrypt(kept, "battery staple", { ...LOW, iterations: 3 }, ceiling);
+    assert.equal((await keystore.inspect(again)).iterations, 3);
+  });
+
   test("refusals carry the keystore's codes and details", async () => {
     const twelve = entropyToMnemonic(new Uint8Array(16).fill(3), wordlist);
     assert.ok((await refusal(() => keystore.encrypt(twelve, "pw", LOW))) instanceof sdk.PhraseTooShort);

@@ -84,37 +84,53 @@ export async function inspect(keystore: KeystoreData): Promise<KeystoreHeader> {
   return Object.freeze(JSON.parse(await invoke<string>("keystore_inspect", { keystore: stored })) as KeystoreHeader);
 }
 
-/** The keystore encrypted again under `newPassword`, once `oldPassword` opens it. */
+/**
+ * The keystore encrypted again under `newPassword`, once `oldPassword` opens it.
+ * `options.maxMemoryKib` lowers the memory ceiling for the new parameters and the old keystore, as
+ * on the WebAssembly entry.
+ */
 export async function changePassword(
   keystore: KeystoreData,
   oldPassword: string | Uint8Array,
   newPassword: string | Uint8Array,
   params: Preset | KeystoreParams,
+  options: DecryptOptions = {},
 ): Promise<Uint8Array> {
   return withSecrets([oldPassword, newPassword], "a password", async ([oldBytes, newBytes]) => {
     const stored = await keystoreHex(keystore);
     const wire = paramsWire(params);
+    const limit = memoryLimit(options);
     return bytesOf(
       await invoke<string>("keystore_change_password", {
         keystore: stored,
         oldPassword: oldBytes,
         newPassword: newBytes,
         params: wire,
+        maxMemoryKib: limit ?? null,
       }),
     );
   });
 }
 
-/** The keystore encrypted again under the same password with new `params`. */
+/** The keystore encrypted again under the same password with new `params`; `options` as for {@link changePassword}. */
 export async function reencrypt(
   keystore: KeystoreData,
   password: string | Uint8Array,
   params: Preset | KeystoreParams,
+  options: DecryptOptions = {},
 ): Promise<Uint8Array> {
   return withSecrets([password], "a password", async ([passwordBytes]) => {
     const stored = await keystoreHex(keystore);
     const wire = paramsWire(params);
-    return bytesOf(await invoke<string>("keystore_reencrypt", { keystore: stored, password: passwordBytes, params: wire }));
+    const limit = memoryLimit(options);
+    return bytesOf(
+      await invoke<string>("keystore_reencrypt", {
+        keystore: stored,
+        password: passwordBytes,
+        params: wire,
+        maxMemoryKib: limit ?? null,
+      }),
+    );
   });
 }
 

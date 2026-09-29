@@ -84,7 +84,7 @@ function unlockSaved(stored: string, password: Uint8Array, profile: NetworkProfi
 }
 ```
 
-A keystore this release cannot open is refused before any work: `Malformed` (not a keystore; `error.reason` says why), `UnsupportedVersion`, `UnsupportedKdf`, `UnsupportedPayload`, or `ParamsOutOfRange` for parameters outside the bounds. `decrypt(stored, password, { maxMemoryKib })` lowers the memory a keystore may ask for, on a platform that cannot spare the format's ceiling: a keystore that asks for more is refused with `ParamsOutOfRange` rather than failing mid-way with `OutOfMemory`.
+A keystore this release cannot open is refused before any work: `Malformed` (not a keystore; `error.reason` says why), `UnsupportedVersion`, `UnsupportedKdf`, `UnsupportedPayload`, or `ParamsOutOfRange` for parameters outside the bounds. `decrypt(stored, password, { maxMemoryKib })` lowers the memory a keystore may ask for, on a platform that cannot spare the format's ceiling: a keystore that asks for more is refused with `ParamsOutOfRange` rather than failing mid-way with `OutOfMemory`. `changePassword` and `reencrypt` take the same option as their last argument, and apply it to the keystore they open and to the parameters they write.
 
 ## Changing the password, and newer presets
 

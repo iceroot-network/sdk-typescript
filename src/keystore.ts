@@ -92,7 +92,10 @@ export interface DecryptedPhrase {
 /** A keystore as bytes, or in its text form (`irks:...`). */
 export type KeystoreData = Uint8Array | string;
 
-/** How much memory a keystore may ask for when it is opened. */
+/**
+ * How much memory a keystore may ask for when it is opened, and parameters when it is written
+ * again ({@link changePassword}, {@link reencrypt}).
+ */
 export interface DecryptOptions {
   /**
    * The most memory, in KiB, a keystore may ask for: for a platform that cannot spare the format's
@@ -147,17 +150,23 @@ export function inspect(keystore: KeystoreData): KeystoreHeader {
  * The keystore encrypted again under `newPassword`, with `params`, a fresh salt and a fresh nonce,
  * once `oldPassword` opens it. The new password and parameters are checked first, so a refusal
  * costs no key derivation. Passwords given as bytes are overwritten with zeros.
+ *
+ * `options.maxMemoryKib` lowers the memory ceiling as for {@link decrypt}: parameters that ask for
+ * more, and a keystore that asks for more, are refused with `ParamsOutOfRange` before any work is
+ * done. The format's ceiling by default.
  */
 export function changePassword(
   keystore: KeystoreData,
   oldPassword: string | Uint8Array,
   newPassword: string | Uint8Array,
   params: Preset | KeystoreParams,
+  options: DecryptOptions = {},
 ): Uint8Array {
   return withSecrets([oldPassword, newPassword], ([oldBytes, newBytes]) => {
     const bytes = keystoreBytes(keystore);
     const wire = paramsWire(params);
-    return call((module) => module.keystoreChangePassword(bytes, oldBytes, newBytes, wire));
+    const limit = memoryLimit(options);
+    return call((module) => module.keystoreChangePassword(bytes, oldBytes, newBytes, wire, limit));
   });
 }
 
@@ -165,13 +174,19 @@ export function changePassword(
  * The keystore encrypted again under the same password with new `params`, a fresh salt and a fresh
  * nonce: for moving a keystore to the platform's current preset after an unlock, when
  * {@link isWeakerThan} says its parameters are weaker. A password given as bytes is overwritten
- * with zeros.
+ * with zeros. `options.maxMemoryKib` as for {@link changePassword}.
  */
-export function reencrypt(keystore: KeystoreData, password: string | Uint8Array, params: Preset | KeystoreParams): Uint8Array {
+export function reencrypt(
+  keystore: KeystoreData,
+  password: string | Uint8Array,
+  params: Preset | KeystoreParams,
+  options: DecryptOptions = {},
+): Uint8Array {
   return withSecrets([password], ([passwordBytes]) => {
     const bytes = keystoreBytes(keystore);
     const wire = paramsWire(params);
-    return call((module) => module.keystoreReencrypt(bytes, passwordBytes, wire));
+    const limit = memoryLimit(options);
+    return call((module) => module.keystoreReencrypt(bytes, passwordBytes, wire, limit));
   });
 }
 

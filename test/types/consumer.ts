@@ -229,7 +229,8 @@ export function keys(phrase: string, password: Uint8Array, stored: Uint8Array | 
   const words: 18 | 21 | 24 = opened.words;
   opened.phrase.fill(0);
   const upgrade: boolean = keystore.isWeakerThan(header, keystore.PRESETS.web);
-  const text: string = keystore.armor(keystore.reencrypt(bytes, password, "web"));
+  const text: string = keystore.armor(keystore.reencrypt(bytes, password, "web", { maxMemoryKib: 65_536 }));
+  const changed: Uint8Array = keystore.changePassword(bytes, password, "new password", "web", { maxMemoryKib: 65_536 });
   try {
     keystore.decrypt(text, "wrong");
   } catch (error) {
@@ -237,7 +238,7 @@ export function keys(phrase: string, password: Uint8Array, stored: Uint8Array | 
       return error.code;
     }
   }
-  return `${words} ${upgrade} ${text.length}`;
+  return `${words} ${upgrade} ${text.length} ${changed.length}`;
 }
 
 export function proofs(passphrase: string, typedAccount: string, pasted: string, now: Date): string {

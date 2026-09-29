@@ -51,22 +51,37 @@ pub fn keystore_inspect(keystore: &[u8]) -> Result<String> {
 
 /// The keystore encrypted again under `new_password` with `params`, a fresh salt and a fresh
 /// nonce, once `old_password` opens it. Both password arrays are overwritten with zeros.
+/// `maxMemoryKib` lowers the memory ceiling as for [`keystore_decrypt`]: the new parameters are
+/// checked and the old keystore opened under it, so a keystore or parameters that ask for more
+/// are refused with `ParamsOutOfRange` before any key derivation.
 #[wasm_bindgen(js_name = keystoreChangePassword)]
 pub fn keystore_change_password(
     keystore: &[u8],
     old_password: &mut [u8],
     new_password: &mut [u8],
     params: &str,
+    max_memory_kib: Option<u32>,
 ) -> Result<Vec<u8>> {
-    keystore::keystore_change_password(keystore, old_password, new_password, params)
+    keystore::keystore_change_password_with_bounds(
+        keystore,
+        old_password,
+        new_password,
+        params,
+        max_memory_kib,
+    )
 }
 
 /// The keystore encrypted again under the same password with new `params`, a fresh salt and a
 /// fresh nonce: for moving it to a newer preset after an unlock. The password array is
-/// overwritten with zeros.
+/// overwritten with zeros. `maxMemoryKib` as for [`keystore_change_password`].
 #[wasm_bindgen(js_name = keystoreReencrypt)]
-pub fn keystore_reencrypt(keystore: &[u8], password: &mut [u8], params: &str) -> Result<Vec<u8>> {
-    keystore::keystore_reencrypt(keystore, password, params)
+pub fn keystore_reencrypt(
+    keystore: &[u8],
+    password: &mut [u8],
+    params: &str,
+    max_memory_kib: Option<u32>,
+) -> Result<Vec<u8>> {
+    keystore::keystore_reencrypt_with_bounds(keystore, password, params, max_memory_kib)
 }
 
 /// The text form of a keystore: `irks:` and the bytes in unpadded base64url.
