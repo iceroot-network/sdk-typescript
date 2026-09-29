@@ -855,15 +855,34 @@ export default function suite(test, env) {
       [`GET /transactions/unconfirmed/${TWO_RECIPIENTS}`]: json(200, transfer),
       "GET /delegates/genesis_5": json(200, { ...validator, data: { ...validator.data, address: TEAM } }),
     });
+    // Refused by the node API client's decoder, or by the reads that check the answer after it.
+    const otherRecord = (error) => {
+      assert.ok(error instanceof sdk.BadResponse, String(error));
+      assert.match(`${error.details.reason} ${error.message}`, /other-record|another (account|transaction)/);
+      return true;
+    };
+    await assert.rejects(net.build.transfer({ from: GENESIS_1, to: [{ address: TEAM, amount: 1n }], fee: 1_000_000n }), otherRecord);
+    await assert.rejects(net.accounts.get(TEAM), otherRecord);
+    await assert.rejects(net.transactions.get(TWO_RECIPIENTS), otherRecord);
+    await assert.rejects(net.transactions.confirmed(TWO_RECIPIENTS), otherRecord);
+    await assert.rejects(net.transactions.pending(TWO_RECIPIENTS), otherRecord);
+    await assert.rejects(net.names.resolve("genesis_5"), (error) => {
+      assert.ok(error instanceof sdk.BadResponse, String(error));
+      assert.equal(error.details.reason, "other-record");
+      return true;
+    });
+
+    // Asked for the sender's account by address, the node answers with that address and another
+    // account's public key: the builder refuses the key before anything is signed.
+    const wrongKey = await connected({ [`GET /wallets/${TEAM}`]: json(200, { ...team, data: { ...team.data, publicKey: SECOND_KEY.publicKey } }) });
     await assert.rejects(
-      net.build.transfer({ from: GENESIS_1, to: [{ address: TEAM, amount: 1n }], fee: 1_000_000n }),
-      sdk.WrongKey,
+      wrongKey.net.build.transfer({ from: TEAM, to: [{ address: GENESIS_1, amount: 1n }], fee: 1_000_000n }),
+      (error) => {
+        assert.ok(error instanceof sdk.WrongKey, String(error));
+        assert.deepEqual({ ...error.details }, { address: TEAM, publicKeyAddress: SECOND_KEY.address });
+        return true;
+      },
     );
-    await assert.rejects(net.accounts.get(TEAM), sdk.BadResponse);
-    await assert.rejects(net.transactions.get(TWO_RECIPIENTS), sdk.BadResponse);
-    await assert.rejects(net.transactions.confirmed(TWO_RECIPIENTS), sdk.BadResponse);
-    await assert.rejects(net.transactions.pending(TWO_RECIPIENTS), sdk.BadResponse);
-    await assert.rejects(net.names.resolve("genesis_5"), sdk.BadResponse);
   });
 
   test("a watch follows a height that went down, and never reports a transaction twice", async () => {
