@@ -195,6 +195,7 @@ Rewrite `sandbox.js` on the SDK. It keeps its role (keys only while signing, no 
       return { publicKey: signed.publicKey, signature: signed.signature, network: signed.network, algorithm: signed.algorithm };
     }),
     // The summary and fee are recomputed from the draft's own bytes; `args.devnet.nethash` must be pinned.
+    // The sandbox has no network, so a fee at the floor reads "unverified": show it as an amount.
     reviewDraft: (args) => {
       const draft = Sdk.Draft.deserialize(args.draft, profileFor(args.devnet));   // refuses another network
       return { summary: toJson(draft.summary), fee: draft.fee.toString() };
@@ -376,7 +377,7 @@ The legacy signer keeps its own files. When the SDK's ownership-proof functions 
 - The provider offers `connect` and `signMessage` only; transaction requests come only from the wallet's own page, never from a website ([rule 6](../rules.md)).
 - Every sign-in message passes `SignIn.parse` before the holder sees an approval screen, with the real sender origin.
 - Keys exist only in the sandbox, for one operation, and are released; the vault stays encrypted ([rule 12](../rules.md)).
-- The approval screen shows the summary the sandbox recomputed from the draft's bytes, with the fee as an amount (the floor it is compared with comes from the configuration the draft carries), and the sandbox signs only a draft that still gives that summary ([rule 15](../rules.md)).
+- The approval screen shows the summary the sandbox recomputed from the draft's bytes, with the fee as an amount, and the sandbox signs only a draft that still gives that summary ([rule 15](../rules.md)). The sandbox has no network, so the floor it compares the fee with comes from the configuration the draft carries, and `summary.fee.source` reads `unverified` for a fee at that floor: the screen never calls it "the network minimum". The wallet page, which is connected, can check the same bytes with `Draft.deserialize(bytes, net)`, which reads `floor` and refuses a draft built under another configuration.
 - `wallet.js` submits a signed transaction only when `signed.matches(draft)`.
 - The wallet page builds from the public key and never holds a key. The sandbox refuses a key of any address but the saved one ([rule 17](../rules.md)).
 - Memos, names and other chain text are shown through `safeText` ([rule 16](../rules.md)).

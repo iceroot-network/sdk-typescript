@@ -103,7 +103,7 @@ Messages.verify({ ...signature, message: "hello" }, profile); // true
 account.release();
 ```
 
-A draft can also be built where the network is and signed where the key is: `Draft.deserialize(draft.serialize(), profile)` in the signing context (for example a Manifest V3 sandbox page with no network), then `SignedTransaction.deserialize(signed.serialize(), profile)` on the way back. Both refuse data of another network.
+A draft can also be built where the network is and signed where the key is: `Draft.deserialize(draft.serialize(), profile)` in the signing context (for example a Manifest V3 sandbox page with no network), then `SignedTransaction.deserialize(signed.serialize(), profile)` on the way back. Both refuse data of another network. With a profile alone, the fee floor comes from the network configuration the draft carries, which the pinned network hash does not cover, so a fee at it reads `unverified` rather than `floor`: show it as an amount, never as the network minimum. A context that is connected passes its network, `Draft.deserialize(bytes, net)`, to read the draft on the chain its connection loaded: the fee is then called the floor when it is, and a draft built under another network configuration is refused with `NetworkMismatch`.
 
 Every error is an `IceRootError` with a stable `code` shared with the Rust core (for example `InvalidAddress` with a `reason` of `checksum`, `length`, `wrong-network` or `format`, or `InvalidVote` with the rule it breaks). A call before initialization throws `SdkNotInitialized`; a module that cannot be loaded, for example under a content security policy without `'wasm-unsafe-eval'`, rejects with `WasmLoadFailed`.
 

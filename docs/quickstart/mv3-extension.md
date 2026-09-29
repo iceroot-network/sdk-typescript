@@ -102,7 +102,7 @@ The service worker must be a classic worker (no `"type": "module"`), because the
 <script src="sandbox.js"></script>
 ```
 
-The sandbox answers three operations. `address` returns the address and public key of a phrase. `review` returns the summary recomputed from the draft's bytes, so the approval screen shows what will really be signed. `sign` reads the bytes again, and signs them only if they still give the summary that was approved and the phrase gives the saved address. It uses a key derived for this one operation and wipes it. Deriving a key needs the profile only, so none of this needs a network.
+The sandbox answers three operations. `address` returns the address and public key of a phrase. `review` returns the summary recomputed from the draft's bytes, so the approval screen shows what will really be signed. The sandbox has no network, so the fee floor in that summary is the one of the configuration the draft carries, and a fee at it reads `unverified`: the approval screen shows the fee as an amount, never as "the network minimum". `sign` reads the bytes again, and signs them only if they still give the summary that was approved and the phrase gives the saved address. It uses a key derived for this one operation and wipes it. Deriving a key needs the profile only, so none of this needs a network.
 
 <!-- sample: verified 0.1.0 -->
 ```js
