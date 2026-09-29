@@ -152,11 +152,13 @@ export class Draft {
    * `NetworkMismatch`, and the summary is computed again from the transaction's own fields.
    *
    * When `source` is a network `connect` returned, the plugin reads the draft on that connection's
-   * chain: a draft built under another network configuration is refused with `NetworkMismatch`
-   * (`details.reason`: `"configuration"`), and a fee at the floor reads `"floor"`: the floor at the
-   * draft's height, which the builder chose (see the WebAssembly entry). With any other
-   * `source`, the floor is that of the configuration the bytes carry, which the pinned network
-   * hash does not cover, so such a fee reads `"unverified"` (see the WebAssembly entry's
+   * chain at its next block (`net.nextHeight`, as the plugin follows the node): a draft built
+   * under another network configuration is refused with `NetworkMismatch` (`details.reason`:
+   * `"configuration"`), and a fee at the floor of the draft's height, which the builder chose,
+   * reads `"floor"` when the floor at the network's next block is the same, and `"unverified"`
+   * when a change of the fee table lies between the two heights (see the WebAssembly entry). With
+   * any other `source`, the floor is that of the configuration the bytes carry, which the pinned
+   * network hash does not cover, so such a fee reads `"unverified"` (see the WebAssembly entry's
    * `Draft.deserialize`).
    */
   static async deserialize(bytes: Uint8Array, source: ProfileSource): Promise<Draft> {

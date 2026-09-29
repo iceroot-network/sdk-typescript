@@ -828,6 +828,54 @@ export default function suite(test, env) {
     }
   });
 
+  test("a serialized draft's fee is the floor on a connection only where no fee change lies between the heights", async () => {
+    // The chain lowers its fees at height 100; the node's status says what its height is.
+    const configuration = JSON.parse((await fixture("node-configuration-crypto")).body);
+    const milestones = configuration.data.milestones;
+    const last = milestones.at(-1);
+    milestones.push({ ...last, height: 100, dynamicFees: { ...last.dynamicFees, minFee: 3000 } });
+    const { net, node } = await connected(
+      { "GET /node/configuration/crypto": json(200, configuration), "GET /node/status": { behavior: "watch-status" } },
+      {},
+      { height: 80, failing: false },
+    );
+    const phrase = await sdk.Mnemonic.generate();
+    const account = await net.keys.fromPhrase(phrase, { account: 0, index: 0 });
+    const feeOf = async (draft) => ({ ...(await sdk.Draft.deserialize(draft.serialize(), net)).summary.fee });
+    try {
+      const entries = [{ validator: "genesis_5", basisPoints: 10_000 }];
+      const early = await net.build.vote({ from: account.publicKey, entries });
+      assert.equal(early.height, 81);
+      assert.equal(early.summary.fee.source, "floor");
+      // While the network's next block is before the change, the draft's floor is the network's.
+      assert.deepEqual(await feeOf(early), { ...early.summary.fee });
+
+      // Once the network is past the change, the floor at the draft's height, which its builder
+      // chose, is not the network's: unverified, with that floor kept for display.
+      await node.set({ height: 120 });
+      assert.equal((await net.node.status()).height, 120n);
+      assert.equal(net.nextHeight, 121);
+      assert.deepEqual(await feeOf(early), { ...early.summary.fee, source: "unverified" });
+      // A draft built past the change has the lowered floor, which is the network's.
+      const late = await net.build.vote({ from: account.publicKey, entries });
+      assert.equal(late.height, 121);
+      assert.ok(late.fee < early.fee, `${late.fee} < ${early.fee}`);
+      assert.deepEqual(await feeOf(late), { ...late.summary.fee });
+      // An explicit fee stays explicit.
+      const explicit = await net.build.vote({ from: account.publicKey, entries, fee: early.fee });
+      assert.equal((await feeOf(explicit)).source, "explicit");
+
+      // A draft that names a height past the change, read while the network is before it.
+      await node.set({ height: 80 });
+      assert.equal((await net.node.status()).height, 80n);
+      assert.equal(net.nextHeight, 81);
+      assert.deepEqual(await feeOf(late), { ...late.summary.fee, source: "unverified" });
+      assert.deepEqual(await feeOf(early), { ...early.summary.fee });
+    } finally {
+      await account.release();
+    }
+  });
+
   test("builders read the sender's nonce, the height and the second key from the node", async () => {
     const { net, node } = await connected();
     const phrase = await sdk.Mnemonic.generate();

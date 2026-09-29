@@ -166,14 +166,38 @@ mod tests {
         let bytes = draft.serialize();
         let alone = DraftHandle::deserialize(&bytes, &chain.profile()).unwrap();
         assert_eq!(source(&alone), "unverified");
-        let on_chain = DraftHandle::deserialize_on(&bytes, &chain).unwrap();
-        assert_eq!(source(&on_chain), "floor");
+        for height in [2, 81, u32::MAX] {
+            let on_chain = DraftHandle::deserialize_at(&bytes, &chain, height).unwrap();
+            assert_eq!(source(&on_chain), "floor");
+        }
         let text = String::from_utf8(bytes).unwrap();
         let tampered = text.replace(r#""minFee":6173"#, r#""minFee":61730"#);
         assert_ne!(tampered, text);
-        let refused = DraftHandle::deserialize_on(tampered.as_bytes(), &chain).unwrap_err();
+        let refused = DraftHandle::deserialize_at(tampered.as_bytes(), &chain, 81).unwrap_err();
         assert_eq!(refused.code(), "NetworkMismatch");
         assert_eq!(refused.details()["reason"], "configuration");
+
+        // Fees are lowered at height 100: a draft of height 2 has its fee called the floor while
+        // the network's next block is before the change, and unverified once it is past it.
+        let mut configuration: Value = serde_json::from_str(CONFIGURATION).unwrap();
+        let milestones = configuration["milestones"].as_array_mut().unwrap();
+        let mut lowered = milestones.last().unwrap().clone();
+        lowered["height"] = json!(100);
+        lowered["dynamicFees"]["minFee"] = json!(3000);
+        milestones.push(lowered);
+        let changing = ChainHandle::load(&profile, &configuration.to_string()).unwrap();
+        let draft =
+            DraftHandle::build(&changing, &request.to_string(), &facts.to_string()).unwrap();
+        let bytes = draft.serialize();
+        for (height, expected) in [
+            (2, "floor"),
+            (99, "floor"),
+            (100, "unverified"),
+            (u32::MAX, "unverified"),
+        ] {
+            let read = DraftHandle::deserialize_at(&bytes, &changing, height).unwrap();
+            assert_eq!(source(&read), expected, "{height}");
+        }
     }
 
     #[test]

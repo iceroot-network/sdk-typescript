@@ -16,7 +16,7 @@
 
 import type { Address } from "./address.js";
 import { Amount } from "./amount.js";
-import { Chain, checkHeight, connectionChainOf, handleOf as chainHandleOf, type OperationKind } from "./chain.js";
+import { Chain, checkHeight, connectionOf, handleOf as chainHandleOf, type OperationKind } from "./chain.js";
 import type { SubmitOutcome } from "./client.js";
 import { InvalidArgument } from "./errors.js";
 import { call, parse, type DraftHandle, type SignedHandle } from "./internal/bindings.js";
@@ -54,14 +54,17 @@ export type FeeChoice = "minimum" | BaseUnits | { readonly multiplierBasisPoints
  *
  * - `"floor"`: the fee equals the exact fee floor of the milestone in force, under a network
  *   configuration the signer holds itself: the chain the draft was built on, or the connected
- *   network a serialized draft was read on (`Draft.deserialize(bytes, net)`).
+ *   network a serialized draft was read on (`Draft.deserialize(bytes, net)`), where the floor at
+ *   the draft's height is also the floor at the network's next block.
  * - `"explicit"`: a fee the caller set (an exact amount, or a multiple of the minimum above the
  *   floor). A deserialized draft also reads `"explicit"` whenever its fee is not the floor
  *   computed again, whatever source its bytes claim.
- * - `"unverified"`: a serialized draft read with a profile alone, whose bytes call the fee the
- *   floor and whose fee equals the floor computed under the network configuration the bytes
- *   carry. The pinned network hash does not cover that configuration's fee table, so whoever
- *   built the draft chose that floor. Show the fee as an amount; never call it "the network
+ * - `"unverified"`: a serialized draft whose bytes call the fee the floor and whose fee equals the
+ *   floor at the draft's height, where that floor is not known to be the network's: read with a
+ *   profile alone, it is the floor of the network configuration the bytes carry, which the pinned
+ *   network hash does not cover, so whoever built the draft chose it; read on a connected
+ *   network, a change of the fee table lies between the draft's height, which its builder chose,
+ *   and the network's next block. Show the fee as an amount; never call it "the network
  *   minimum". The floor beside it is for display only.
  */
 export type FeeSource = "floor" | "explicit" | "unverified";
@@ -234,14 +237,15 @@ export class Draft {
    * signing context shows what it signs, not what it was told. The fee floor is computed again
    * too.
    *
-   * When `source` is a network `connect` returned, the draft is read on that network's chain:
-   * the floor, the rules and the token's symbol are the ones the signer's own connection loaded,
-   * a draft built under another network configuration (another fee table, say) is refused with
-   * `NetworkMismatch` (`details.reason`: `"configuration"`), and the fee's source reads
-   * `"floor"` when the fee equals the floor. A draft built just before the network changed its
-   * milestones is refused too: build it again. The floor is the one at the draft's height
-   * (`summary.height`), which the builder chose: where a milestone between that height and the
-   * network's next block changes the fee table, show the fee as an amount.
+   * When `source` is a network `connect` returned, the draft is read on that network's chain at
+   * its next block (`net.nextHeight`): the floor, the rules and the token's symbol are the ones
+   * the signer's own connection loaded, and a draft built under another network configuration
+   * (another fee table, say) is refused with `NetworkMismatch` (`details.reason`:
+   * `"configuration"`). A draft built just before the network changed its milestones is refused
+   * too: build it again. The floor is computed at the draft's height (`summary.height`), which the
+   * builder chose, so the fee's source reads `"floor"` when the fee equals that floor and the
+   * floor at the network's next block is the same, and `"unverified"` when a change of the fee
+   * table lies between the two heights (the floor of the draft's height kept for display).
    *
    * With any other `source`, such as a profile in a context with no network, the floor, the
    * rules and the token's symbol come from the network configuration the bytes carry, which the
@@ -251,9 +255,11 @@ export class Draft {
    * minimum".
    */
   static deserialize(bytes: Uint8Array, source: ProfileSource): Draft {
-    const chain = connectionChainOf(source);
-    if (chain !== undefined) {
-      const handle = call((module) => module.DraftHandle.deserializeOn(bytes, chainHandleOf(chain)));
+    const connection = connectionOf(source);
+    if (connection !== undefined) {
+      const { chain } = connection;
+      const height = connection.nextHeight();
+      const handle = call((module) => module.DraftHandle.deserializeAt(bytes, chainHandleOf(chain), height));
       return new Draft(handle, chain);
     }
     const profile = profileHandleOf(source);

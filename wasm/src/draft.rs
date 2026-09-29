@@ -47,12 +47,14 @@ impl DraftHandle {
     }
 
     /// The draft in `bytes` (from [`DraftHandle::serialize`]), read on `chain`, the chain of the
-    /// reader's own connection: a draft built under another network configuration is refused
-    /// with `NetworkMismatch`, and the floor, the rules and the labels come from `chain`, so a fee
-    /// at the floor reads `floor`.
-    #[wasm_bindgen(js_name = deserializeOn)]
-    pub fn deserialize_on(bytes: &[u8], chain: &ChainHandle) -> Result<DraftHandle> {
-        draft::deserialize_on(bytes, chain.chain()).map(|draft| DraftHandle { draft })
+    /// reader's own connection, at `height`, the height of that network's next block: a draft
+    /// built under another network configuration is refused with `NetworkMismatch`, and the
+    /// floor, the rules and the labels come from `chain`. A fee at the floor of the draft's height
+    /// reads `floor` when the floor at `height` is the same, and `unverified` when a change of the
+    /// fee table lies between the two heights.
+    #[wasm_bindgen(js_name = deserializeAt)]
+    pub fn deserialize_at(bytes: &[u8], chain: &ChainHandle, height: u32) -> Result<DraftHandle> {
+        draft::deserialize_at(bytes, chain.chain(), height).map(|draft| DraftHandle { draft })
     }
 
     /// Everything a review screen shows, in JSON: `{ profile, networkByte, nethash, height, kind,

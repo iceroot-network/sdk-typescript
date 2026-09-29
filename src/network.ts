@@ -275,7 +275,7 @@ export async function connect(profile: NetworkProfile, options: ConnectOptions =
     ),
   );
   const network = new Network(chain, configuration, relays);
-  noteConnection(network, chain);
+  noteConnection(network, chain, () => network.nextHeight);
   await network.refresh();
   return network;
 }

@@ -180,26 +180,34 @@ export class Chain {
   }
 }
 
-/** The networks `connect` returned, with the chain their relays serve. */
-const connections = new WeakMap<object, Chain>();
+/** A network `connect` returned: the chain its relays serve, and the height of its next block. */
+export interface ConnectionOf {
+  readonly chain: Chain;
+  readonly nextHeight: () => number;
+}
+
+/** The networks `connect` returned, with the chain their relays serve and their next height. */
+const connections = new WeakMap<object, ConnectionOf>();
 
 /**
- * Records `network`, which `connect` returned, with the chain its relays serve.
+ * Records `network`, which `connect` returned, with the chain its relays serve and the height of
+ * its next block as it follows the node.
  *
  * @internal
  */
-export function noteConnection(network: object, chain: Chain): void {
-  connections.set(network, chain);
+export function noteConnection(network: object, chain: Chain, nextHeight: () => number): void {
+  connections.set(network, { chain, nextHeight });
 }
 
 /**
- * The chain of `source` when it is a network `connect` returned: the configuration the signer's
- * own connection loaded, which a draft read on it is judged by. `undefined` for anything else,
- * such as a profile, a chain from `Chain.load` or a deserialized draft's chain.
+ * The connection of `source` when it is a network `connect` returned: the configuration the
+ * signer's own connection loaded, which a draft read on it is judged by, and the height it is
+ * judged at. `undefined` for anything else, such as a profile, a chain from `Chain.load` or a
+ * deserialized draft's chain.
  *
  * @internal
  */
-export function connectionChainOf(source: unknown): Chain | undefined {
+export function connectionOf(source: unknown): ConnectionOf | undefined {
   return typeof source === "object" && source !== null ? connections.get(source) : undefined;
 }
 
