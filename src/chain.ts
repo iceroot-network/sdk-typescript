@@ -180,7 +180,11 @@ export class Chain {
   }
 }
 
-/** A network `connect` returned: the chain its relays serve, and the height of its next block. */
+/**
+ * A network `connect` returned: the chain its relays serve, and the height of its next block.
+ *
+ * @internal
+ */
 export interface ConnectionOf {
   readonly chain: Chain;
   readonly nextHeight: () => number;
