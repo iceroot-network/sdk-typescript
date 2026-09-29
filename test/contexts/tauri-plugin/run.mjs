@@ -118,6 +118,8 @@ async function assemble() {
     windows: ["main"],
     permissions: [
       "iceroot:default",
+      // The keystore suite reads phrases back with decrypt, which the default set leaves out.
+      "iceroot:allow-keystore-decrypt",
       { identifier: "iceroot:allow-net-connect", allow: [{ url: "http://127.0.0.1:6003/n/*/api" }, { url: "http://127.0.0.1:*/api" }] },
     ],
   };

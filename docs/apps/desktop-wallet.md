@@ -149,7 +149,7 @@ export async function watchAddress(net: Network, text: string): Promise<string> 
 
 - A wrong password is `WrongPasswordOrCorrupt` (from `@iceroot-network/sdk/tauri/keystore`); say "Wrong password" and nothing more.
 - `storage.ts` writes the profile as unencrypted JSON: only the keystore's text goes there, never a phrase, key or password.
-- The phrase crosses the IPC twice, when it is shown and when it is encrypted. Show it once, clear the text fields afterwards, and never read it back with `decrypt` except for a backup the holder asks for.
+- The phrase crosses the IPC twice, when it is shown and when it is encrypted. Show it once, clear the text fields afterwards, and never read it back with `decrypt` except for a backup the holder asks for. `decrypt` needs `iceroot:allow-keystore-decrypt` in the capability, which `iceroot:default` leaves out; a wallet without a backup screen does not grant it.
 
 ### 4. Balances, history and validators
 

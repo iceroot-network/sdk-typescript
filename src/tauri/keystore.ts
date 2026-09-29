@@ -51,7 +51,12 @@ export async function encrypt(
   });
 }
 
-/** Opens a keystore with `password` and gives back its recovery phrase. */
+/**
+ * Opens a keystore with `password` and gives back its recovery phrase, for a screen that shows it
+ * again. The plugin's default permission set leaves this command out: the app's capability grants
+ * it with `iceroot:allow-keystore-decrypt`, and without it the call is refused with
+ * `SdkNotInitialized`. Opening an account needs no phrase: use `net.keys.fromKeystore`.
+ */
 export async function decrypt(
   keystore: KeystoreData,
   password: string | Uint8Array,

@@ -39,7 +39,7 @@ pub fn run() {
 
 ## 2. Grant the plugin and the relays
 
-The app's capability grants the plugin's commands (`iceroot:default`, every command but `net_connect`) and names the relays the plugin may reach, as the `allow` scope of `iceroot:allow-net-connect`. The page needs no other permission for the SDK; add Tauri's own (`core:default` and the like) only for what the page uses itself. No relay is reachable until an entry names it. An entry is a relay URL with its API base path; `*` matches any run of characters other than `/`. The plugin follows no redirect: a relay that answers with one counts as unavailable, and the next relay is tried.
+The app's capability grants the plugin's commands (`iceroot:default`, every command but `net_connect` and `keystore_decrypt`) and names the relays the plugin may reach, as the `allow` scope of `iceroot:allow-net-connect`. `keystore_decrypt` hands a keystore's recovery phrase to the page, so only an app with a screen that shows the phrase again (a backup reminder) grants it, as `iceroot:allow-keystore-decrypt`; opening accounts from a keystore needs nothing more than the default set. The page needs no other permission for the SDK; add Tauri's own (`core:default` and the like) only for what the page uses itself. No relay is reachable until an entry names it. An entry is a relay URL with its API base path; `*` matches any run of characters other than `/`. The plugin follows no redirect: a relay that answers with one counts as unavailable, and the next relay is tried.
 
 <!-- sample: plain -->
 ```json
@@ -158,7 +158,7 @@ export async function unlock(net: Network, keystore: string, password: string, s
 - Store the address and the public key with the keystore when the wallet is created (`account.address`, `account.publicKey`), and compare the derived address with the saved one on every unlock, as `unlock` does.
 - `account.release()` wipes the key in the plugin. The plugin also wipes every key a page opened when the webview loads another page or its window closes, so lock by releasing and, if the product wants, by reloading the page. In a window with several webviews (Tauri's `unstable` multi-webview windows), closing one webview while the window stays open wipes nothing: release its keys first.
 - A key belongs to the webview that opened it; another window of the app cannot use its handle.
-- A phrase or password the page sends crosses Tauri's IPC, which nothing can wipe. Pass passwords as `Uint8Array` where the app can (the SDK overwrites them with zeros), and use `decrypt` only to show a phrase for a backup; an app that never does can deny it in its capability (`iceroot:deny-keystore-decrypt`).
+- A phrase or password the page sends crosses Tauri's IPC, which nothing can wipe. Pass passwords as `Uint8Array` where the app can (the SDK overwrites them with zeros). `decrypt` is only for showing a phrase for a backup, and it needs `iceroot:allow-keystore-decrypt` in the capability: without it the page cannot read a phrase out of a keystore even with the password, and `decrypt` is refused with `SdkNotInitialized`. `unlock` above needs no such permission.
 - The vote library and the ownership proofs have their Tauri entries too: `@iceroot-network/sdk/tauri/vote` and `@iceroot-network/sdk/tauri/ownership`.
 
 ## 6. Desktop
