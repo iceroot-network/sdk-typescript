@@ -180,6 +180,29 @@ export class Chain {
   }
 }
 
+/** The networks `connect` returned, with the chain their relays serve. */
+const connections = new WeakMap<object, Chain>();
+
+/**
+ * Records `network`, which `connect` returned, with the chain its relays serve.
+ *
+ * @internal
+ */
+export function noteConnection(network: object, chain: Chain): void {
+  connections.set(network, chain);
+}
+
+/**
+ * The chain of `source` when it is a network `connect` returned: the configuration the signer's
+ * own connection loaded, which a draft read on it is judged by. `undefined` for anything else,
+ * such as a profile, a chain from `Chain.load` or a deserialized draft's chain.
+ *
+ * @internal
+ */
+export function connectionChainOf(source: unknown): Chain | undefined {
+  return typeof source === "object" && source !== null ? connections.get(source) : undefined;
+}
+
 /**
  * The Rust chain of `chain`.
  *

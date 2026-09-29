@@ -92,6 +92,28 @@ export class Chain {
   }
 }
 
+/** The networks `connect` returned: the plugin's number of each one's connection, and its chain. */
+const connections = new WeakMap<object, { readonly session: number; readonly chain: Chain }>();
+
+/**
+ * Records `network`, which `connect` returned, with its connection's number and chain.
+ *
+ * @internal
+ */
+export function noteConnection(network: object, session: number, chain: Chain): void {
+  connections.set(network, { session, chain });
+}
+
+/**
+ * The connection and chain of `source` when it is a network `connect` returned, which the plugin
+ * reads a draft on; `undefined` for anything else, such as a profile or a chain.
+ *
+ * @internal
+ */
+export function connectionOf(source: unknown): { readonly session: number; readonly chain: Chain } | undefined {
+  return typeof source === "object" && source !== null ? connections.get(source) : undefined;
+}
+
 /**
  * The plugin's number of `chain`.
  *

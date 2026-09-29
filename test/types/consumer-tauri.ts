@@ -29,6 +29,7 @@ import {
   type AddressCheck,
   type DraftRequest,
   type DraftSummary,
+  type FeeSource,
   type ErrorCode,
   type KeystoreAccountOptions,
   type MessageSignature,
@@ -99,7 +100,8 @@ export async function transactions(configuration: string, account: AccountInfo):
   const request: DraftRequest = { operation: { kind: "transfer", to: [recipient, { address: account.address, amount: 1n }] }, memo: "invoice 42", fee: "minimum" };
   const draft: Draft = await Draft.build(chain, request, { sender, nonce: account.nonce + 1n, height: 2 });
   const summary: DraftSummary = draft.summary;
-  const source: "floor" | "explicit" = summary.fee.source;
+  const source: "floor" | "explicit" | "unverified" = summary.fee.source;
+  const unverified: FeeSource = "unverified";
   const bytes: Uint8Array = draft.serialize();
   const again = await Draft.deserialize(bytes, pinned);
   const signed: SignedTransaction = await again.sign(sender);
@@ -134,6 +136,8 @@ export async function client(account: Account, stored: Uint8Array, password: Uin
   const options: KeystoreAccountOptions = { account: 0, index: 1, maxMemoryKib: 262_144 };
   const opened: Account = await net.keys.fromKeystore(stored, password, options);
   const draft = await net.build.transfer({ from: opened, to: [{ address: await Address.parse(account.address, net), amount: 1n }], memo: "x" });
+  // A draft read on the connected network is judged by its chain.
+  const onNet: Draft = await Draft.deserialize(draft.serialize(), net);
   const signed = await draft.sign(opened);
   const outcome = await net.submit(signed);
   const result: TxWaitResult = await net.transactions.wait(signed.id, { until: "confirmed", timeoutMs: 60_000 });

@@ -16,7 +16,7 @@
 
 import type { Address } from "./address.js";
 import { Amount } from "./amount.js";
-import { Chain, checkHeight, handleOf as chainHandleOf, type OperationKind } from "./chain.js";
+import { Chain, checkHeight, connectionChainOf, handleOf as chainHandleOf, type OperationKind } from "./chain.js";
 import type { SubmitOutcome } from "./client.js";
 import { InvalidArgument } from "./errors.js";
 import { call, parse, type DraftHandle, type SignedHandle } from "./internal/bindings.js";
@@ -50,12 +50,21 @@ export type { OperationKind } from "./chain.js";
 export type FeeChoice = "minimum" | BaseUnits | { readonly multiplierBasisPoints: number };
 
 /**
- * Where a draft's fee comes from: `"floor"` when the fee equals the exact fee floor, and
- * `"explicit"` for a fee the caller set (an exact amount, or a multiple of the minimum above the
- * floor). A deserialized draft reads `"floor"` only when its fee equals the floor computed again,
- * and `"explicit"` otherwise, whatever source its bytes claim.
+ * Where a draft's fee comes from:
+ *
+ * - `"floor"`: the fee equals the exact fee floor of the milestone in force, under a network
+ *   configuration the signer holds itself: the chain the draft was built on, or the connected
+ *   network a serialized draft was read on (`Draft.deserialize(bytes, net)`).
+ * - `"explicit"`: a fee the caller set (an exact amount, or a multiple of the minimum above the
+ *   floor). A deserialized draft also reads `"explicit"` whenever its fee is not the floor
+ *   computed again, whatever source its bytes claim.
+ * - `"unverified"`: a serialized draft read with a profile alone, whose bytes call the fee the
+ *   floor and whose fee equals the floor computed under the network configuration the bytes
+ *   carry. The pinned network hash does not cover that configuration's fee table, so whoever
+ *   built the draft chose that floor. Show the fee as an amount; never call it "the network
+ *   minimum". The floor beside it is for display only.
  */
-export type FeeSource = "floor" | "explicit";
+export type FeeSource = "floor" | "explicit" | "unverified";
 
 /** One recipient of a transfer. */
 export interface Recipient {
@@ -121,7 +130,9 @@ export interface DraftFee {
   readonly source: FeeSource;
   /**
    * The exact fee floor of the milestone in force for the transaction's type and size; absent
-   * where no floor is in force (the milestone has no enabled dynamic fee table).
+   * where no floor is in force (the milestone has no enabled dynamic fee table). For a draft
+   * deserialized with a profile alone, it is the floor of the configuration the draft carries,
+   * for display only.
    */
   readonly floor?: BaseUnits;
 }
@@ -221,14 +232,28 @@ export class Draft {
    * hash must be pinned. A draft for another profile or network is refused with
    * `NetworkMismatch`, and the summary is computed again from the transaction's own fields: the
    * signing context shows what it signs, not what it was told. The fee floor is computed again
-   * too, and the fee's source reads `"floor"` only when the fee equals it.
+   * too.
    *
-   * The floor, the rules and the token's symbol come from the network configuration the bytes
-   * carry, which the draft was built under. The pinned network hash identifies the chain but does
-   * not cover that configuration's milestones or labels, so a signing context that does not trust
-   * the context that built the draft judges the fee by its amount, not by its source.
+   * When `source` is a network `connect` returned, the draft is read on that network's chain:
+   * the floor, the rules and the token's symbol are the ones the signer's own connection loaded,
+   * a draft built under another network configuration (another fee table, say) is refused with
+   * `NetworkMismatch` (`details.reason`: `"configuration"`), and the fee's source reads
+   * `"floor"` when the fee equals the floor. A draft built just before the network changed its
+   * milestones is refused too: build it again.
+   *
+   * With any other `source`, such as a profile in a context with no network, the floor, the
+   * rules and the token's symbol come from the network configuration the bytes carry, which the
+   * draft was built under. The pinned network hash identifies the chain but does not cover that
+   * configuration's milestones or labels, so a fee the bytes call the floor and that equals that
+   * floor reads `"unverified"`, never `"floor"`: show it as an amount, never as "the network
+   * minimum".
    */
   static deserialize(bytes: Uint8Array, source: ProfileSource): Draft {
+    const chain = connectionChainOf(source);
+    if (chain !== undefined) {
+      const handle = call((module) => module.DraftHandle.deserializeOn(bytes, chainHandleOf(chain)));
+      return new Draft(handle, chain);
+    }
     const profile = profileHandleOf(source);
     const handle = call((module) => module.DraftHandle.deserialize(bytes, profile));
     return new Draft(handle, Chain.fromHandle(handle.chain()));

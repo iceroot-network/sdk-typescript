@@ -786,6 +786,48 @@ export default function suite(test, env) {
     await assert.rejects(waiting, /stop/);
   });
 
+  test("a serialized draft's fee is the floor only when read on the signer's own connection", async () => {
+    const { net } = await connected();
+    const phrase = await sdk.Mnemonic.generate();
+    const account = await net.keys.fromPhrase(phrase, { account: 0, index: 0 });
+    const text = (draft) => new TextDecoder().decode(draft.serialize());
+    const bytes = (form) => new TextEncoder().encode(form);
+    try {
+      const entries = [{ validator: "genesis_5", basisPoints: 10_000 }];
+      const draft = await net.build.vote({ from: account.publicKey, entries });
+      assert.equal(draft.summary.fee.source, "floor");
+      const serialized = draft.serialize();
+
+      // With a profile alone, the floor of the configuration the draft carries is unverified.
+      const alone = await sdk.Draft.deserialize(serialized, net.profile);
+      assert.deepEqual({ ...alone.summary.fee }, { ...draft.summary.fee, source: "unverified" });
+      // So it is with a chain, even the network's: only the network itself is a connection.
+      assert.equal((await sdk.Draft.deserialize(serialized, net.chain)).summary.fee.source, "unverified");
+      assert.equal((await sdk.Draft.deserialize(serialized, alone.chain)).summary.fee.source, "unverified");
+
+      // Read on the connected network, the floor is the floor, under the network's own chain.
+      const onNet = await sdk.Draft.deserialize(serialized, net);
+      assert.deepEqual({ ...onNet.summary.fee }, { ...draft.summary.fee });
+      assert.deepEqual(onNet.summary.lines, draft.summary.lines);
+      assert.equal(onNet.chain, net.chain);
+      assert.equal((await sdk.Draft.deserialize(alone.serialize(), net)).summary.fee.source, "floor");
+      assert.equal((await onNet.sign(account)).matches(draft), true);
+
+      // A draft that carries a fee table of its own is refused there, and unverified elsewhere.
+      const raised = await net.build.vote({ from: account.publicKey, entries, fee: draft.fee * 10n });
+      const tampered = text(raised).replace('"source":"explicit"', '"source":"floor"').replaceAll('"minFee":6173', '"minFee":61730');
+      assert.ok(tampered.includes('"minFee":61730') && tampered.includes('"source":"floor"'));
+      await assert.rejects(
+        async () => sdk.Draft.deserialize(bytes(tampered), net),
+        (error) => error instanceof sdk.NetworkMismatch && error.details.reason === "configuration",
+      );
+      const shown = await sdk.Draft.deserialize(bytes(tampered), net.profile);
+      assert.deepEqual({ ...shown.summary.fee }, { amount: draft.fee * 10n, source: "unverified", floor: draft.fee * 10n });
+    } finally {
+      await account.release();
+    }
+  });
+
   test("builders read the sender's nonce, the height and the second key from the node", async () => {
     const { net, node } = await connected();
     const phrase = await sdk.Mnemonic.generate();

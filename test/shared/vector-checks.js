@@ -443,7 +443,8 @@
         var again = await sdk.Draft.deserialize(draft.serialize(), chain.profile);
         check(name + " draft round trip", txCase.unsigned, bytesToHex(again.unsignedBytes));
         check(name + " draft round trip summary", JSON.stringify(summary.lines), JSON.stringify(again.summary.lines));
-        check(name + " draft round trip fee source", summary.fee.source, again.summary.fee.source);
+        // With a profile alone, a floor is that of the configuration the draft carries: unverified.
+        check(name + " draft round trip fee source", summary.fee.source === "floor" ? "unverified" : summary.fee.source, again.summary.fee.source);
 
         // The native signed transaction verifies here and has the native id.
         var native = await sdk.SignedTransaction.fromJson(chain, txCase.json, txCase.facts.height);

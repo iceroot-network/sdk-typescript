@@ -28,7 +28,7 @@ import {
   type VoteEntry,
   type WaitUntil,
 } from "./build.js";
-import { Chain, handleOf as chainHandleOf, type Economics, type Rules } from "./chain.js";
+import { Chain, handleOf as chainHandleOf, noteConnection, type Economics, type Rules } from "./chain.js";
 import type {
   AccountInfo,
   BlockInfo,
@@ -275,6 +275,7 @@ export async function connect(profile: NetworkProfile, options: ConnectOptions =
     ),
   );
   const network = new Network(chain, configuration, relays);
+  noteConnection(network, chain);
   await network.refresh();
   return network;
 }

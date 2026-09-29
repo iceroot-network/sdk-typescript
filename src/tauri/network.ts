@@ -63,7 +63,7 @@ import {
   type SignedTransaction,
   type VoteEntry,
 } from "./build.js";
-import { Chain, chainOf, type ChainInfo } from "./chain.js";
+import { Chain, chainOf, noteConnection, type ChainInfo } from "./chain.js";
 import { dropWith, invoke } from "./invoke.js";
 import { Keys, type Account, type AccountOptions, type KeystoreAccountOptions } from "./keys.js";
 import type { KeystoreData } from "../keystore.js";
@@ -179,7 +179,9 @@ export async function connect(profile: NetworkProfile, options: ConnectOptions =
       timeoutMs: Math.ceil(timeoutMs),
     },
   });
-  return new Network(connection);
+  const network = new Network(connection);
+  noteConnection(network, connection.session, network.chain);
+  return network;
 }
 
 /** A connected network, whose requests the plugin makes. */

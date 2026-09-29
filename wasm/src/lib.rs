@@ -150,6 +150,33 @@ mod tests {
     }
 
     #[test]
+    fn a_draft_s_floor_is_the_floor_only_on_the_reader_s_chain() {
+        let profile = ProfileHandle::from_json(PROFILE).unwrap();
+        let chain = ChainHandle::load(&profile, CONFIGURATION).unwrap();
+        let key = KeyHandle::from_legacy_passphrase(&profile, "sender".to_owned()).unwrap();
+        let facts =
+            json!({ "sender": hex::encode(key.public_key().unwrap()), "nonce": "1", "height": 2 });
+        let request = json!({ "operation": { "kind": "transfer", "to": [{ "address": RECIPIENT, "amount": "1" }] } });
+        let draft = DraftHandle::build(&chain, &request.to_string(), &facts.to_string()).unwrap();
+        let source = |draft: &DraftHandle| {
+            let summary: Value = serde_json::from_str(&draft.summary()).unwrap();
+            summary["fee"]["source"].clone()
+        };
+        assert_eq!(source(&draft), "floor");
+        let bytes = draft.serialize();
+        let alone = DraftHandle::deserialize(&bytes, &chain.profile()).unwrap();
+        assert_eq!(source(&alone), "unverified");
+        let on_chain = DraftHandle::deserialize_on(&bytes, &chain).unwrap();
+        assert_eq!(source(&on_chain), "floor");
+        let text = String::from_utf8(bytes).unwrap();
+        let tampered = text.replace(r#""minFee":6173"#, r#""minFee":61730"#);
+        assert_ne!(tampered, text);
+        let refused = DraftHandle::deserialize_on(tampered.as_bytes(), &chain).unwrap_err();
+        assert_eq!(refused.code(), "NetworkMismatch");
+        assert_eq!(refused.details()["reason"], "configuration");
+    }
+
+    #[test]
     fn errors_keep_their_code_and_details() {
         let profile = ProfileHandle::from_json(PROFILE).unwrap();
         let error = parse_address("dDSccdbPRhfrcbUeFLMbGC1rtnfCsjJcNX", &profile).unwrap_err();

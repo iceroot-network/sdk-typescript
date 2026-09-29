@@ -33,7 +33,7 @@ import { checkHeight } from "../internal/chain-json.js";
 import type { ProfileSource } from "../profiles.js";
 import { profileOf } from "../profiles.js";
 import type { BaseUnits, Hex } from "../types.js";
-import { Chain, chainOf, type ChainInfo } from "./chain.js";
+import { Chain, chainOf, connectionOf, type ChainInfo } from "./chain.js";
 import type { Address } from "./address.js";
 import { bytesOf, hex, invoke } from "./invoke.js";
 import { keyOf, type Account } from "./keys.js";
@@ -150,9 +150,24 @@ export class Draft {
    * The draft in `bytes` (from {@link Draft.serialize}), for the profile of `source`, whose network
    * hash must be pinned. A draft for another profile or network is refused with
    * `NetworkMismatch`, and the summary is computed again from the transaction's own fields.
+   *
+   * When `source` is a network `connect` returned, the plugin reads the draft on that connection's
+   * chain: a draft built under another network configuration is refused with `NetworkMismatch`
+   * (`details.reason`: `"configuration"`), and a fee at the floor reads `"floor"`. With any other
+   * `source`, the floor is that of the configuration the bytes carry, which the pinned network
+   * hash does not cover, so such a fee reads `"unverified"` (see the WebAssembly entry's
+   * `Draft.deserialize`).
    */
   static async deserialize(bytes: Uint8Array, source: ProfileSource): Promise<Draft> {
-    const info = await invoke<DraftInfo>("draft_deserialize", { bytes: hex(bytes, "a draft"), profile: profileJson(source) });
+    const connection = connectionOf(source);
+    const info = await invoke<DraftInfo>("draft_deserialize", {
+      bytes: hex(bytes, "a draft"),
+      profile: profileJson(source),
+      ...(connection === undefined ? {} : { session: connection.session }),
+    });
+    if (connection !== undefined) {
+      return new Draft(info, connection.chain);
+    }
     if (info.chain === undefined) {
       throw new InvalidArgument("the plugin did not describe the draft's chain");
     }

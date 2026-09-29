@@ -29,6 +29,7 @@ import {
   type Page,
   type TxWaitResult,
   type DraftSummary,
+  type FeeSource,
   type ErrorCode,
   type FeeStatistics,
   type MessageSignature,
@@ -108,7 +109,8 @@ export function transactions(configuration: string, statistics: FeeStatistics, a
   // @ts-expect-error Draft.build takes no fee statistics.
   Draft.build(chain, { operation: { kind: "burn", amount: 2_000_000n } }, { sender, nonce: 1n, height: 2 }, statistics);
   const summary: DraftSummary = draft.summary;
-  const source: "floor" | "explicit" = summary.fee.source;
+  const source: "floor" | "explicit" | "unverified" = summary.fee.source;
+  const unverified: FeeSource = "unverified";
   const floorInForce: boolean = rules.fees.floorAvailable;
   const again = Draft.deserialize(draft.serialize(), pinned);
   const signed: SignedTransaction = again.sign(sender);
@@ -171,6 +173,8 @@ export async function client(transport: Transport, account: Account): Promise<st
   const validators: Page<ValidatorInfo> = await net.validators.list({ page: 1, limit: 100 });
   const validator: ValidatorInfo | null = await net.validators.get("genesis_1");
   const draft = await net.build.transfer({ from: account, to: [{ address: account.address, amount: 1n }], memo: "x" });
+  // A draft read on the connected network is judged by its chain.
+  const onNet: Draft = Draft.deserialize(draft.serialize(), net);
   const signed = draft.sign(account);
   const outcome = await net.submit(signed);
   const reason = outcome.status === "rejected" ? outcome.reason : outcome.broadcast;

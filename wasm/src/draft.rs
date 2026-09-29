@@ -40,9 +40,19 @@ impl DraftHandle {
 
     /// The draft in `bytes` (from [`DraftHandle::serialize`]), for `profile`, whose network hash
     /// must be pinned. A draft for another profile or network is refused, and the summary is
-    /// computed again from the transaction's own fields.
+    /// computed again from the transaction's own fields. The floor is that of the configuration
+    /// the draft carries, so a fee at it reads `unverified`, never `floor`.
     pub fn deserialize(bytes: &[u8], profile: &ProfileHandle) -> Result<DraftHandle> {
         draft::deserialize(bytes, profile.profile()).map(|draft| DraftHandle { draft })
+    }
+
+    /// The draft in `bytes` (from [`DraftHandle::serialize`]), read on `chain`, the chain of the
+    /// reader's own connection: a draft built under another network configuration is refused
+    /// with `NetworkMismatch`, and the floor, the rules and the labels come from `chain`, so a fee
+    /// at the floor reads `floor`.
+    #[wasm_bindgen(js_name = deserializeOn)]
+    pub fn deserialize_on(bytes: &[u8], chain: &ChainHandle) -> Result<DraftHandle> {
+        draft::deserialize_on(bytes, chain.chain()).map(|draft| DraftHandle { draft })
     }
 
     /// Everything a review screen shows, in JSON: `{ profile, networkByte, nethash, height, kind,

@@ -364,21 +364,48 @@ export default function suite(test, env) {
     const text = (draft) => new TextDecoder().decode(draft.serialize());
     const read = async (form) => (await sdk.Draft.deserialize(new TextEncoder().encode(form), chain.profile)).summary.fee;
 
+    // Read with a profile alone, the floor is that of the configuration the form carries: unverified.
     const minimum = await sdk.Draft.build(chain, { operation: { kind: "transfer", to } }, facts);
-    assert.deepEqual(await read(text(minimum)), minimum.summary.fee);
+    assert.deepEqual({ ...(await read(text(minimum))) }, { ...minimum.summary.fee, source: "unverified" });
+    // Written again by such a reader, the form still claims the floor, as unverified.
+    const again = await sdk.Draft.deserialize(minimum.serialize(), chain.profile);
+    assert.ok(text(again).includes('"source":"unverified"'));
+    assert.deepEqual({ ...(await read(text(again))) }, { ...minimum.summary.fee, source: "unverified" });
 
     // A fee above the floor that the form calls the floor reads as explicit, beside the floor.
     const above = await sdk.Draft.build(chain, { operation: { kind: "transfer", to }, fee: 2_000_000n }, facts);
     const form = text(above);
     assert.ok(form.includes('"source":"explicit"'));
-    const claimed = await read(form.replace('"source":"explicit"', '"source":"floor"'));
-    assert.deepEqual({ ...claimed }, { amount: 2_000_000n, source: "explicit", floor: minimum.fee });
+    for (const source of ["floor", "unverified"]) {
+      const claimed = await read(form.replace('"source":"explicit"', `"source":"${source}"`));
+      assert.deepEqual({ ...claimed }, { amount: 2_000_000n, source: "explicit", floor: minimum.fee });
+    }
 
     // Any source other than the floor, such as the removed "node-statistics", reads as explicit.
     for (const source of ["node-statistics", "cheapest"]) {
       const other = await read(text(minimum).replace('"source":"floor"', `"source":"${source}"`));
       assert.deepEqual({ ...other }, { amount: minimum.fee, source: "explicit", floor: minimum.fee });
     }
+    await sender.release();
+  });
+
+  test("a draft that carries a fee table of its own never has its fee called the floor", async () => {
+    const { TRANSFER } = await load();
+    const chain = await sdk.Chain.load(sdk.profiles.devnet({ relays: [RELAY] }), data().configuration);
+    const sender = await sdk.Keys.fromLegacyPassphrase("probe passphrase", chain);
+    const facts = { sender, nonce: 1n, height: 2 };
+    const to = [{ address: TRANSFER.request.operation.to[0].address, amount: 1n }];
+    const minimum = await sdk.Draft.build(chain, { operation: { kind: "transfer", to } }, facts);
+    // A fee ten times the floor, with a form that calls it the floor and carries a fee table ten
+    // times the network's: the pinned network hash does not cover the milestones.
+    const raised = await sdk.Draft.build(chain, { operation: { kind: "transfer", to }, fee: minimum.fee * 10n }, facts);
+    const form = new TextDecoder().decode(raised.serialize());
+    const tampered = form.replace('"source":"explicit"', '"source":"floor"').replaceAll('"minFee":6173', '"minFee":61730');
+    assert.ok(tampered.includes('"minFee":61730') && tampered.includes('"source":"floor"'));
+    const read = await sdk.Draft.deserialize(new TextEncoder().encode(tampered), chain.profile);
+    assert.equal(read.fee, minimum.fee * 10n);
+    assert.equal(read.summary.fee.source, "unverified");
+    assert.equal(read.summary.fee.floor, minimum.fee * 10n);
     await sender.release();
   });
 
