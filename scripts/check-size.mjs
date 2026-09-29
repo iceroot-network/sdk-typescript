@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks the size budget of the built package: the WebAssembly module at most 416 KiB (425,984
+// Checks the size budget of the built package: the WebAssembly module at most 417 KiB (427,008
 // bytes) gzipped.
 //
 //   node scripts/check-size.mjs [dist directory]
@@ -22,8 +22,11 @@ import { gzipSync } from "node:zlib";
 // the module measured 460 KB. The ownership proofs of Solar addresses add about 7.6 KB (the
 // message format and its checks, Bech32m accounts, the issue time's calendar and the proof's
 // JSON; they reuse the module's signing): 415,604 bytes. They move to a separate legacy package,
-// with the Solar-compatible formats, once IceRoot's own formats replace those.
-const BUDGET_GZIP_BYTES = 416 * 1024;
+// with the Solar-compatible formats, once IceRoot's own formats replace those. The budget was
+// 416 KiB until the core escaped a node's text as every host does (the Unicode format characters,
+// separators and spaces), wrote runs of spaces in the vote reasons as escapes and judged a
+// serialized draft's floor at the network's height: about 1 KB, 426,224 bytes.
+const BUDGET_GZIP_BYTES = 417 * 1024;
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = resolve(root, process.argv[2] ?? "dist");
