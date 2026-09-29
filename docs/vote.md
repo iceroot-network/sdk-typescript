@@ -33,6 +33,7 @@ snapshot.records.length;      // every registered validator
 - **What a vote may name.** A validator that has not resigned and is listed without a `version` is left out: a node refuses a vote naming it until it sees the validator's node running (see [Signing the vote](#signing-the-vote)).
 - **Who the snapshot trusts.** The relay that answers supplies every figure of the snapshot, the height and the seat count included, and the draws' seed rounds that height to an election interval. With genuine data a relay can therefore choose between the seeds of about two neighbouring intervals, by reporting a height that is not the latest; with false data it can shape the snapshot as it likes. Read snapshots from a relay you trust, and offer "Draw again".
 - **What a node cannot give.** A node has lifetime counters only, so production is the lifetime count and the snapshot is marked `relay-approximate`, which every selection records. There are no declarations, payouts or penalty records: Diversity works on rank bands alone, Maximum Rewards and Support Newcomers top up from Diversity and say so, and on a young chain Reliability's pool is empty until validators have 7 days of seated history. An indexer supplies these figures in a later release.
+- **Its size.** A snapshot holds at most 10,000 validators. `VoteSnapshot.validate`, and every function that takes a snapshot, refuses a larger one with `InvalidSnapshot` (`too-many-records`), and `fromNode` refuses a relay that lists more than 2,000 validators with `BadResponse`.
 - **Offline.** `VoteSnapshot.fromValidators(chain, height, validators, lookups)` builds the same snapshot from records the app read itself. `VoteSnapshot.serialize` and `VoteSnapshot.deserialize` turn a snapshot into text and back (heights and weights as decimal strings), for a cache or a worker.
 
 ## Selecting
@@ -128,7 +129,7 @@ The vote library's errors are `IceRootError`s with these codes; their classes ar
 |---|---|---|
 | `InvalidPickCount` | `count` outside 20 to 53, or below the rules' fewest entries | `count`, `minimum`, `maximum` |
 | `ValidatorCannotVote` | The account belongs to a validator that has not resigned for good | |
-| `InvalidSnapshot` | A snapshot the library cannot use; `error.reason` says why | `reason` (`window`, `no-seats`, `no-block-time`, `name`, `duplicate-name`, `duplicate-address`, `inconsistent` with `name` and `field`) |
+| `InvalidSnapshot` | A snapshot the library cannot use; `error.reason` says why | `reason` (`window`, `no-seats`, `no-block-time`, `name`, `duplicate-name`, `duplicate-address`, `inconsistent` with `name` and `field`, `too-many-records` with `count` and `maximum`) |
 | `NotEnoughValidators` | The mode's pool and Diversity's together are too small | `requested`, `available` |
 | `DoesNotFit` | Fewer than the minimum picks fit the rules' limits on entries and bytes | `fits`, `minimum`, `maxEntries`, `maxBytes` |
 | `BreaksRules` | The rules do not fit the snapshot's names or shares, for example IceRoot's rules against today's devnet names; `error.problems` lists them | `problems` |

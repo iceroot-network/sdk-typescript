@@ -53,6 +53,7 @@ import {
   validateVote,
   type Mode,
   type Reason,
+  type SnapshotProblem,
   Selection,
 } from "@iceroot-network/sdk/vote";
 import * as keystore from "@iceroot-network/sdk/keystore";
@@ -208,8 +209,10 @@ export async function voting(net: Network, account: Account, saved: string): Pro
   const weight: bigint | undefined = drawn?.kind === "drawn" ? drawn.totalWeight : undefined;
   const findings = check(Selection.deserialize(saved), snapshot);
   const problems = validateVote(split(["genesis_1", "genesis_2"]), rules, "ordinary");
+  // Every reason the Rust library gives an InvalidSnapshot is one the type names.
+  const snapshotProblems: SnapshotProblem[] = ["window", "no-seats", "no-block-time", "name", "duplicate-name", "duplicate-address", "inconsistent", "too-many-records"];
   const draft = await net.build.vote({ from: account, entries: selection.vote });
-  return `${lines.length} ${weight} ${findings.length} ${problems.length} ${draft.summary.fee.amount} ${Selection.serialize(selection).length}`;
+  return `${lines.length} ${weight} ${findings.length} ${problems.length} ${snapshotProblems.length} ${draft.summary.fee.amount} ${Selection.serialize(selection).length}`;
 }
 
 export function keys(phrase: string, password: Uint8Array, stored: Uint8Array | string): string {

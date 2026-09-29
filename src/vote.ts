@@ -256,8 +256,8 @@ export const VoteSnapshot = Object.freeze({
 
   /**
    * Checks a snapshot as every function of the library does before using it: a 30-day window,
-   * seats and a block time, unique valid names and addresses, and consistent records. Throws
-   * `InvalidSnapshot` with the problem.
+   * seats and a block time, at most 10,000 records (`too-many-records`), unique valid names and
+   * addresses, and consistent records. Throws `InvalidSnapshot` with the problem.
    */
   validate(snapshot: VoteSnapshot): void {
     voteCall("validateSnapshot", toWire(snapshot));

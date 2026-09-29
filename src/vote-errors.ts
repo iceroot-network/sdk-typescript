@@ -31,12 +31,13 @@ export type SnapshotProblem =
   | "name"
   | "duplicate-name"
   | "duplicate-address"
-  | "inconsistent";
+  | "inconsistent"
+  | "too-many-records";
 
 /**
  * A snapshot cannot be used. `reason` says why; `details` has the values: `days`, `name`,
- * `address`, or `name` and `field` (the record's field, as this API names it) for an inconsistent
- * record.
+ * `address`, `name` and `field` (the record's field, as this API names it) for an inconsistent
+ * record, or `count` and `maximum` for a snapshot of more than 10,000 records.
  */
 export class InvalidSnapshot extends IceRootError {
   /** Why the snapshot was refused. */

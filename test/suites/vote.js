@@ -313,6 +313,17 @@ export default function suite(test, env) {
 
   const answer = (status, body) => ({ status, headers: {}, body: typeof body === "string" ? body : JSON.stringify(body) });
 
+  test("a snapshot of more than 10,000 validators is refused", async () => {
+    const snapshot = await synthetic();
+    const records = (count) =>
+      Array.from({ length: count }, (_, i) => ({ ...snapshot.records[i % snapshot.records.length], name: `v${i}`, address: `validator ${i}` }));
+    await vote.VoteSnapshot.validate({ ...snapshot, records: records(10_000) });
+    const error = await refusal(() => vote.VoteSnapshot.validate({ ...snapshot, records: records(10_001) }));
+    assert.ok(error instanceof vote.InvalidSnapshot, String(error));
+    assert.equal(error.reason, "too-many-records");
+    assert.deepEqual({ ...error.details }, { reason: "too-many-records", count: 10_001, maximum: 10_000 });
+  });
+
   test("VoteSnapshot.fromNode keeps a relay's names out of every object's prototype", async () => {
     const validators = await readJson(`${API_FIXTURES}/delegates-page.json`);
     validators.data[0].username = "constructor";
