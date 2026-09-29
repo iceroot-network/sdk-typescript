@@ -7,14 +7,17 @@ export function amount(net: Network, units: bigint): string {
 
 /**
  * Text from the chain or the node, made safe to show: a memo, a validator's name, an address in a
- * record, a node's message. Control characters, line and paragraph separators and bidirectional
- * formatting characters are written as `\uXXXX`, and a backslash as `\\`, as the SDK writes the
- * lines of `draft.summary`. React escapes HTML already; this stops text that reorders or splits
- * what the holder reads, such as a memo with U+202E that shows an address backwards.
+ * record, a node's message. Control characters, line and paragraph separators, bidirectional
+ * formatting and other invisible format characters, every space but the ASCII space and every
+ * space of a run of two or more ASCII spaces are written as `\uXXXX`, and a backslash as `\\`,
+ * as the SDK writes the lines of `draft.summary`. React escapes HTML already; this stops text that
+ * reorders, splits or pads what the holder reads, such as a memo with U+202E that shows an address
+ * backwards.
  */
 export function safeText(text: string): string {
-  return text.replace(/[\\\p{Cc}\p{Zl}\p{Zp}\p{Bidi_Control}]/gu, (char) =>
-    char === "\\" ? "\\\\" : `\\u${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`,
+  const escape = (char: string) => `\\u${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
+  return text.replace(/[\\\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Bidi_Control}]|(?! )\p{Zs}| {2,}/gu, (match) =>
+    match === "\\" ? "\\\\" : match.startsWith(" ") ? escape(" ").repeat(match.length) : escape(match),
   );
 }
 

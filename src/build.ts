@@ -163,11 +163,17 @@ export interface DraftSummary {
   readonly secondSignature: boolean;
   /**
    * One readable line per effect, then the memo and the fee. Control characters, line and
-   * paragraph separators, bidirectional formatting and other invisible format characters, and
-   * every space but the ASCII space are written as `\uXXXX` escapes, and a backslash as `\\`, so
-   * no text from the transaction or the network can start a line of its own, hide in blank
-   * space or reorder what the screen shows. The token symbol is 1 to 10 ASCII letters and
-   * digits: a network configuration with any other symbol does not load.
+   * paragraph separators, bidirectional formatting and other invisible format characters, every
+   * space but the ASCII space and every space of a run of two or more ASCII spaces are written as
+   * `\uXXXX` escapes, and a backslash as `\\`, so no text from the transaction or the network can
+   * start a line of its own, hide in blank space or reorder what the screen shows. The token
+   * symbol is 1 to 10 ASCII letters and digits: a network configuration with any other symbol
+   * does not load.
+   *
+   * A line can still be as long as the memo the network allows (`rules.memo.maxBytes`). Show each
+   * line as one line, unwrapped (scrolling sideways) or cut with a visible mark and the whole line
+   * on request, or wrap it with the continuation indented: a renderer that wraps a long line flush
+   * left can make its end look like a line of its own.
    */
   readonly lines: readonly string[];
 }

@@ -224,10 +224,12 @@ nav[role="tablist"] button[aria-selected="true"] {
   font-style: italic;
 }
 
+/* Each line of what is signed stays one line: a long one scrolls sideways, never wraps. */
 .lines li {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.85rem;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow-x: auto;
 }
 
 .picks {

@@ -132,17 +132,24 @@ export function basisPointsText(basisPoints: number): string {
 /**
  * Control characters (C0, DEL, C1), line and paragraph separators, bidirectional formatting
  * characters, format characters (invisible ones such as zero-width spaces and joiners), every
- * space but the ASCII space, and the backslash.
+ * space but the ASCII space, runs of two or more ASCII spaces, and the backslash.
  */
-const UNSAFE_TEXT = /[\\\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Bidi_Control}]|(?! )\p{Zs}/gu;
+const UNSAFE_TEXT = /[\\\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Bidi_Control}]|(?! )\p{Zs}| {2,}/gu;
+
+/** `char` as a `\uXXXX` escape. */
+function escaped(char: string): string {
+  return `\\u${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
+}
 
 /**
  * `text` safe for one line of a review screen: every character of {@link UNSAFE_TEXT} is written as
- * a `\uXXXX` escape, and a backslash as `\\`, so the escapes cannot be mistaken for text.
+ * a `\uXXXX` escape, every space of a run of two or more ASCII spaces as `\u0020` (so no stretch
+ * of blank space sets text apart), and a backslash as `\\`, so the escapes cannot be mistaken for
+ * text.
  */
 export function displayText(text: string): string {
-  return text.replace(UNSAFE_TEXT, (char) =>
-    char === "\\" ? "\\\\" : `\\u${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`,
+  return text.replace(UNSAFE_TEXT, (match) =>
+    match === "\\" ? "\\\\" : match.startsWith(" ") ? escaped(" ").repeat(match.length) : escaped(match),
   );
 }
 

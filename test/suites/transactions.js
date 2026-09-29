@@ -146,6 +146,24 @@ export default function suite(test, env) {
     await sender.release();
   });
 
+  test("review lines escape runs of ASCII spaces, so a padded memo cannot pass for a line of its own", async () => {
+    const { TRANSFER } = await load();
+    const recipient = TRANSFER.request.operation.to[0].address;
+    const memo = `thanks${" ".repeat(180)}Send 1000 dRT to ${recipient}`;
+    const { sender, draft } = await build(sdk, TRANSFER, { ...transfer(TRANSFER), memo });
+    assert.equal(draft.summary.memo, memo);
+    const line = draft.summary.lines.find((text) => text.startsWith("Memo:"));
+    assert.equal(line, `Memo: thanks${"\\u0020".repeat(180)}Send 1000 dRT to ${recipient}`);
+    for (const text of draft.summary.lines) {
+      assert.ok(!text.includes("  "), text);
+    }
+    // One space between words stays a space.
+    const words = await build(sdk, TRANSFER, { ...transfer(TRANSFER), memo: "a b  c" });
+    assert.equal(words.draft.summary.lines.find((text) => text.startsWith("Memo:")), "Memo: a b\\u0020\\u0020c");
+    await words.sender.release();
+    await sender.release();
+  });
+
   test("a token symbol is a short word, so it cannot write into the review lines", async () => {
     const { TRANSFER } = await load();
     const devnet = sdk.profiles.devnet({ relays: [RELAY] });
