@@ -323,7 +323,11 @@ export class Network {
     };
   }
 
-  /** The height of the node's last block, as last read (by `node.status()` or any answer). */
+  /**
+   * The height of the node's last block, as the plugin follows it: the height of the node's last
+   * status (`node.status()`), or a higher one that an answer that succeeded reported since (its
+   * `X-Block-Height`). A status read sets it, even when it is lower.
+   */
   get height(): bigint {
     return this.#height;
   }
@@ -352,7 +356,10 @@ export class Network {
     };
   }
 
-  /** Reads the node's status, and follows its height. */
+  /**
+   * Reads the node's status, and follows its height: the status is the node's own word, so a
+   * height an answer's header reported earlier gives way to it, even when it is lower.
+   */
   async refresh(): Promise<NodeStatus> {
     return this.#read("nodeStatus", {}, records.nodeStatus);
   }
@@ -403,21 +410,29 @@ export class Network {
     return this.#cache;
   }
 
-  /** Calls a command of this connection, and follows the height it reports. */
-  async #call<T extends ReadAnswer>(command: string, args: Record<string, unknown>): Promise<T> {
+  /**
+   * Calls a command of this connection, and follows the height it reports: after a read of the
+   * node's status (`status`), the plugin's height, even when it is lower, as the plugin sets its
+   * connection's height to the status's; after any other answer, a higher height only.
+   */
+  async #call<T extends ReadAnswer>(command: string, args: Record<string, unknown>, status = false): Promise<T> {
     const answer = await invoke<T>(command, { session: this.#session, knownHeight: this.#at.height, ...args });
     const height = BigInt(answer.height);
-    if (answer.at !== undefined && height >= BigInt(this.#at.height)) {
+    if (answer.at !== undefined && (status || height >= BigInt(this.#at.height))) {
       this.#at = answer.at;
     }
-    if (height > this.#height) {
+    if (status || height > this.#height) {
       this.#height = height;
     }
     return answer;
   }
 
   async #read<W, T>(operation: string, args: object, convert: (json: W) => T): Promise<T> {
-    const answer = await this.#call<ReadAnswer>("net_read", { operation, args: JSON.stringify(args) });
+    const answer = await this.#call<ReadAnswer>(
+      "net_read",
+      { operation, args: JSON.stringify(args) },
+      operation === "nodeStatus",
+    );
     return convert(JSON.parse(answer.answer) as W);
   }
 

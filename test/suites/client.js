@@ -1050,6 +1050,29 @@ export default function suite(test, env) {
     }
   });
 
+  test("a node's status corrects a height an answer raised, on either entry", async () => {
+    const latest = JSON.parse((await fixture("blocks-last")).body);
+    const { net, node } = await connected({ "GET /blocks/last": json(200, latest, { "x-block-height": "1000000" }) });
+    assert.equal(net.height, 80n);
+    // An answer that succeeds reports a height far ahead of the node's, as a relay may.
+    await net.blocks.latest();
+    assert.equal(net.height, 1_000_000n);
+    assert.equal(net.rules.height, 1_000_001);
+    // The node's status is its own word: the height and the rules follow it down.
+    assert.equal((await net.node.status()).height, 80n);
+    assert.equal(net.height, 80n);
+    assert.equal(net.nextHeight, 81);
+    assert.equal(net.rules.height, 81);
+    // A later answer's height counts again once it is above the status's, and never below it.
+    await node.route("GET /blocks/last", json(200, latest, { "x-block-height": "79" }));
+    await net.blocks.latest();
+    assert.equal(net.height, 80n);
+    await node.route("GET /blocks/last", json(200, latest, { "x-block-height": "81" }));
+    await net.blocks.latest();
+    assert.equal(net.height, 81n);
+    assert.equal(net.rules.height, 82);
+  });
+
   test("a height is taken only from a used answer that succeeded, and only as a 64-bit number", async () => {
     // The plugin keeps its own height; this is the WebAssembly entry's.
     if (!env.wasm) {
