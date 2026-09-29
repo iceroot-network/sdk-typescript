@@ -153,7 +153,8 @@ export class Draft {
    *
    * When `source` is a network `connect` returned, the plugin reads the draft on that connection's
    * chain: a draft built under another network configuration is refused with `NetworkMismatch`
-   * (`details.reason`: `"configuration"`), and a fee at the floor reads `"floor"`. With any other
+   * (`details.reason`: `"configuration"`), and a fee at the floor reads `"floor"`: the floor at the
+   * draft's height, which the builder chose (see the WebAssembly entry). With any other
    * `source`, the floor is that of the configuration the bytes carry, which the pinned network
    * hash does not cover, so such a fee reads `"unverified"` (see the WebAssembly entry's
    * `Draft.deserialize`).

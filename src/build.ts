@@ -239,7 +239,9 @@ export class Draft {
    * a draft built under another network configuration (another fee table, say) is refused with
    * `NetworkMismatch` (`details.reason`: `"configuration"`), and the fee's source reads
    * `"floor"` when the fee equals the floor. A draft built just before the network changed its
-   * milestones is refused too: build it again.
+   * milestones is refused too: build it again. The floor is the one at the draft's height
+   * (`summary.height`), which the builder chose: where a milestone between that height and the
+   * network's next block changes the fee table, show the fee as an amount.
    *
    * With any other `source`, such as a profile in a context with no network, the floor, the
    * rules and the token's symbol come from the network configuration the bytes carry, which the
