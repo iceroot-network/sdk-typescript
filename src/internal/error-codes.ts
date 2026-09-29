@@ -156,6 +156,15 @@ function bounded(text: string, max: number): string {
   return out;
 }
 
+/**
+ * Text a node chose, as the SDK keeps it wherever it is kept (an error's `details.message`, a
+ * rejected submission's `message` and `nodeCode`): escaped as {@link bounded} escapes it and cut
+ * to 200 characters. Text the Rust SDK already bounded stays as it is.
+ */
+export function nodeTextOf(text: string): string {
+  return bounded(text, MAX_NODE_TEXT);
+}
+
 /** `details` with every text bounded to {@link MAX_TEXT} characters. */
 function boundedDetails(details: ErrorDetails): Record<string, unknown> {
   return Object.fromEntries(
@@ -166,7 +175,7 @@ function boundedDetails(details: ErrorDetails): Record<string, unknown> {
 /** `details` with the text a node sent with a refusal, `details.message`, bounded to 200 characters. */
 function nodeText(details: Record<string, unknown>): Record<string, unknown> {
   const text = details["message"];
-  return typeof text === "string" ? { ...details, message: bounded(text, MAX_NODE_TEXT) } : details;
+  return typeof text === "string" ? { ...details, message: nodeTextOf(text) } : details;
 }
 
 /**

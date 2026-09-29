@@ -6,6 +6,7 @@
 
 import { AssetId } from "../amount.js";
 import { BadResponse } from "../errors.js";
+import { nodeTextOf } from "./error-codes.js";
 import type {
   AccountInfo,
   BlockInfo,
@@ -250,8 +251,18 @@ export function roundValidator(json: Json<RoundValidator>): RoundValidator {
   return { publicKey: json.publicKey, voteWeight: big(json.voteWeight) };
 }
 
+/**
+ * The outcomes of a submission. A rejection's `message` and `nodeCode` are the node's own text, so
+ * they are escaped and cut to 200 characters here too, whatever the module or plugin did.
+ */
 export function submitReport(json: Json<SubmitReport>): SubmitReport {
-  return json;
+  return {
+    outcomes: json.outcomes.map((outcome) =>
+      outcome.status === "rejected"
+        ? { ...outcome, nodeCode: nodeTextOf(outcome.nodeCode), message: nodeTextOf(outcome.message) }
+        : outcome,
+    ),
+  };
 }
 
 /** `convert`, or `null` for the JSON `null` of a lookup that found nothing. */

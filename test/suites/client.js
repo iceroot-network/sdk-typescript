@@ -722,6 +722,31 @@ export default function suite(test, env) {
     await assert.rejects(refused.net.submit(signed[0]), (error) => error instanceof sdk.Refused && error.details.status === 422);
   });
 
+  test("a node's text in a submission's outcome is escaped and cut to 200 characters", async () => {
+    const mixed = (await fixture("submit-mixed")).request.transactions;
+    const answer = JSON.parse((await fixture("submit-mixed")).body);
+    const [lowFee, , , badData] = answer.data.invalid;
+    answer.errors[lowFee].message = `fee too low\u2003\u00ad\u202e${"x".repeat(300)}`;
+    answer.errors[badData].type = `ERR_BAD_DATA\u3000${"Y".repeat(300)}`;
+    const { net } = await connected({ "POST /transactions": json(200, answer) });
+    const signed = [];
+    for (const tx of mixed) {
+      signed.push(await sdk.SignedTransaction.fromJson(net.chain, tx, 81));
+    }
+    const { outcomes } = await net.submitAll(signed);
+    const low = outcomes.find((outcome) => outcome.id === lowFee);
+    assert.equal(low.status, "rejected");
+    assert.equal(low.message, `fee too low\\u{2003}\\u{ad}\\u{202e}${"x".repeat(167)}…`);
+    const bad = outcomes.find((outcome) => outcome.id === badData);
+    assert.equal(bad.nodeCode, `ERR_BAD_DATA\\u{3000}${"Y".repeat(180)}…`);
+    for (const outcome of outcomes.filter((each) => each.status === "rejected")) {
+      for (const text of [outcome.message, outcome.nodeCode]) {
+        assert.ok([...text].length <= 201, text);
+        assert.doesNotMatch(text, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]|(?! )\p{Zs}/u, text);
+      }
+    }
+  });
+
   test("waiting follows a transaction from the pool into a block", async () => {
     const { net } = await connected({
       [`GET /transactions/${TWO_RECIPIENTS}`]: {

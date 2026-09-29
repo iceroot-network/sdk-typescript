@@ -43,7 +43,10 @@ export interface ConnectOptions {
    * a relay that answers with one, so a request, its headers and its body reach the relays only.
    * A transport that follows redirects anyway sends them to the redirect's target. An answer is
    * read from the response's `body` stream where it has one, and refused with `BadResponse` once
-   * it is larger than 8 MiB (the next relay is then asked).
+   * it is larger than 8 MiB (the next relay is then asked). Only a streaming transport keeps that
+   * bound before the body is in memory: a response without a `body` stream (some custom
+   * transports, and fetch polyfills) is read whole with `arrayBuffer()` and checked afterwards,
+   * unless its `content-length` already says it is too large.
    */
   readonly transport?: Transport;
   /**
@@ -494,9 +497,16 @@ export type SubmitStatus =
       readonly status: "rejected";
       /** The normalized reason. */
       readonly reason: RejectionReason;
-      /** The node's own code (for example `ERR_LOW_FEE`); `ERR_TOO_LARGE` when the SDK refused it. */
+      /**
+       * The node's own code (for example `ERR_LOW_FEE`); `ERR_TOO_LARGE` when the SDK refused it.
+       * Escaped and cut to 200 characters, as `message` is.
+       */
       readonly nodeCode: string;
-      /** The node's message. */
+      /**
+       * The node's message: text the node chose, with control, separator and invisible characters
+       * written as escapes (`\u{202e}`) and cut to 200 characters, then `…`. Show it, if at all,
+       * as the node's words, never as the wallet's.
+       */
       readonly message: string;
     };
 
