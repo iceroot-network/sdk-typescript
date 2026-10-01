@@ -1071,6 +1071,30 @@ export default function suite(test, env) {
     await legacy.release();
   });
 
+  test("the network's message signing refuses a sign-in message, as Messages.sign does", async () => {
+    const { net } = await connected();
+    const account = await net.keys.fromLegacyPassphrase("probe passphrase");
+    try {
+      const challenge = await sdk.SignIn.build(
+        {
+          origin: "https://validators.example",
+          publicKey: account.publicKey,
+          nonce: "ab".repeat(32),
+          issuedAt: new Date("2026-09-27T10:00:00Z"),
+          expiresAt: new Date("2026-09-27T10:05:00Z"),
+        },
+        net,
+      );
+      await assert.rejects(async () => net.messages.sign(account, challenge), (error) => {
+        assert.ok(error instanceof sdk.InvalidArgument, String(error));
+        assert.equal(error.details.reason, "a sign-in message is signed only for the page that asks for it, never as a plain message");
+        return true;
+      });
+    } finally {
+      await account.release();
+    }
+  });
+
   test("an answer about another account, transaction or name than the one asked for is refused", async () => {
     const team = JSON.parse((await fixture("wallet-team")).body);
     const secondKey = JSON.parse((await fixture("wallet-second-key")).body);

@@ -203,7 +203,8 @@ export default function suite(test, env) {
     assert.equal(fields.address, account.address);
     assert.equal(fields.issuedAt.getTime(), issuedAt.getTime());
     assert.equal(fields.network, "heartwood-devnet-v90");
-    const signature = await sdk.Messages.sign(account, message);
+    await assert.rejects(async () => sdk.Messages.sign(account, message), sdk.InvalidArgument);
+    const signature = await sdk.SignIn.sign(account, message, { origin: "https://validators.example", now });
     assert.equal(await sdk.Messages.verify({ ...signature, message }, devnet), true);
 
     const selected = {
@@ -237,6 +238,56 @@ export default function suite(test, env) {
       await assert.rejects(async () => sdk.SignIn.parse(message, devnet, { ...selected, [field]: "" }), sdk.InvalidArgument);
     }
     await account.release();
+  });
+
+  test("plain message signing refuses sign-in text and signs only the near misses", async () => {
+    // Exercise both the published entry and the test build, including its direct signing seam.
+    for (const entry of new Set([sdk, env.testSdk].filter(Boolean))) {
+      const devnet = entry.profiles.devnet({ relays: [RELAY] });
+      const account = await entry.Keys.fromLegacyPassphrase("probe passphrase", devnet);
+      try {
+        const request = {
+          origin: "https://validators.example",
+          publicKey: account.publicKey,
+          nonce: "ab".repeat(32),
+          issuedAt: new Date("2026-09-27T10:00:00Z"),
+          expiresAt: new Date("2026-09-27T10:05:00Z"),
+        };
+        const message = await entry.SignIn.build(request, devnet);
+        const lapsed = await entry.SignIn.build({
+          ...request,
+          issuedAt: new Date("2020-01-01T00:00:00Z"),
+          expiresAt: new Date("2020-01-01T00:05:00Z"),
+        }, devnet);
+        const otherNetwork = await entry.SignIn.build(request, entry.profiles.devnet({ relays: [RELAY], networkByte: 91 }));
+        const refused = (error) => {
+          assert.ok(error instanceof entry.InvalidArgument, String(error));
+          assert.equal(error.code, "InvalidArgument");
+          assert.equal(error.details.reason, "a sign-in message is signed only for the page that asks for it, never as a plain message");
+          return true;
+        };
+        for (const text of [message, lapsed, otherNetwork]) {
+          for (const input of [text, new TextEncoder().encode(text)]) {
+            await assert.rejects(async () => entry.Messages.sign(account, input), refused);
+            if (entry.testing && await entry.testing.hasFixedAux()) {
+              await assert.rejects(async () => entry.testing.signMessageWithAux(account, input, new Uint8Array(32)), refused);
+            }
+          }
+        }
+        for (const text of [
+          message + "\n",
+          message.replaceAll("\n", "\r\n"),
+          "\ufeff" + message,
+          "This text only mentions sign-in.",
+        ]) {
+          const signed = await entry.Messages.sign(account, text);
+          assert.equal(await entry.Messages.verify({ ...signed, message: text }, devnet), true);
+          assert.equal(await entry.Messages.verify({ ...signed, message }, devnet), false);
+        }
+      } finally {
+        await account.release();
+      }
+    }
   });
 
   test("a sign-in message is signed only once it passes its checks, where the key signs", async () => {

@@ -212,6 +212,12 @@ mod tests {
             "expiresAt": 1_790_000_300,
         });
         let message = build_sign_in(&profile, &request.to_string()).unwrap();
+        let refused = key.sign_message(message.as_bytes()).unwrap_err();
+        assert_eq!(refused.code(), "InvalidArgument");
+        assert_eq!(
+            refused.details()["reason"],
+            "a sign-in message is signed only for the page that asks for it, never as a plain message"
+        );
         let now = 1_790_000_060_000.0;
         let signed: Value = serde_json::from_str(
             &key.sign_sign_in(&message, "https://validators.example", now)

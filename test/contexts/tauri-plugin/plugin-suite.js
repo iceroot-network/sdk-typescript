@@ -50,6 +50,31 @@ export default function suite(test, env) {
     await invoke("key_release", { key: info.key });
   });
 
+  test("the plugin refuses sign-in text through the plain signing command", async () => {
+    const profile = sdk.profiles.devnet({ relays: [RELAY] });
+    const info = await invoke("key_from_legacy_passphrase", {
+      profile: JSON.stringify(profile),
+      passphrase: Array.from(new TextEncoder().encode("probe passphrase")),
+    });
+    try {
+      const message = await sdk.SignIn.build({
+        origin: "https://validators.example",
+        publicKey: info.publicKey,
+        nonce: "ab".repeat(32),
+        issuedAt: new Date("2026-09-27T10:00:00Z"),
+        expiresAt: new Date("2026-09-27T10:05:00Z"),
+      }, profile);
+      const hex = Array.from(new TextEncoder().encode(message), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      await assert.rejects(invoke("key_sign_message", { key: info.key, message: hex }), (error) => {
+        assert.equal(error.code, "InvalidArgument");
+        assert.equal(error.details.reason, "a sign-in message is signed only for the page that asks for it, never as a plain message");
+        return true;
+      });
+    } finally {
+      await invoke("key_release", { key: info.key });
+    }
+  });
+
   test("a released key is gone from the plugin", async () => {
     const account = await sdk.Keys.fromLegacyPassphrase("released in the plugin", sdk.profiles.devnet({ relays: [RELAY] }));
     await sdk.Messages.sign(account, "before");
