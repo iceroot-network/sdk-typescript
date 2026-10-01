@@ -118,7 +118,7 @@ export function Search({ onSearch }: { onSearch: (kind: "address" | "height" | "
 
 ## 5. Wallet sign-in verified on the server
 
-The browser wallet's provider, `window.iceroot`, offers `connect` and `signMessage`. The server builds a single-use challenge with `SignIn.build` and verifies the signature with `Messages.verify`. The page needs no SDK for this; only the server does. Route files may export only handlers, so the helpers live in `lib/signin.server.ts`.
+The browser wallet's provider, `window.iceroot`, offers `connect` and `signMessage`. The server builds a single-use challenge with `SignIn.build` and verifies the signature with `Messages.verify`. The wallet signs the challenge with `SignIn.sign`, which checks the requesting page's origin and the account; `Messages.sign` refuses sign-in text with `InvalidArgument`, including a lapsed challenge or another network's. The page needs no SDK for this; only the server does. Route files may export only handlers, so the helpers live in `lib/signin.server.ts`.
 
 <!-- sample: verified 0.1.0 -->
 ```ts

@@ -40,7 +40,8 @@ export const SignIn = {
    * checks it, against that origin and the account's own public key and address, and signs only
    * if every check passes; a refusal rejects with `InvalidSignIn` and the reason in
    * `details.reason` (see the WebAssembly entry's `SignIn.sign`). Sign a website's sign-in
-   * message this way, never with `Messages.sign` from a generic prompt.
+   * message this way. `Messages.sign` refuses any text the sign-in parser accepts with
+   * `InvalidArgument`, including a lapsed challenge or another network's.
    */
   async sign(account: Account, message: string, signing: SignInSigning): Promise<MessageSignature> {
     const key = keyOf(account);

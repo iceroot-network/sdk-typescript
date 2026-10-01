@@ -85,7 +85,7 @@ fn challenge_message(profile: &Profile, origin: &str, public_key: &str, nonce: &
 3. Remove `secp256k1`, `ripemd` and `bs58` from `backend/Cargo.toml`. Keep `sha2` and `hex` if the token hashing still uses them.
 4. Keep everything around the check: the browser-binding cookie, the stored exact message, single atomic consumption, the five-minute expiry, the rate limits and the CSRF token.
 5. Return `network` and `algorithm` with the challenge (the response already has `network`), and make `components/auth.tsx` compare the wallet's answer with those values instead of the hard-coded strings.
-6. Run the existing sign-in tests, including the browser integration test with the browser wallet: both sides now run the SDK.
+6. The wallet signs the challenge with `SignIn.sign`, which checks the requesting page's origin and the account. `Messages.sign` refuses any text the sign-in parser accepts with `InvalidArgument`, including a lapsed challenge or another network's. Run the existing sign-in tests, including the browser integration test with the browser wallet: both sides now run the SDK.
 
 ## The directory
 

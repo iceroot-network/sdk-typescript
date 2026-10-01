@@ -5,7 +5,9 @@
  * before it asks the holder and signs it with `SignIn.sign`, which checks it again where the key
  * signs, and the website's server builds it with `SignIn.build` and checks it again before it
  * verifies the signature. Both sides call the same code in the SDK's Rust core, so they cannot
- * disagree.
+ * disagree. `Messages.sign` refuses sign-in text with `InvalidArgument`, including a lapsed
+ * challenge or another network's: any text the sign-in parser accepts for some network, origin,
+ * account and time.
  *
  * @module
  */
@@ -104,7 +106,8 @@ export const SignIn = {
    * challenge a page of another origin relays, one made for another account and a lapsed one are
    * refused with `InvalidSignIn` and the reason in `details.reason`. A missing origin, an invalid
    * time or a message that is not text is `InvalidArgument`. Sign a website's sign-in message
-   * this way, never with `Messages.sign` from a generic prompt.
+   * this way. `Messages.sign` refuses any text the sign-in parser accepts with `InvalidArgument`,
+   * including a lapsed challenge or another network's.
    */
   sign(account: Account, message: string, signing: SignInSigning): MessageSignature {
     const handle = keyHandleOf(account);

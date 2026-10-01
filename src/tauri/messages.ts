@@ -33,8 +33,11 @@ export const Messages = {
    * `InvalidArgument`, and so is text whose first line is an ownership proof's (`IceRoot migration
    * ownership proof`), before anything reaches the plugin: proofs are made only by
    * `OwnershipProof.sign` and `OwnershipProof.fromSignature` (see the WebAssembly entry's
-   * `Messages.sign`). A website's sign-in message is signed with `SignIn.sign`, never with this
-   * function from a generic prompt.
+   * `Messages.sign`). The plugin also refuses any text the sign-in parser accepts for some
+   * network, origin, account and time, including a lapsed challenge or another network's, with
+   * `InvalidArgument`. Its `details.reason` is
+   * "a sign-in message is signed only for the page that asks for it, never as a plain message".
+   * A wallet signs a website's sign-in message with `SignIn.sign`.
    */
   async sign(account: Account, message: string | Uint8Array): Promise<MessageSignature> {
     const key = keyOf(account);

@@ -63,9 +63,12 @@ export const Messages = {
    * message is, and an account from `Keys.fromLegacyPassphrase` of a Solar passphrase has the
    * Solar key. Proofs are made only by `OwnershipProof.sign` and `OwnershipProof.fromSignature`;
    * the signature's `network` label cannot bind one. Sign only messages the holder was shown as
-   * text. A website's sign-in message is signed with `SignIn.sign`, which checks it against the
-   * asking page's origin and the account where the key signs, never with this function from a
-   * generic prompt: a page of another origin can relay a website's challenge.
+   * text. This function also refuses any text the sign-in parser accepts for some network,
+   * origin, account and time, including a lapsed challenge or another network's, with
+   * `InvalidArgument`. Its `details.reason` is
+   * "a sign-in message is signed only for the page that asks for it, never as a plain message".
+   * A wallet signs a website's challenge with `SignIn.sign`, which checks it against the asking
+   * page's origin and the account where the key signs: another origin can relay the challenge.
    */
   sign(account: Account, message: string | Uint8Array): MessageSignature {
     const handle = keyHandleOf(account);
