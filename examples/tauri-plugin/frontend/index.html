@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>IceRoot SDK: Tauri plugin</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="main.js"></script>
+  </head>
+  <body>
+    <h1>IceRoot SDK through its Tauri plugin</h1>
+    <p>Keys, signing and every request to the node run in the plugin, in Rust. This page holds no key and reaches no node.</p>
+
+    <section>
+      <h2>Network</h2>
+      <label>Relay <input id="relay" value="http://127.0.0.1:6003/api" size="36" /></label>
+      <button id="connect">Connect</button>
+      <pre id="network"></pre>
+    </section>
+
+    <section>
+      <h2>Account</h2>
+      <button id="create">New recovery phrase</button>
+      <pre id="phrase"></pre>
+      <label>Password <input id="password" type="password" /></label>
+      <button id="keep">Encrypt into a keystore</button>
+      <button id="open">Open the account from the keystore</button>
+      <pre id="account"></pre>
+    </section>
+
+    <section>
+      <h2>Message</h2>
+      <input id="message" value="hello from the plugin" size="36" />
+      <button id="sign">Sign</button>
+      <pre id="signature"></pre>
+    </section>
+
+    <p id="error" role="alert"></p>
+  </body>
+</html>

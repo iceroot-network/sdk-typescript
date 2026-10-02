@@ -1,0 +1,77 @@
+[package]
+name = "iceroot-sdk-wasm"
+description = "WebAssembly bindings of the IceRoot SDK"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+repository = "https://github.com/iceroot-network/sdk-typescript"
+publish = false
+
+# The bindings build on their own; this crate is not part of another workspace.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Test seam: reproducible signatures for the cross-checks against native Rust. Only the test build
+# of the package enables it; the published build never does.
+fixed-aux = ["iceroot-sdk/fixed-aux", "iceroot-sdk-bindings/fixed-aux"]
+# Test seam: the keystore vectors' own salts and nonces and their lowered parameter floor, so that
+# every keystore vector runs in WebAssembly. It turns on the keystore's test-only feature, which no
+# build that ships may enable. Only the test build of the package enables it.
+keystore-testing = ["iceroot-sdk-bindings/keystore-testing"]
+
+[dependencies]
+# The SDK's Rust core. Every key, address, signature and transaction comes from it, and through it
+# from heartwood-crypto. Until sdk-rust has a tagged release, the bindings build against a checkout
+# of sdk-rust next to this repository.
+iceroot-sdk = { path = "../../sdk-rust/crates/iceroot-sdk", features = ["serde", "keystore"] }
+# The boundary the SDK's bindings share: arguments read and answers written in the JSON forms of
+# the TypeScript API, and errors with their stable codes. The native Tauri plugin uses the same
+# crate, so both implementations of the interface read and write the same JSON.
+iceroot-sdk-bindings = { path = "../../sdk-rust/crates/iceroot-sdk-bindings", features = ["wasm-bindgen"] }
+js-sys = "0.3"
+serde_json = { version = "1", features = ["preserve_order"] }
+wasm-bindgen = "=0.2.129"
+zeroize = "1.9"
+
+# WebAssembly only: randomness from crypto.getRandomValues, and libsecp256k1's small precomputed
+# tables. Signatures and keys are identical with either table size; native builds keep the default.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+secp256k1 = { version = "=0.33.1", default-features = false, features = ["std", "lowmemory"] }
+
+[dev-dependencies]
+hex = "0.4"
+sha2 = "0.11"
+
+# Prints the native Rust results that every JavaScript context must reproduce.
+[[example]]
+name = "vectors"
+required-features = ["fixed-aux"]
+
+# The native side of the differential test (scripts/check-differential.mjs).
+[[example]]
+name = "differential"
+required-features = ["fixed-aux"]
+
+# The native side of the vote library's differential test (scripts/check-differential.mjs).
+[[example]]
+name = "vote_differential"
+required-features = ["fixed-aux"]
+
+[lints.rust]
+missing_docs = "warn"
+unused_must_use = "deny"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+debug = false
+strip = true
+# As in sdk-rust: arithmetic that overflows stops instead of wrapping.
+overflow-checks = true

@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "stripInternal": true,
+    "rootDir": "./src",
+    "outDir": "build/types"
+  },
+  "include": [],
+  "files": [
+    "src/index.ts",
+    "src/vote.ts",
+    "src/keystore.ts",
+    "src/ownership.ts",
+    "src/tauri/index.ts",
+    "src/tauri/vote.ts",
+    "src/tauri/keystore.ts",
+    "src/tauri/ownership.ts"
+  ]
+}

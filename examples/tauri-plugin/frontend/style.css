@@ -1,0 +1,4 @@
+body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+section { border-top: 1px solid #ccd; padding: 0.5rem 0 1rem; }
+pre { background: #f4f5f8; padding: 0.5rem; white-space: pre-wrap; word-break: break-all; }
+#error { color: #a00; }

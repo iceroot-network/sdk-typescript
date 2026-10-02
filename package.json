@@ -1,0 +1,108 @@
+{
+  "name": "@iceroot-network/sdk",
+  "version": "0.1.0",
+  "description": "The IceRoot SDK for TypeScript and JavaScript: the Rust core compiled to WebAssembly with a typed wrapper",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iceroot-network/sdk-typescript.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/web/index.d.ts",
+      "node": "./dist/node/index.js",
+      "default": "./dist/web/index.js"
+    },
+    "./vote": {
+      "types": "./dist/web/vote.d.ts",
+      "node": "./dist/node/vote.js",
+      "default": "./dist/web/vote.js"
+    },
+    "./keystore": {
+      "types": "./dist/web/keystore.d.ts",
+      "node": "./dist/node/keystore.js",
+      "default": "./dist/web/keystore.js"
+    },
+    "./ownership": {
+      "types": "./dist/web/ownership.d.ts",
+      "node": "./dist/node/ownership.js",
+      "default": "./dist/web/ownership.js"
+    },
+    "./tauri": {
+      "types": "./dist/web/tauri/index.d.ts",
+      "default": "./dist/tauri/index.js"
+    },
+    "./tauri/vote": {
+      "types": "./dist/web/tauri/vote.d.ts",
+      "default": "./dist/tauri/vote.js"
+    },
+    "./tauri/keystore": {
+      "types": "./dist/web/tauri/keystore.d.ts",
+      "default": "./dist/tauri/keystore.js"
+    },
+    "./tauri/ownership": {
+      "types": "./dist/web/tauri/ownership.d.ts",
+      "default": "./dist/tauri/ownership.js"
+    },
+    "./iife": "./dist/iife/iceroot-sdk.js",
+    "./iife/bytes": "./dist/iife/iceroot-sdk-bytes.js",
+    "./wasm": "./dist/web/iceroot_sdk_bg.wasm",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/web/index.d.ts",
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:test": "node scripts/build.mjs --variant test",
+    "pack": "node scripts/build.mjs --pack",
+    "check": "npm run check:docs && npm run check:samples && npm run check:types && npm run check:size && npm run check:vectors && npm run check:differential && npm run check:notice",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:samples": "node scripts/check-samples.mjs",
+    "check:types": "node scripts/check-types.mjs",
+    "check:size": "node scripts/check-size.mjs",
+    "check:vectors": "node scripts/check-vectors.mjs",
+    "check:differential": "node scripts/check-differential.mjs",
+    "check:rust": "node scripts/check-rust.mjs",
+    "check:notice": "node scripts/notice.mjs --check",
+    "notice": "node scripts/notice.mjs",
+    "release": "node scripts/release.mjs",
+    "test": "npm run test:rust && npm run test:node && npm run test:browser",
+    "test:rust": "cargo test --manifest-path wasm/Cargo.toml --all-features",
+    "test:node": "node --test \"test/node/*.test.mjs\"",
+    "test:browser": "playwright test --project=chromium",
+    "test:webkit": "playwright test --project=webkit",
+    "test:tauri": "node test/contexts/tauri/run.mjs",
+    "test:tauri-plugin": "node test/contexts/tauri-plugin/run.mjs",
+    "test:e2e": "node test/e2e/run.mjs",
+    "example:build": "node scripts/example.mjs build",
+    "example:dev": "node scripts/example.mjs dev"
+  },
+  "devDependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@playwright/test": "1.63.0",
+    "@scure/base": "2.4.0",
+    "@scure/bip32": "2.4.0",
+    "@scure/bip39": "2.4.0",
+    "@types/node": "22.20.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "binaryen": "132.0.0",
+    "esbuild": "0.28.2",
+    "next": "15.5.26",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "typescript-5": "npm:typescript@5.7.3",
+    "vite": "8.3.1"
+  }
+}
