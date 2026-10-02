@@ -10,7 +10,8 @@
  *
  * The classes of the vote library's codes are exported by `@iceroot-network/sdk/vote`, those of
  * the keystore's codes by `@iceroot-network/sdk/keystore`, and `InvalidProof` by
- * `@iceroot-network/sdk/ownership`, with the functions that raise them.
+ * `@iceroot-network/sdk/ownership`, with the functions that raise them. `InvalidLink` is exported
+ * with `Link`, which raises it.
  *
  * @module
  */
@@ -37,6 +38,7 @@ export type ErrorCode =
   | "InvalidTransaction"
   | "InvalidSignIn"
   | "InvalidProof"
+  | "InvalidLink"
   | "InvalidRequest"
   | "InvalidProfile"
   | "InvalidArgument"

@@ -1,4 +1,4 @@
-import { Link, InvalidLink, type LinkRecord, type LinkProblem, type Account, type NetworkProfile } from "../../dist/web/index.js";
+import { Link, InvalidLink, IceRootError, type ErrorCode, type LinkRecord, type LinkProblem, type Account, type NetworkProfile } from "../../dist/web/index.js";
 
 declare const account: Account;
 declare const profile: NetworkProfile;
@@ -15,3 +15,7 @@ Link.build({ githubId: "9999999001", publicKey: account.publicKey, issuedAt: now
 Link.sign(account, message);
 // @ts-expect-error A revocation must name the ended link.
 Link.buildRevocation({ githubId: 9999999001, publicKey: account.publicKey, issuedAt: now }, profile);
+// The refusal's code is one of the SDK's error codes, so an app can branch on it.
+const linkCode: ErrorCode = new InvalidLink("json").code;
+declare const failure: IceRootError;
+if (failure.code === "InvalidLink") void linkCode;

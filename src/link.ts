@@ -1,5 +1,5 @@
 /** Account links and revocations, checked by the Rust core. @module */
-import { IceRootError, InvalidArgument, type ErrorCode, type ErrorDetails } from "./errors.js";
+import { IceRootError, InvalidArgument, type ErrorDetails } from "./errors.js";
 import { call, parse } from "./internal/bindings.js";
 import { milliseconds, stringArg } from "./internal/ownership-args.js";
 import { keyHandleOf, type Account } from "./keys.js";
@@ -13,7 +13,7 @@ export class InvalidLink extends IceRootError {
   /** The check that failed, also in details.reason. */
   readonly reason: LinkProblem;
   constructor(reason: LinkProblem, message = "the account link was refused", details: ErrorDetails = {}) {
-    super("InvalidLink" as ErrorCode, message, { ...details, reason });
+    super("InvalidLink", message, { ...details, reason });
     this.reason = reason;
   }
 }
@@ -65,7 +65,7 @@ export interface LinkHistoryEntry {
 
 function checked<T>(f: () => T): T {
   try { return f(); } catch (error) {
-    if (error instanceof IceRootError && String(error.code) === "InvalidLink") {
+    if (error instanceof IceRootError && error.code === "InvalidLink") {
       throw new InvalidLink(error.details["reason"] as LinkProblem, error.message, error.details);
     }
     throw error;
