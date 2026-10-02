@@ -76,7 +76,12 @@ function wire(value: unknown): string {
   if (text === undefined) throw new InvalidArgument("a JSON value is required");
   return text;
 }
+function object<T>(value: T, what: string): T {
+  if (typeof value !== "object" || value === null) throw new InvalidArgument(`${what} is an object`);
+  return value;
+}
 function request(value: LinkRequest, kind: "link" | "revocation", ends?: Date): string {
+  object(value, "a link request");
   if (!Number.isSafeInteger(value.githubId) || value.githubId < 1) throw new InvalidLink("github-id");
   return wire({ kind, githubId: value.githubId, publicKey: value.publicKey,
     issuedAt: Math.floor(milliseconds(value.issuedAt, "issuedAt") / 1000),
@@ -92,7 +97,7 @@ export const Link = {
   },
   /** Build the ten-line revocation message. */
   buildRevocation(value: LinkRevocationRequest, source: ProfileSource): string {
-    return checked(() => call(m => m.buildLink(profileHandleOf(source), request(value, "revocation", value.endsLinkIssuedAt))));
+    return checked(() => call(m => m.buildLink(profileHandleOf(source), request(value, "revocation", object(value, "a revocation request").endsLinkIssuedAt))));
   },
   /** Check exact text at the reader's clock. A revocation returns kind revocation. */
   parse(message: string, source: ProfileSource, expected: LinkExpectations, now: Date | number): LinkFields {
@@ -104,7 +109,7 @@ export const Link = {
   },
   /** Sign only after checking the message against the account, network and signer clock. */
   sign(account: Account, message: string, signing: { readonly now: Date | number }): LinkRecord {
-    return checked(() => Object.freeze(parse<LinkRecord>(call(() => keyHandleOf(account).signLink(stringArg(message, "message"), milliseconds(signing.now, "now"))))));
+    return checked(() => Object.freeze(parse<LinkRecord>(call(() => keyHandleOf(account).signLink(stringArg(message, "message"), milliseconds(object(signing, "the signing time").now, "now"))))));
   },
   /** Read exactly five text members, each once. This does not verify a signature. */
   fromJson(record: string): LinkRecord {

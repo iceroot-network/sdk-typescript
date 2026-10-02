@@ -59,3 +59,16 @@ test("record limits, exact escaping, clocks and released keys", () => {
   account.release();
   assert.throws(() => sdk.Link.sign(account, message, { now }), sdk.KeyReleased);
 });
+test("arguments that are not objects are refused as SDK errors", () => {
+  const profile = sdk.profiles.devnet({ relays: ["https://node.example/api"] });
+  const account = sdk.Keys.fromLegacyPassphrase("example link holder", profile);
+  try {
+    const now = 1790512497000;
+    const message = sdk.Link.build({ githubId: 9999999001, publicKey: account.publicKey, issuedAt: new Date(now) }, profile);
+    for (const value of [null, undefined, "9999999001"]) {
+      assert.throws(() => sdk.Link.build(value, profile), sdk.InvalidArgument);
+      assert.throws(() => sdk.Link.buildRevocation(value, profile), sdk.InvalidArgument);
+      assert.throws(() => sdk.Link.sign(account, message, value), sdk.InvalidArgument);
+    }
+  } finally { account.release(); }
+});
