@@ -706,6 +706,41 @@ fn keystore_case() -> Result<Value, Failure> {
     Err("the keystore vectors have no standard keystore to open".into())
 }
 
+fn link_cases() -> Result<Value, Box<dyn std::error::Error>> {
+    use iceroot_sdk::link::{self, LinkRequest};
+    let profile = Profile::devnet(DevnetOptions {
+        relays: vec!["https://node.example/api".to_owned()],
+        nethash: None,
+    });
+    let account = Account::from_legacy_passphrase(&profile, "example link holder")?;
+    let mut cases = Vec::new();
+    for (revocation, id) in [
+        (false, 9_999_999_001),
+        (true, 9_999_999_001),
+        (false, link::MAX_GITHUB_ID),
+    ] {
+        let request = LinkRequest {
+            github_id: id,
+            public_key: account.public_key(),
+            issued_at: 1_790_512_496,
+        };
+        let message = if revocation {
+            link::build_revocation(&profile, &request, 1_790_426_096)?
+        } else {
+            link::build(&profile, &request)?
+        };
+        let record = link::sign_with(
+            &profile,
+            &account,
+            &message,
+            1_790_512_497_000,
+            Aux::fixed([0x42; 32]),
+        )?;
+        cases.push(json!({"revocation":revocation, "githubId":id, "message":message, "json":record.to_json()}));
+    }
+    Ok(json!(cases))
+}
+
 fn main() -> Result<(), Failure> {
     let keys = PASSPHRASES
         .iter()
@@ -772,6 +807,7 @@ fn main() -> Result<(), Failure> {
         "transactions": transactions()?,
         "vote": vote_cases()?,
         "keystore": keystore_case()?,
+        "links": link_cases()?,
     });
     println!("{}", serde_json::to_string_pretty(&vectors)?);
     Ok(())

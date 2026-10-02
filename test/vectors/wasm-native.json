@@ -3139,5 +3139,25 @@
     "password": "correct horse battery staple",
     "phrase": "ghost mesh twelve swing hire save lab turtle oppose volcano universe stomach ski thing sauce tower cause best trap race across renew birth either",
     "words": 24
-  }
+  },
+  "links": [
+    {
+      "revocation": false,
+      "githubId": 9999999001,
+      "message": "IceRoot account link\nVersion: 1\nNetwork: heartwood-devnet-v90\nGitHub user id: 9999999001\nAccount: dQ1mdtk5kzUDtwjGkUBB4Q7zKDk9Q5MrVb\nPublic key: 02cc93496db43f25496b7f5efacb7598eca0783d192d924831168969ebd4c3ef3d\nIssued at: 2026-09-27T12:34:56Z\nIntent: Link this GitHub account and this IceRoot account as the same holder.\nNo transaction or transfer is authorized.",
+      "json": "{\"message\":\"IceRoot account link\\nVersion: 1\\nNetwork: heartwood-devnet-v90\\nGitHub user id: 9999999001\\nAccount: dQ1mdtk5kzUDtwjGkUBB4Q7zKDk9Q5MrVb\\nPublic key: 02cc93496db43f25496b7f5efacb7598eca0783d192d924831168969ebd4c3ef3d\\nIssued at: 2026-09-27T12:34:56Z\\nIntent: Link this GitHub account and this IceRoot account as the same holder.\\nNo transaction or transfer is authorized.\",\"publicKey\":\"02cc93496db43f25496b7f5efacb7598eca0783d192d924831168969ebd4c3ef3d\",\"signature\":\"f08aea00852f267ed67f80b1d3bc13cac17edeb51cb1fd8a39104cd0decf76f27da5b105dc1c7a47885431221ca765205ccb67f28641a2aaabec9464a2caa138\",\"algorithm\":\"secp256k1-bip340-sha256\",\"network\":\"heartwood-devnet-v90\"}"
+    },
+    {
+      "revocation": true,
+      "githubId": 9999999001,
+      "message": "IceRoot account link revocation\nVersion: 1\nNetwork: heartwood-devnet-v90\nGitHub user id: 9999999001\nAccount: dQ1mdtk5kzUDtwjGkUBB4Q7zKDk9Q5MrVb\nPublic key: 02cc93496db43f25496b7f5efacb7598eca0783d192d924831168969ebd4c3ef3d\nIssued at: 2026-09-27T12:34:56Z\nEnds link issued at: 2026-09-26T12:34:56Z\nIntent: End the link between this GitHub account and this IceRoot account.\nNo transaction or transfer is authorized.",
+      "json": "{\"message\":\"IceRoot account link revocation\\nVersion: 1\\nNetwork: heartwood-devnet-v90\\nGitHub user id: 9999999001\\nAccount: dQ1mdtk5kzUDtwjGkUBB4Q7zKDk9Q5MrVb\\nPublic key: 02cc93496db43f25496b7f5efacb7598eca0783d192d924831168969ebd4c3ef3d\\nIssued at: 2026-09-27T12:34:56Z\\nEnds link issued at: 2026-09-26T12:34:56Z\\nIntent: End the link between this GitHub account and this IceRoot account.\\nNo transaction or transfer is authorized.\",\"publicKey\":\"02cc93496db43f25496b7f5efacb7598eca0783d192d924831168969ebd4c3ef3d\",\"signature\":\"7bab022706da507b55508ff7e0672499e49bb22593fd6f7bda03d41b18a52840dbb3f9cc6dc7d23db61deb11efb99cdab9868604324a329557219a79c34078f2\",\"algorithm\":\"secp256k1-bip340-sha256\",\"network\":\"heartwood-devnet-v90\"}"
+    },
+    {
+      "revocation": false,
+      "githubId": 9007199254740991,
+      "message": "IceRoot account link\nVersion: 1\nNetwork: heartwood-devnet-v90\nGitHub user id: 9007199254740991\nAccount: dQ1mdtk5kzUDtwjGkUBB4Q7zKDk9Q5MrVb\nPublic key: 02cc93496db43f25496b7f5efacb7598eca0783d192d924831168969ebd4c3ef3d\nIssued at: 2026-09-27T12:34:56Z\nIntent: Link this GitHub account and this IceRoot account as the same holder.\nNo transaction or transfer is authorized.",
+      "json": "{\"message\":\"IceRoot account link\\nVersion: 1\\nNetwork: heartwood-devnet-v90\\nGitHub user id: 9007199254740991\\nAccount: dQ1mdtk5kzUDtwjGkUBB4Q7zKDk9Q5MrVb\\nPublic key: 02cc93496db43f25496b7f5efacb7598eca0783d192d924831168969ebd4c3ef3d\\nIssued at: 2026-09-27T12:34:56Z\\nIntent: Link this GitHub account and this IceRoot account as the same holder.\\nNo transaction or transfer is authorized.\",\"publicKey\":\"02cc93496db43f25496b7f5efacb7598eca0783d192d924831168969ebd4c3ef3d\",\"signature\":\"f6d266c2ae639c25dd609c3db16d8d5e7850fecbbef899153a2c2034d383f12f3ae362c8f2b51b4f8a1efdf8ca53ed44fb7ca6c7f420441007e6f44ec44eaa5f\",\"algorithm\":\"secp256k1-bip340-sha256\",\"network\":\"heartwood-devnet-v90\"}"
+    }
+  ]
 }
