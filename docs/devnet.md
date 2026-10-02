@@ -1,6 +1,6 @@
 # Devnet
 
-Apps are wired against a development network (devnet). There is no public testnet or mainnet yet, and the SDK has no profile for either until their geneses are fixed.
+Apps are wired against a development network (devnet). There is no public testnet or mainnet yet, and the SDK has no profile for either until their geneses are fixed. The first public testnet opens once finality is live.
 
 ## What today's devnet is
 
