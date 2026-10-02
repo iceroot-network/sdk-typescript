@@ -93,3 +93,5 @@ export type * from "./types.js";
 export type * from "./client.js";
 
 export { VERSION, bindingsVersion } from "./internal/version.js";
+
+export * from "./link.js";

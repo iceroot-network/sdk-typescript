@@ -42,6 +42,7 @@ mod draft;
 mod error;
 mod keys;
 mod keystore;
+mod link;
 mod messages;
 mod ownership;
 mod phrase;
