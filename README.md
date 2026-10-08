@@ -138,7 +138,7 @@ Consumers of the package need none of this. Builders need:
 - the `wasm-bindgen` CLI at the exact version of the `wasm-bindgen` crate in `wasm/Cargo.lock` (`cargo install wasm-bindgen-cli --version 0.2.129 --locked`);
 - clang and llvm-ar with the wasm32 target, for libsecp256k1 (found as `clang` or `clang-N`, or set `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown`);
 - a checkout of [sdk-rust](https://github.com/iceroot-network/sdk-rust) next to this repository (`../sdk-rust`), which `wasm/Cargo.toml` uses by path until sdk-rust has a tagged release, and whose recorded devnet answers the Node tests of the node API client read;
-- read access to `heartwood-core`, which sdk-rust fetches over SSH from `github.com` (see sdk-rust's README, also for a key behind an SSH host alias; `.cargo/config.toml` makes cargo use the git command line and its SSH configuration);
+- access to the public `https://github.com/iceroot-network/heartwood-core.git` dependency over HTTPS;
 - Node 22 and `npm install`, which brings esbuild, TypeScript and `wasm-opt` (binaryen).
 
 `rust-toolchain.toml` pins Rust 1.98.0, as sdk-rust and Heartwood Core. The build passes the compiler its own flags and ignores `RUSTFLAGS`: sha2's compact backend, which keeps the module small, and fixed names for the source directories (the Cargo home, sdk-rust and this repository), so that the module names no directory of the machine that built it. Two builds give the same module when they also use the same checkout paths, because Cargo hashes the absolute path of sdk-rust, a path dependency, into the crates' symbols; the release workflow always builds in the same place.
@@ -195,7 +195,7 @@ The devnet test needs a local devnet of the reference implementation. `npm run t
 
 The WebKit job (`macos-webkit`) runs on `macos-15`. Apple's clang cannot compile for wasm32, so it builds the module with Homebrew's LLVM 18, the version the Linux jobs use. It runs `test:webkit`: a page and a Vite and React app under the page policy, and the refusal without `'wasm-unsafe-eval'`, in Playwright's build of current WebKit. It does not check Safari itself, older Safari releases, iOS or the Tauri plugin on macOS.
 
-The bindings build on sdk-rust, which fetches `heartwood-core` over SSH. The workflows read it over HTTPS instead, with a fine-grained personal access token stored in this repository as the secret `HEARTWOOD_TOKEN`. The token needs access to `heartwood-core` only, with the repository permission Contents: read-only (GitHub adds Metadata: read-only); if the organisation requires approval of fine-grained tokens, approve it first. `scripts/ci/heartwood-access.sh` masks the token in the logs, rewrites `heartwood-core`'s SSH addresses to HTTPS, and has git send the token only with requests to that repository. It does this with git configuration in the environment, which the job's later steps inherit and which Cargo reads too, as it fetches through the git command line. The token is never written into a git configuration file, a remote address or Cargo's copy of `heartwood-core`. Pull requests from forks get no secrets, so their runs stop at that step. While `heartwood-core` is private, only pull request runs save the dependency cache: it holds Cargo's copy of `heartwood-core`, and a pull request from a fork can restore the caches of this repository's branches.
+The bindings build on sdk-rust, which fetches the public Heartwood Core repository over HTTPS without a dependency secret.
 
 ### Releasing
 

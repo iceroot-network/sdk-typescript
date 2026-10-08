@@ -2,7 +2,7 @@
 
 The explorer and the validators portal have Rust (Axum) backends. They use the Rust SDK natively: no WebAssembly, the same types and rules as the TypeScript package. The Rust node API client is sans-IO: `SolarCompat` builds each call (the request and the decoder of its answer) and `HttpClient`, behind the `http` feature, sends it. The TypeScript `connect` wraps these steps; in Rust, a short `connect` function of your own does the same (section 2). This page builds an Axum service with a validator list and a sign-in check. The crate's own documentation (rustdoc) in [sdk-rust](https://github.com/iceroot-network/sdk-rust) is the reference for exact signatures.
 
-Requirements: Rust 1.98 or later, read access to `heartwood-core` over SSH until it is public (see [Installation](../installation.md#rust)), and a devnet (see [Devnet](../devnet.md)).
+Requirements: Rust 1.98 or later, HTTPS access to the public `heartwood-core` repository (see [Installation](../installation.md#rust)), and a devnet (see [Devnet](../devnet.md)).
 
 ## 1. Dependencies
 
@@ -149,21 +149,20 @@ The response lists the devnet's validators in rank order.
 
 ## 5. Docker
 
-Until `heartwood-core` is public, the image build fetches it over SSH with BuildKit's SSH forwarding:
+The image build fetches public dependencies over HTTPS without credentials:
 
 <!-- sample: plain -->
 ```dockerfile
 # syntax=docker/dockerfile:1
 FROM rust:1.98 AS build
 WORKDIR /src
-RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
 COPY . .
-RUN --mount=type=ssh --mount=type=cache,target=/usr/local/cargo/registry cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry cargo build --release --locked
 ```
 
 <!-- sample: plain -->
 ```sh
-docker build --ssh default -t iceroot-backend .
+docker build -t iceroot-backend .
 ```
 
-Pin the base image by digest in production, as the explorer's Dockerfile already does. The build fetches `heartwood-core` from `github.com` with the key of the forwarded SSH agent, so that agent must hold a key with read access to it; no URL rewrite is needed inside the image (see [Installation](../installation.md#rust)).
+Pin the base image by digest in production, as the explorer's Dockerfile already does. The build fetches `heartwood-core` from the public `https://github.com/iceroot-network/heartwood-core.git` repository without credentials.

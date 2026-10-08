@@ -79,14 +79,7 @@ jobs:
         run: |
           command -v clang-18 >/dev/null && command -v llvm-ar-18 >/dev/null ||
             (sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-18 llvm-18)
-      - name: Read access to heartwood-core
-        env:
-          HEARTWOOD_TOKEN: ${{ secrets.HEARTWOOD_TOKEN }}
-        run: scripts/ci/heartwood-access.sh
-      # The cache holds Cargo's git database, which is heartwood-core's history while that
-      # repository is private. A pull request from a fork can restore the caches of this
-      # repository's branches, so only pull request runs save one: theirs is kept under the pull
-      # request's own ref, which no other pull request can read.
+      # Keep the existing cache save policy.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: sdk-typescript/wasm -> target
@@ -176,14 +169,7 @@ jobs:
           test -x "$llvm_prefix/bin/llvm-ar"
           echo "CC_wasm32_unknown_unknown=$llvm_prefix/bin/clang" >>"$GITHUB_ENV"
           echo "AR_wasm32_unknown_unknown=$llvm_prefix/bin/llvm-ar" >>"$GITHUB_ENV"
-      - name: Read access to heartwood-core
-        env:
-          HEARTWOOD_TOKEN: ${{ secrets.HEARTWOOD_TOKEN }}
-        run: scripts/ci/heartwood-access.sh
-      # The cache holds Cargo's git database, which is heartwood-core's history while that
-      # repository is private. A pull request from a fork can restore the caches of this
-      # repository's branches, so only pull request runs save one: theirs is kept under the pull
-      # request's own ref, which no other pull request can read.
+      # Keep the existing cache save policy.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: sdk-typescript/wasm -> target
@@ -247,14 +233,7 @@ jobs:
         run: |
           command -v clang-18 >/dev/null && command -v llvm-ar-18 >/dev/null ||
             (sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-18 llvm-18)
-      - name: Read access to heartwood-core
-        env:
-          HEARTWOOD_TOKEN: ${{ secrets.HEARTWOOD_TOKEN }}
-        run: scripts/ci/heartwood-access.sh
-      # The cache holds Cargo's git database, which is heartwood-core's history while that
-      # repository is private. A pull request from a fork can restore the caches of this
-      # repository's branches, so only pull request runs save one: theirs is kept under the pull
-      # request's own ref, which no other pull request can read.
+      # Keep the existing cache save policy.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: sdk-typescript/wasm -> target

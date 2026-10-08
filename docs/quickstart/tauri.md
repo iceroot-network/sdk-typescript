@@ -11,7 +11,7 @@ Tauri apps (the desktop wallet on Linux and macOS, the mobile wallet on Android 
 | Keystore | Argon2id natively with the `"desktop"` or `"mobile"` preset, off the webview's thread; an account opens from a keystore without the phrase entering the page | The `"web"` preset in the webview |
 | Calls that compute | Return promises (they cross Tauri's IPC) | Return their result |
 
-Requirements: the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platforms, Node.js 22 or later, read access to `heartwood-core` for the Rust build (see [Installation](../installation.md#rust)), and a devnet (see [Devnet](../devnet.md)). The repository's [Tauri example](../../examples/tauri-plugin/README.md) is a working application of this page.
+Requirements: the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platforms, Node.js 22 or later, HTTPS access to the public `heartwood-core` repository for the Rust build (see [Installation](../installation.md#rust)), and a devnet (see [Devnet](../devnet.md)). The repository's [Tauri example](../../examples/tauri-plugin/README.md) is a working application of this page.
 
 ## 1. Add the plugin
 

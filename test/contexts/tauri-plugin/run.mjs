@@ -16,7 +16,7 @@
 //
 // The application builds from sdk-rust next to this repository (SDK_RUST_DIR), copied with this
 // repository's example into build/tauri-plugin-check. Its dependencies are fetched on the host
-// first (cargo fetch, with the host's access to heartwood-core), into the host's Cargo home
+// first (cargo fetch, over public HTTPS), into the host's Cargo home
 // (CARGO_HOME, else ~/.cargo); the container builds offline from that Cargo home, as the invoking
 // user, and its target directory stays in build/tauri-plugin-target between runs.
 

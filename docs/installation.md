@@ -97,16 +97,8 @@ iceroot-sdk = { git = "https://github.com/iceroot-network/sdk-rust.git", tag = "
 ```
 
 - **Rust version.** The SDK needs Rust 1.98 or later (the same as Heartwood). Raise `rust-version` and any pinned toolchain or Docker image to match.
-- **heartwood-core access.** The Rust SDK depends on the `heartwood-crypto` crate from the `heartwood-core` repository, which is not public yet. Until it is, building the Rust SDK needs read access to that repository over SSH, and Cargo must use the git command line so it sees your SSH configuration. Add this to the app's `.cargo/config.toml`:
-
-<!-- sample: plain -->
-```toml
-[net]
-git-fetch-with-cli = true
-```
-
-- **The SSH address.** sdk-rust fetches `heartwood-core` from `ssh://git@github.com/iceroot-network/heartwood-core.git`, so a key that GitHub accepts for that repository works as it is. If your key with access sits behind an SSH host alias instead, rewrite the address for the build with git configuration from the environment, which Cargo passes on to git: `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='url.ssh://git@<alias>/iceroot-network/.insteadOf' GIT_CONFIG_VALUE_0='ssh://git@github.com/iceroot-network/' cargo fetch --locked` (or the same rewrite with `git config --global` on a build machine). A rewrite in the app repository's own git configuration does not reach Cargo, which fetches in a repository of its own. Once fetched, builds work offline.
-- **Docker builds.** Fetch the git dependencies with BuildKit's SSH forwarding, `RUN --mount=type=ssh cargo build --release --locked`, and build with `docker build --ssh default ...`. Never copy a key into an image.
+- **heartwood-core access.** The Rust SDK fetches `heartwood-crypto` from the public `https://github.com/iceroot-network/heartwood-core.git` repository without a key or token. Once fetched, builds work offline.
+- **Docker builds.** Build with `RUN cargo build --release --locked`; no dependency credentials are needed.
 - **Features.** `http` adds an async HTTP client (reqwest). Without it the crate is sans-IO: it builds requests and parses responses, and your code performs the HTTP calls. `serde` adds `Serialize` and `Deserialize` to the client's request values and answers, in the same JSON form the TypeScript package reads (camel-case fields, 64-bit and wider integers as decimal strings), for a backend that passes the records on to a web page.
 
 The TypeScript package needs none of this: it ships the compiled module.

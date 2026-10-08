@@ -13,7 +13,7 @@ The page imports the Tauri entry from `frontend/vendor/iceroot-sdk/tauri/`, a co
 
 ## Run it
 
-You need the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) (on Linux, the WebKitGTK 4.1 and GTK 3 development files), Rust 1.98 or later with read access to `heartwood-core` (see [Installation](../../docs/installation.md#rust)), sdk-rust checked out next to this repository (the application depends on the plugin by path until sdk-rust has a release tag), and a devnet whose relay is `http://127.0.0.1:6003/api` (see [Devnet](../../docs/devnet.md)), or another relay allowed in the capability.
+You need the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) (on Linux, the WebKitGTK 4.1 and GTK 3 development files), Rust 1.98 or later with HTTPS access to the public `heartwood-core` repository (see [Installation](../../docs/installation.md#rust)), sdk-rust checked out next to this repository (the application depends on the plugin by path until sdk-rust has a release tag), and a devnet whose relay is `http://127.0.0.1:6003/api` (see [Devnet](../../docs/devnet.md)), or another relay allowed in the capability.
 
 In this repository, after `npm install` and `npm run build` at its root:
 

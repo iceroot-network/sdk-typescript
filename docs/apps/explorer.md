@@ -65,7 +65,7 @@ Transaction kinds:
 
 - Add `iceroot-sdk` with the `http` feature (see [Installation](../installation.md#rust)) and `.cargo/config.toml` with `git-fetch-with-cli = true`.
 - Raise `rust-version` in `backend/Cargo.toml` from 1.85 to 1.98, and the Rust image pinned in `backend/Dockerfile` (1.93.0 today) to 1.98 or later.
-- In `backend/Dockerfile`, fetch git dependencies with `RUN --mount=type=ssh`, and build with `docker build --ssh default` (see the [Rust backend quickstart](../quickstart/rust-backend.md#5-docker)).
+- In `backend/Dockerfile`, fetch public git dependencies over HTTPS with `RUN cargo build --release --locked`, and build with `docker build` (see the [Rust backend quickstart](../quickstart/rust-backend.md#5-docker)).
 - New settings, next to `ICEROOT_API_BIND`: `ICEROOT_RELAY` (the devnet relay URL with `/api`), `ICEROOT_NETHASH` (the pinned devnet identity) and, for the hosted endpoint, the access token.
 
 ### 2. Replace the fixture store with a live cache
