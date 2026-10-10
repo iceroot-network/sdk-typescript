@@ -1,6 +1,6 @@
 # Installation
 
-The SDK is released on GitHub first. Each release of this repository is a git tag (`v0.1.0`, `v0.2.0`, ...) with these assets attached:
+The first release will be on GitHub. No release is available yet. Each release will have a git tag (`v0.1.0`, `v0.2.0`, ...) with these assets attached:
 
 | Asset | What it is |
 |---|---|
@@ -15,7 +15,7 @@ Nothing is published to the npm registry or to crates.io yet. Installing needs n
 
 Requirements: Node.js 22 or later for tooling and Node use; TypeScript 5.7 or later (7.0 works) if you type check. The package has no runtime npm dependencies.
 
-Install a release by its tarball URL:
+No release is available yet. Build from source as described in [Development](development.md#building-from-source). The following installation samples remain pending until the first release. Then install by its tarball URL:
 
 <!-- sample: pending; needs: release-tarball -->
 ```sh
@@ -70,7 +70,7 @@ Replace the version in both places of the URL and run `npm install` again. Read 
 | `@iceroot-network/sdk/wasm` | The `.wasm` file of the web build, for hosts that serve it from their own location and pass its URL to `init` |
 | `@iceroot-network/sdk/tauri` | The same interface backed by the native Tauri plugin, `tauri-plugin-iceroot` of sdk-rust, for Tauri apps: keys, signing, the keystore and node requests in Rust; the calls that compute return promises. `@iceroot-network/sdk/tauri/vote`, `/tauri/keystore` and `/tauri/ownership` are its vote library, keystore and ownership proofs ([Tauri quickstart](quickstart/tauri.md)) |
 
-Files in the tarball, for tools that copy them into an app (the browser wallet does):
+Files in the tarball, for tools that copy them into an app (some wallets do):
 
 <!-- sample: verified 0.1.0 -->
 ```text
@@ -88,7 +88,7 @@ How each environment loads the module, and the settings it needs, is in its quic
 
 ## Rust
 
-The explorer and portal backends use the Rust SDK directly. It is a git dependency on a tag of [sdk-rust](https://github.com/iceroot-network/sdk-rust):
+Rust backends use the Rust SDK directly. It is a git dependency on a tag of [sdk-rust](https://github.com/iceroot-network/sdk-rust):
 
 <!-- sample: pending; needs: rust-release-tag -->
 ```toml

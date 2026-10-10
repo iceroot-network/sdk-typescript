@@ -2,7 +2,7 @@
 
 Next.js 15 apps use the SDK in two places: server code (route handlers and server components) with the Node build, and client components with the web build. This page builds a validators page read on the server, an address search box checked in the browser, and a wallet sign-in verified on the server.
 
-The IceRoot explorer and validators portal have Rust backends that read the network. In those apps the Next.js side needs no SDK for reads: the backend uses the [Rust SDK](rust-backend.md) and Next.js keeps proxying `/api/v1/*`. Use this page for what runs in Next.js itself: client-side checks, and server routes where there is no Rust backend.
+An application can use a Rust backend to read the network. In that setup the Next.js side needs no SDK for reads: the backend uses the [Rust SDK](rust-backend.md) and Next.js keeps proxying `/api/v1/*`. Use this page for what runs in Next.js itself: client-side checks, and server routes where there is no Rust backend.
 
 Requirements: Node.js 22 or later, Next.js 15 with the App Router, and a devnet (see [Devnet](../devnet.md)).
 
@@ -118,7 +118,7 @@ export function Search({ onSearch }: { onSearch: (kind: "address" | "height" | "
 
 ## 5. Wallet sign-in verified on the server
 
-The browser wallet's provider, `window.iceroot`, offers `connect` and `signMessage`. The server builds a single-use challenge with `SignIn.build` and verifies the signature with `Messages.verify`. The wallet signs the challenge with `SignIn.sign`, which checks the requesting page's origin and the account; `Messages.sign` refuses sign-in text with `InvalidArgument`, including a lapsed challenge or another network's. The page needs no SDK for this; only the server does. Route files may export only handlers, so the helpers live in `lib/signin.server.ts`.
+This example assumes a wallet provider at `window.iceroot` that offers `connect` and `signMessage`. The server builds a single-use challenge with `SignIn.build` and verifies the signature with `Messages.verify`. The wallet signs the challenge with `SignIn.sign`, which checks the requesting page's origin and the account; `Messages.sign` refuses sign-in text with `InvalidArgument`, including a lapsed challenge or another network's. The page needs no SDK for this; only the server does. Route files may export only handlers, so the helpers live in `lib/signin.server.ts`.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -174,7 +174,7 @@ export async function POST(request: Request) {
 }
 ```
 
-The page side is the provider call the portal already makes:
+The page side is the provider call:
 
 <!-- sample: plain -->
 ```ts
@@ -187,7 +187,7 @@ const proof = await window.iceroot.request({
 await post("/api/auth/verify", { challengeId: challenge.challengeId, signature: proof.signature });
 ```
 
-Keep what the portal's server already does around the check: bind the challenge to the browser, store the exact message, consume it once, expire it after five minutes, and rate-limit.
+Keep the usual protections around the check: bind the challenge to the browser, store the exact message, consume it once, expire it after five minutes, and rate-limit.
 
 ## 6. Check it
 

@@ -1,6 +1,6 @@
 # Devnet
 
-Apps are wired against a development network (devnet). There is no public testnet or mainnet yet, and the SDK has no profile for either until their geneses are fixed. The first public testnet opens once finality is live.
+Develop against a devnet. See the public [run-a-node guide](https://docs.iceroot.com/network/run-a-node/) for network setup. This SDK currently provides only a devnet profile for classical formats; check the node's formats before connecting.
 
 ## What today's devnet is
 
@@ -44,7 +44,7 @@ curl -fsS http://127.0.0.1:6003/api/blockchain
 
 ## A local devnet
 
-A local devnet runs on the machine that starts it and is the default for development and tests. Start one with the devnet tooling of your environment, with its REST API enabled, and wait until it has produced a few blocks. A one-command recipe that starts a local devnet with funded test accounts is planned for this repository.
+A local devnet runs on the machine that starts it and is the default for tests. Follow the [run-a-node guide](https://docs.iceroot.com/network/run-a-node/) for network setup. For these samples, use a node with classical formats and its REST API enabled, and wait until it has produced a few blocks.
 
 - **Funded accounts.** A new devnet has a few genesis accounts holding the supply, and its generated wallet file lists their passphrases. These are legacy passphrase keys: import one with `net.keys.fromLegacyPassphrase(passphrase)` and fund new accounts from it. Never use a devnet passphrase for anything of value; anyone who knows the devnet's seed can derive it.
 - **Keep chains short.** Stop a test devnet after a few rounds (a round is 53 blocks, about 7 minutes). Long chains make tests slow and gain nothing.
@@ -58,7 +58,7 @@ A local devnet runs on the machine that starts it and is the default for develop
 
 ## The hosted devnet endpoint
 
-Integrators who cannot run a local devnet, and phones, use a hosted devnet endpoint over HTTPS. Android and iOS refuse plain HTTP to a remote host from their own HTTP stacks, so a phone or emulator on the WebAssembly entry needs this endpoint; the Tauri plugin's requests leave from Rust and are not subject to that rule, but a remote devnet is still reached over HTTPS. It needs an access token, sent as a request header; the URL, the header name and the token are handed out with access to the endpoint.
+Integrators who cannot run a local devnet, and phones, use a hosted devnet endpoint over HTTPS. Android and iOS refuse plain HTTP to a remote host from their own HTTP stacks, so a phone or emulator on the WebAssembly entry needs this endpoint; the Tauri plugin's requests leave from Rust and are not subject to that rule, but a remote devnet is still reached over HTTPS. See the [run-a-node guide](https://docs.iceroot.com/network/run-a-node/) for public network information. If your relay requires an access token, pass it as a request header. The sample below illustrates that optional configuration.
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -72,7 +72,7 @@ const net = await connect(
 
 - A Rust backend passes the header in `HttpOptions::headers` and builds its client with `HttpClient::with_options` (see the documentation of `iceroot_sdk::api::HttpOptions`).
 - Never commit the token. Read it from the environment in scripts, and from the app's settings in apps.
-- The endpoint answers CORS preflight requests without the token, so browser pages and webviews can call it directly when their CSP allows the origin.
+- A relay used from a browser must allow CORS preflight requests and the page's origin. The page's CSP must also allow the relay.
 - `connect` checks the headers before it sends anything. A name must be an HTTP token, and a value must be visible ASCII, spaces and tabs. Anything else, such as a token pasted with a line break, throws `InvalidArgument` that names the header and never shows the value. Trim the token when the holder enters it.
 - Both entries send the headers: the WebAssembly entry through its transport, and the Tauri plugin's entry from Rust (its `connect` takes the same `headers`).
 - The token goes to the relays only: neither entry follows a redirect, and a relay that answers with one is skipped. A custom transport must honour `redirect: "manual"` for that to hold.

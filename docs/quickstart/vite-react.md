@@ -1,6 +1,6 @@
 # Quickstart: Vite and React wallet
 
-A small React wallet page: restore an account from a phrase, show its balance and history, send a transfer through a review screen and follow it to a block. The desktop and mobile wallets use the same pattern inside Tauri; see the [Tauri quickstart](tauri.md) for the settings a webview adds.
+A small React wallet page: restore an account from a phrase, show its balance and history, send a transfer through a review screen and follow it to a block. Desktop and mobile applications can use the same pattern inside Tauri; see the [Tauri quickstart](tauri.md) for the settings a webview adds.
 
 Requirements: Node.js 22 or later, and a devnet (see [Devnet](../devnet.md)).
 

@@ -1,6 +1,6 @@
 # Quickstart: Tauri 2 desktop and mobile
 
-Tauri apps (the desktop wallet on Linux and macOS, the mobile wallet on Android and iOS) use the SDK through its native plugin, `tauri-plugin-iceroot`, and the package's Tauri entry, `@iceroot-network/sdk/tauri`. The entry has the same interface as the WebAssembly entry; the plugin runs every call in Rust, outside the webview.
+Tauri apps can use the SDK through its native plugin, `tauri-plugin-iceroot`, and the package's Tauri entry, `@iceroot-network/sdk/tauri`. The entry has the same interface as the WebAssembly entry; the plugin runs every call in Rust, outside the webview.
 
 | | Native plugin (use this) | WebAssembly in the webview |
 |---|---|---|
@@ -170,7 +170,7 @@ export async function unlock(net: Network, keystore: string, password: string, s
 
 - **Relays.** Requests leave from the plugin's own HTTP client, so Android's cleartext rule and iOS App Transport Security, which govern the platform's HTTP stacks, do not stop plain HTTP; use the hosted devnet endpoint over HTTPS anyway for anything beyond a local emulator (see [Devnet](../devnet.md#the-hosted-devnet-endpoint)). The Android emulator reaches the host machine at `10.0.2.2`, the iOS simulator at `127.0.0.1`; allow those relay URLs in the capability.
 - **TLS on Android.** On Android the plugin verifies HTTPS relays against the Mozilla root certificates built into it, not the device's certificate store, since the platform's verifier needs the app's Java environment. A relay with a certificate from a public authority works; one from a private or user-installed authority is refused. The roots are those of the `webpki-root-certs` version in the app's `Cargo.lock`, so a root Mozilla adds or distrusts later reaches the app only with a rebuild: run `cargo update -p webpki-root-certs` in `src-tauri` before each release. No certificate revocation is checked there, so a relay's revoked certificate is accepted until it expires.
-- **Keys.** The plugin is the native boundary the mobile wallet's architecture requires before create and import controls exist. Use the `"mobile"` keystore preset and the platform's secure storage for the keystore text.
+- **Keys.** Use the plugin to keep keys outside the mobile webview. Use the `"mobile"` keystore preset and the platform's secure storage for the keystore text.
 - **Builds.** The plugin builds for Android (`aarch64-linux-android`) with the Android NDK; it has not been run on a device or an emulator yet. An iOS build needs a macOS machine with Xcode.
 
 ## The WebAssembly path
@@ -195,4 +195,4 @@ export async function openNetwork(relay: string, nethash?: string): Promise<Netw
 
 Never pass `globalThis.fetch` or `window.fetch` as the transport. The SDK calls the transport as a method of its own client, so the built-in `fetch` runs with the wrong `this` and Chromium throws `TypeError: Illegal invocation`. Leave the option out, or wrap the call: `(input, init) => fetch(input, init)`.
 
-Keys then live in WebAssembly memory inside the webview. The desktop and mobile wallets are to use the plugin (the desktop wallet runs this path until it registers it): moving from this path changes the imports, adds `await` where the plugin returns promises, and removes `'wasm-unsafe-eval'` and the HTTP plugin if nothing else uses them.
+Keys then live in WebAssembly memory inside the webview. Moving from this path to the native plugin changes the imports, adds `await` where the plugin returns promises, and removes `'wasm-unsafe-eval'` and the HTTP plugin if nothing else uses them.

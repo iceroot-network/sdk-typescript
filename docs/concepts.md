@@ -1,6 +1,6 @@
 # Concepts
 
-The whole API in one page. The quickstarts and integration guides use only what is described here. Names are the TypeScript ones; the Rust crates use the same names in snake case.
+The whole API in one page. The quickstarts use only what is described here. Names are the TypeScript ones; the Rust crates use the same names in snake case.
 
 ## Loading the module
 
@@ -50,6 +50,18 @@ const pinned = net.profile.chain.nethash;   // store this; pass it as `nethash` 
 - **Errors.** No relay answering is `NodeUnavailable`, a request that takes longer than `timeoutMs` is `Timeout`, and a node that keeps refusing for its rate limit is `RateLimited`.
 - **Built-in profiles.** Release 0.1.0 has `profiles.devnet(options)` only. The first public testnet opens once finality is live. Profiles for the public testnet and mainnet are added in the releases made when those chains' geneses are fixed; until then they do not exist, so no app can point at a guessed identity. Show them in a network selector as not yet available.
 
+### Format stages
+
+`net.stage` describes the transaction and address formats in force on the chain:
+
+| Value | Meaning |
+|---|---|
+| `s1` | Today's classical, Solar-compatible formats. |
+| `pq` | Post-quantum formats. |
+| `id` | IceRoot formats, with Bech32m address prefixes and chain and genesis identifiers. |
+
+The type includes all three values. This package currently supports only the classical devnet formats. A stage name does not mean the package supports that stage.
+
 ### What `net` tells you about the network
 
 <!-- sample: verified 0.1.0 -->
@@ -77,7 +89,7 @@ net.rules.transfer.maxRecipients;      // 256
 net.rules.memo.maxBytes;               // 255 (UTF-8 bytes, not characters)
 ```
 
-`net.economics` serves displays and estimates, such as the portal's rewards calculator; nothing in it is signed:
+`net.economics` serves displays and estimates, such as a rewards calculator; nothing in it is signed:
 
 <!-- sample: verified 0.1.0 -->
 ```ts
@@ -131,7 +143,7 @@ const legacy = net.keys.fromLegacyPassphrase(text);       // devnet profiles onl
 - **New accounts** always come from a 24-word phrase. Import accepts 18, 21 or 24 words; fewer are refused with `PhraseTooShort`.
 - **Derivation** is hardened only. On today's devnet the key is secp256k1 at `m/44'/1'/account'/0'/index'`. From the post-quantum formats the same phrase derives ML-DSA-65 keys through a different master key, so the same phrase gives unrelated classical and post-quantum keys. Apps keep one shape on every network: an account number and an address index.
 - **Coin type** `1'` is used on devnets and the public testnet. Mainnet will use IceRoot's registered coin type, so one phrase never gives the same keys on a test network and on mainnet.
-- **Legacy passphrase keys.** The devnet's funded test accounts and the browser wallet's existing devnet identities use the reference implementation's passphrase key (the SHA-256 of the text). `net.keys.fromLegacyPassphrase(text)` imports them, on devnet profiles only; the result has `legacy: true`. Offer it as an import, never as a way to create an account. It disappears with the devnet formats.
+- **Legacy passphrase keys.** The devnet's funded test accounts and existing devnet identities use the reference implementation's passphrase key (the SHA-256 of the text). `net.keys.fromLegacyPassphrase(text)` imports them, on devnet profiles only; the result has `legacy: true`. Offer it as an import, never as a way to create an account. It disappears with the devnet formats.
 - **Reopening a wallet.** Store the address, and the public key, when the wallet is created. Whenever the wallet is opened again, compare the derived `account.address` with the stored address, and release the key and refuse when they differ. A wrong account or index, another wallet's phrase and a changed scheme each give a valid key of an address the holder never saw.
 - **Secrets stay in WebAssembly memory.** JavaScript sees public keys, addresses and signatures only. A phrase is a string when it is typed, but the SDK also accepts it as a `Uint8Array`, which you can overwrite after use. Call `release()` as soon as signing is done.
 
@@ -283,7 +295,7 @@ type ValidatorInfo = {
 
 Times are `{ chain, unix }`: seconds since the chain's epoch and since the Unix epoch. Show a time with `new Date(Number(time.unix) * 1000)`.
 
-Profile texts of validators (tagline, website, location) are not chain data. The SDK does not fetch them; they come from the validators portal.
+Profile texts of validators (tagline, website, location) are not chain data. The SDK does not fetch them; they come from a directory service.
 
 ### Limits of today's devnet API
 
@@ -364,7 +376,7 @@ await net.submit(signedTx);
 
 The summary comes from the transaction's own bytes: the operation, the recipients and amounts, the nonce, the fee and the memo are exactly what will be signed. With a profile, as above, the fee floor and the token symbol in the review lines come from the network configuration that travels with the draft; the pinned network hash identifies the chain but does not cover that configuration, so whoever built the draft chose its fee table. A fee that the bytes call the floor and that equals that floor reads `unverified`, never `floor`, and `draft.summary.fee.floor` is then for display only: show the fee as an amount, and never call it "the network minimum". A signing context that is connected itself passes its network instead, `Draft.deserialize(bytes, net)`: the draft is then read on the chain that connection loaded at the network's next block (`net.nextHeight`), and a draft built under another network configuration (another fee table, say) is refused with `NetworkMismatch` (`details.reason`: `"configuration"`). The floor is computed at the draft's height (`summary.height`), which the builder chose, so a fee at that floor reads `floor` only when the floor at the network's next block is the same; when a milestone between the two heights changes the fee table, it reads `unverified`, with the floor of the draft's height kept for display. Only the network `connect` returned counts: a profile or a `Chain` gives `unverified`. The symbol cannot change what a line says: a configuration whose symbol is not 1 to 10 ASCII letters and digits does not load (`BadResponse`), and the review lines escape every space but the ASCII space, every run of two or more ASCII spaces and every invisible character, so no text hides in blank space. A line can still be long, as long as the memo the network allows (`rules.memo.maxBytes`): show each line of the summary as one line, unwrapped or cut with a visible mark and the whole line on request, or wrap it with the continuation indented. Wrapped flush left, the end of a long memo can look like a line of its own, such as another `Send` line.
 
-Approval and signing are usually two calls of the signing context. In the second call, deserialize the bytes again and compare the recomputed summary with the one the holder approved (the network, sender, nonce, every line, the fee and the total), and refuse to sign when they differ. Then release the key. `reviewDraft` and `signDraft` in the desktop wallet's `src/session.ts` do this.
+Approval and signing are usually two calls of the signing context. In the second call, deserialize the bytes again and compare the recomputed summary with the one the holder approved (the network, sender, nonce, every line, the fee and the total), and refuse to sign when they differ. Then release the key.
 
 ## Messages and sign-in
 
@@ -396,7 +408,7 @@ const signedIn = SignIn.sign(account, message, { origin: senderOrigin, now: new 
 const challenge = SignIn.build({ origin, publicKey, nonce, issuedAt, expiresAt }, net);   // the network and address come from the profile and the key
 ```
 
-- On today's devnet a message signature is BIP340 over the SHA-256 of the exact UTF-8 message, which is the format the browser wallet and the validators portal already use. The SDK always hashes first, so a message of exactly 32 bytes is handled like any other.
+- On today's devnet a message signature is BIP340 over the SHA-256 of the exact UTF-8 message, which is the format existing sign-in services already use. The SDK always hashes first, so a message of exactly 32 bytes is handled like any other.
 - In today's format a transaction is signed the same way, over the SHA-256 of its unsigned bytes, so a message signature over those bytes would be a valid signature of the transaction. Every transaction begins with the byte 0xff, which UTF-8 text never contains, so a message is signed only as text: `Messages.sign` refuses a message given as bytes that are not UTF-8 text with `InvalidArgument`, and `Messages.verify` returns false for one, as the Rust SDK does. From the post-quantum formats on, a message signature carries a signing domain of its own.
 - An ownership proof of a Solar address ([Ownership proofs](ownership.md)) is signed the same way too, and an account imported with `Keys.fromLegacyPassphrase` from a Solar passphrase has the Solar key itself. So `Messages.sign` also refuses text whose first line is a proof's, `IceRoot migration ownership proof`, with `InvalidArgument`: a proof is made only by `OwnershipProof.sign`, or by `OwnershipProof.fromSignature` for a key held elsewhere. A message signature's `network` label cannot bind a proof to IceRoot either, because the signature does not cover it.
 - `messageNetworkOf` and `messageAlgorithmOf` give the identifiers of a profile's message format without signing anything. A wallet's `connect` answer and a server's challenge use them.
@@ -439,3 +451,76 @@ try {
 ## Names these pages depend on
 
 Every SDK name a sample uses is listed in the sample's `needs`. `node scripts/check-docs.mjs --needs` prints the full list with the pages that use each name, which is the list to check against the generated API reference of a release.
+
+## Additional usage examples
+
+Every key, address, amount, draft and signature comes from the SDK's Rust core ([sdk-rust](https://github.com/iceroot-network/sdk-rust)), which builds on Heartwood Core's byte-exact `heartwood-crypto`, compiled to WebAssembly. Secret keys stay in WebAssembly memory: an `Account` exposes its public key and address, signs through the module, and `release()` wipes the key. The node API client is the same Rust code: it builds each request and decodes each answer, and the package sends them with `fetch` or the transport you pass to `connect`.
+
+<!-- sample: verified 0.1.0 -->
+```ts
+import { connect, profiles, Amount, balanceOf } from "@iceroot-network/sdk";
+
+const net = await connect(profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] }));
+const info = await net.accounts.get(address);   // typed records; amounts are bigint base units
+Amount.format(balanceOf(info), net.token.decimals);
+
+const draft = await net.build.transfer({ from: account, to: [{ address: recipient, amount: 150_000_000n }] });   // the fee is the exact floor
+const signed = draft.sign(account);
+const outcome = await net.submit(signed);        // { id, status: "accepted", broadcast } or { id, status: "rejected", reason, nodeCode, message }
+if (outcome.status === "accepted") await net.transactions.wait(signed.id);   // polls until the transaction is in a block
+```
+
+Offline, supply `configuration` as the `data` object returned by your node's `/api/node/configuration/crypto` endpoint. Supply `recipient` as a valid address on that chain:
+
+<!-- sample: verified 0.1.0 -->
+```ts
+import { init, Address, Amount, Chain, Draft, Keys, Messages, Mnemonic, profiles } from "@iceroot-network/sdk";
+
+await init(); // once, before anything else; the Node build needs no call
+
+// The chain a node serves: the data object of its /node/configuration/crypto.
+const chain = Chain.load(profiles.devnet({ relays: ["http://127.0.0.1:4003/api"] }), configuration);
+const profile = chain.profile; // keep it: the network hash is pinned from now on
+
+const phrase = Mnemonic.generate(); // 24 words
+const account = Keys.fromPhrase(phrase, profile, { account: 0, index: 0 });
+account.address; // "d..." on network byte 90
+
+// Facts only the node knows: the sender's next nonce and the next block's height.
+const draft = Draft.build(
+  chain,
+  {
+    operation: { kind: "transfer", to: [{ address: Address.parse(recipient, profile), amount: Amount.parse("1.5", chain.token.decimals) }] },
+    memo: "invoice 42",
+    // No fee given: "minimum", the exact fee floor of the milestone in force.
+  },
+  { sender: account, nonce: 1n, height: 2 },
+);
+draft.summary.lines; // what the review screen shows, the fee included
+const signed = draft.sign(account);
+signed.id; // and signed.json for the node
+
+const signature = Messages.sign(account, "hello");
+Messages.verify({ ...signature, message: "hello" }, profile); // true
+account.release();
+```
+
+`Messages.sign`, on both the WebAssembly and Tauri entries, refuses any text the sign-in parser accepts for some network, origin, account and time, including a lapsed challenge or another network's, with `InvalidArgument`. A wallet signs a website's challenge with `SignIn.sign`, which checks the asking page's origin and the signing account before signing.
+
+A draft can also be built where the network is and signed where the key is: `Draft.deserialize(draft.serialize(), profile)` in the signing context (for example a Manifest V3 sandbox page with no network), then `SignedTransaction.deserialize(signed.serialize(), profile)` on the way back. Both refuse data of another network. With a profile alone, the fee floor comes from the network configuration the draft carries, which the pinned network hash does not cover, so a fee at it reads `unverified` rather than `floor`: show it as an amount, never as the network minimum. A context that is connected passes its network, `Draft.deserialize(bytes, net)`, to read the draft on the chain its connection loaded, at the network's next block: the fee is then called the floor when it is the floor at the draft's height and the floor at the network's next block is the same, `unverified` when a change of the fee table lies between the two heights (the draft's height is the builder's choice), and a draft built under another network configuration is refused with `NetworkMismatch`.
+
+Every error is an `IceRootError` with a stable `code` shared with the Rust core (for example `InvalidAddress` with a `reason` of `checksum`, `length`, `wrong-network` or `format`, or `InvalidVote` with the rule it breaks). A call before initialization throws `SdkNotInitialized`; a module that cannot be loaded, for example under a content security policy without `'wasm-unsafe-eval'`, rejects with `WasmLoadFailed`.
+
+
+## Account links and revocations
+
+`Link` builds, inspects, signs and verifies exact account-link text without network access. A `LinkRequest` carries `githubId`, `publicKey` and `issuedAt`; dates are reduced to whole seconds. A revocation also names the issue time of the link it ends in `endsLinkIssuedAt`.
+
+- `Link.build` builds a nine-line link message. `Link.buildRevocation` builds a ten-line revocation message.
+- `Link.parse` checks exact text at the reader's clock and returns checked fields, including canonical UTC text and milliseconds. Optional expectations describe fields the reader already knows.
+- `Link.sign` checks the message against the account, network and signer clock before signing.
+- `Link.verify` checks the signature and fields. Pass raw JSON to preserve duplicate-member detection.
+- `Link.fromJson` reads exactly five text members, each once. It does not verify the signature. `Link.toJson` writes the canonical member order and escaping byte-identically to Rust.
+- `Link.checkHistory` applies the no-replay rule to previously verified events of the identity and network. Omit the record being checked again from that history.
+
+`InvalidLink.reason` identifies the check that refused a link and also appears in `details.reason`.

@@ -1,6 +1,6 @@
 # Quickstart: Manifest V3 extension
 
-A Chromium extension with the three contexts the browser wallet has:
+A Chromium extension with three isolated contexts:
 
 - a **wallet page** (an extension page) that talks to the network and builds drafts;
 - a **sandbox page** that holds a key only while it signs, and has no network access at all (`connect-src 'none'`);
@@ -261,7 +261,7 @@ Replace `http://127.0.0.1:6003` with your devnet's origin.
 })();
 ```
 
-In a real wallet the phrase comes from an encrypted vault that the trusted page unlocks, and it is passed to the sandbox per operation, as the browser wallet does today. The address and public key are stored with the account when it is created, so the wallet page builds from the saved public key and never asks the sandbox for them again. Every later `sign` passes the saved address, and the sandbox refuses a phrase that gives another. Chain text that a real wallet shows (memos, names) must be escaped first; see the [browser wallet guide](../apps/browser-wallet.md#6-the-live-devnet-wallet). The [browser wallet guide](../apps/browser-wallet.md#4-the-sandbox) builds this out.
+In a real wallet the phrase comes from an encrypted vault that the trusted page unlocks, and it is passed to the sandbox per operation. The address and public key are stored with the account when it is created, so the wallet page builds from the saved public key and never asks the sandbox for them again. Every later `sign` passes the saved address, and the sandbox refuses a phrase that gives another. Chain text that a real wallet shows (memos, names) must be escaped first; see [Rules](../rules.md).
 
 ## 6. Service worker: the sign-in check
 

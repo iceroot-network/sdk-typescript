@@ -1,16 +1,16 @@
 # IceRoot SDK documentation
 
-These pages explain how to use the IceRoot SDK for TypeScript and JavaScript, and how to replace the sample data of the five IceRoot apps (explorer, validators portal, desktop wallet, mobile wallet and browser wallet) with SDK calls. They are written so that a developer can wire an app from these pages alone, without guessing.
+These pages explain how to use the SDK in wallets, explorers and services.
 
-The SDK is one Rust core with two front ends: this package, which is the core compiled to WebAssembly with a thin TypeScript wrapper, and the Rust crates in [sdk-rust](https://github.com/iceroot-network/sdk-rust), which the explorer and portal backends use natively. Both use the same types and rules, and the records the node API returns have the same fields (snake case in Rust). In Rust the node API client is sans-IO: it builds each request and decodes each answer, and its HTTP transport sends them; the [Rust backend quickstart](quickstart/rust-backend.md) shows the few lines that `connect` does in TypeScript.
+This package compiles the Rust core to WebAssembly with a typed wrapper. [sdk-rust](https://github.com/iceroot-network/sdk-rust) provides the native Rust interface. Both share types and rules. The [Rust backend quickstart](quickstart/rust-backend.md) shows native network access.
 
 ## Status of these pages
 
-Every code sample carries a status marker (see [Sample status](#sample-status)). The samples marked `verified 0.1.0` were checked against the build of release 0.1.0: each was type-checked against the package's declarations (the Rust samples compiled against the crates), and the quickstarts are assembled from their samples and run against a local devnet by the package's end-to-end test. `npm run check:samples` type-checks every TypeScript sample marked verified again on each build, so a change to the package that breaks one fails the checks. The samples still marked `pending` install the release itself from its GitHub URL, which exists only once the release is published.
+The package is pre-release and supports today's classical devnet formats. Samples keep their verification markers (see [Sample status](#sample-status)). `verified 0.1.0` names the package version used for checking, not a published release. `npm run check:samples` checks verified TypeScript samples against the build. Release installation samples remain pending until the first release.
 
 ## Reading order
 
-1. [Installation](installation.md): get the package from a GitHub release.
+1. [Installation](installation.md): build today or prepare for a GitHub release.
 2. [Concepts](concepts.md): the API in one page, from loading the module to errors.
 3. [Vote selection](vote.md) and the [keystore](keystore.md), for wallets; [ownership proofs](ownership.md) of Solar addresses, for the Legacy Signer and the services that check its proofs.
 4. [Rules apps must never get wrong](rules.md): the checklist every app follows.
@@ -22,18 +22,9 @@ Every code sample carries a status marker (see [Sample status](#sample-status)).
    - [Manifest V3 extension](quickstart/mv3-extension.md)
    - [Tauri 2 desktop and mobile](quickstart/tauri.md)
    - [Rust backend (Axum)](quickstart/rust-backend.md)
-7. The integration guide for your app:
-   - [Explorer](apps/explorer.md)
-   - [Validators portal](apps/validators.md)
-   - [Desktop wallet](apps/desktop-wallet.md), and [step by step from sample data to the SDK](apps/desktop-wallet-steps.md)
-   - [Mobile wallet](apps/mobile-wallet.md)
-   - [Browser wallet](apps/browser-wallet.md)
-
-Each integration guide lists what can be wired with release 0.1.0 and what waits for a later release, so that no app builds a temporary replacement it must remove again.
-
 The [example wallet](../examples/vite-react-wallet/README.md) (Vite and React) puts the pieces together against a devnet: create and restore, a keystore, balance and history, transfers, votes in the four modes with every pick's reasons and a later check, and sign-in. The [Tauri example](../examples/tauri-plugin/README.md) is a Tauri app on the native plugin.
 
-## What release 0.1.0 covers
+## What version 0.1.0 covers
 
 | Area | 0.1.0 | Later |
 |---|---|---|
@@ -50,6 +41,8 @@ The [example wallet](../examples/vite-react-wallet/README.md) (Vite and React) p
 | Vote selection library (Diversity, Reliability, Maximum Rewards, Support Newcomers), `check`, manual votes | Yes, on the node's validator list | Windowed figures, declarations and payouts from an indexer |
 | Keystore format: a recovery phrase encrypted under a password, and accounts opened straight from it | Yes, in WebAssembly and natively in the Tauri plugin | The post-quantum key seed as a payload |
 | Ownership proofs of Solar addresses (version 1, the Legacy Signer's format) | Yes | A separate legacy package once IceRoot's own formats replace today's |
+
+See [Development](development.md) for build, test and release instructions.
 
 ## Sample status
 
