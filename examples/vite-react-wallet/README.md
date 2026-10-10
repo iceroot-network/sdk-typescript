@@ -1,6 +1,6 @@
 # Example wallet: Vite and React
 
-A small wallet for today's devnet, built on the IceRoot SDK. It is the worked example of the [vote library](../../docs/vote.md) and the [keystore](../../docs/keystore.md), and of the [step-by-step guide](../../docs/apps/desktop-wallet-steps.md) that moves the desktop wallet from sample data to the SDK. Devnet tokens have no value.
+A small wallet for today's devnet, built on the IceRoot SDK. It is the worked example of the [vote library](../../docs/vote.md) and the [keystore](../../docs/keystore.md). Devnet tokens have no value.
 
 What it does, and where:
 
@@ -14,7 +14,7 @@ What it does, and where:
 | Vote | A selection in any of the four modes (Diversity, Reliability, Maximum Rewards, Support Newcomers), a review screen with every pick's reasons and the notice of a mode that topped up from Diversity, "Draw again", the vote signed as reviewed, and a check of the kept selection that reports picks that no longer meet their criteria, such as a validator that resigned | `src/Vote.tsx` |
 | Sign in | A website's sign-in message checked for the website's origin, this account, the network and the times, then signed | `src/SignIn.tsx` |
 
-The key lives in WebAssembly memory while the wallet is unlocked and is wiped on lock. The browser keeps only the keystore, the account's address, the network's pinned identity and the last vote selection. A wallet app keeps its keystore where its platform keeps secrets best; the desktop and mobile wallets will run the same keystore format natively with the Tauri plugin.
+The key lives in WebAssembly memory while the wallet is unlocked and is wiped on lock. The browser keeps only the keystore, the account's address, the network's pinned identity and the last vote selection. A wallet app keeps its keystore where its platform keeps secrets best; Tauri applications can run the same keystore format natively with the SDK plugin.
 
 Two habits to copy. A draft is built from the account's public key, so building needs no open key, and the key is used only when the holder confirms. Text that comes from the chain, such as a memo or a validator's name, goes through `safeText` in `src/format.ts` before it is shown.
 

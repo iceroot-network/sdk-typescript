@@ -14,7 +14,7 @@ import { signableMessage, verifiableMessage } from "./internal/hex.js";
 import { profileHandleOf, type ProfileSource } from "./profiles.js";
 import type { Hex, MessageAlgorithm } from "./types.js";
 
-/** A signed message, in the shape the wallets and the validator portal exchange. */
+/** A signed message, in the shape that wallets and sign-in services exchange. */
 export interface MessageSignature {
   /** The signer's public key, as lowercase hex. */
   readonly publicKey: Hex;

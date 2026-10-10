@@ -1,8 +1,8 @@
 // Independent cross-checks on 1,000 phrases each, against the @noble and @scure libraries (the
-// ones the browser wallet uses today, and the reference implementation's own @scure/bip32):
+// ones an existing wallet implementation uses, and the reference implementation's own @scure/bip32):
 //
 // - legacy passphrase keys: 1,000 random 12-word phrases, as the devnet's genesis wallets and the
-//   browser wallet's existing identities are; the SDK and @noble must agree on the key, the
+//   existing wallet implementation's identities are; the SDK and @noble must agree on the key, the
 //   address and the message signature, byte for byte with the same auxiliary bytes, and each must
 //   verify the other's signatures;
 // - hardened derivation: 1,000 random phrases of 18, 21 and 24 words, with and without a BIP39

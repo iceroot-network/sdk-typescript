@@ -1,5 +1,5 @@
 // The native vectors against an independent implementation: the @noble and @scure libraries, which
-// the browser wallet uses today. Keys, addresses and signatures must agree byte for byte.
+// an existing wallet implementation uses. Keys, addresses and signatures must agree byte for byte.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

@@ -1,4 +1,4 @@
-// Signing in to a website, such as the validators portal, with a signed message. The website shows
+// Signing in to a website with a signed message. The website shows
 // a sign-in message; the wallet checks it with the SDK (the website's origin, this account, the
 // network and the times) before it offers to sign, and signs nothing else: a website never gets a
 // transaction signed.
