@@ -1,0 +1,255 @@
+name: SDK checks
+
+on:
+  pull_request:
+    branches: [dev, prod]
+  push:
+    branches: [prod]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-typescript-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  production-merge:
+    permissions:
+      contents: read
+      pull-requests: read
+    if: github.event_name == 'push' && github.event.created == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Require the merged dev to prod pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            count=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls?per_page=100" --jq '[.[] | select(.merged_at != null and .merge_commit_sha == env.GITHUB_SHA and .base.ref == "prod" and .head.ref == "dev" and .base.repo.full_name == env.GITHUB_REPOSITORY and .head.repo.full_name == env.GITHUB_REPOSITORY)] | length')
+            if [ "$count" -gt 0 ]; then exit 0; fi
+            sleep 2
+          done
+          echo "::error::Production CI requires this exact commit to be a merged dev to prod PR in this repository."
+          exit 1
+
+  checks:
+    needs: production-merge
+    # Pull requests run without the production gate; pushes to prod only after it.
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.production-merge.result == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      # libsecp256k1 is C: the WebAssembly build compiles it with clang.
+      CC_wasm32_unknown_unknown: clang-18
+      AR_wasm32_unknown_unknown: llvm-ar-18
+    defaults:
+      run:
+        working-directory: sdk-typescript
+    steps:
+      # The bindings build on sdk-rust next to this repository (wasm/Cargo.toml), from the branch
+      # this change targets.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: sdk-typescript
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: iceroot-network/sdk-rust
+          ref: ${{ github.base_ref || github.ref_name }}
+          path: sdk-rust
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: '1.98.0'
+          components: rustfmt,clippy
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.21.1'
+          cache: npm
+          cache-dependency-path: sdk-typescript/package-lock.json
+      - name: Install clang and llvm-ar for the WebAssembly build
+        run: |
+          command -v clang-18 >/dev/null && command -v llvm-ar-18 >/dev/null ||
+            (sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-18 llvm-18)
+      # Keep the existing cache save policy.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: sdk-typescript/wasm -> target
+          save-if: ${{ github.event_name == 'pull_request' }}
+      - name: Install the wasm-bindgen CLI at the version of wasm/Cargo.lock
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p}' wasm/Cargo.lock)
+          test -n "$version"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+      - run: npm ci --no-audit --no-fund
+      - name: Install Chromium for the browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Rust formatting, lints and documentation of the bindings
+        run: npm run check:rust
+      - name: Bindings unit tests
+        run: npm run test:rust
+      - name: Build the package
+        run: npm run build
+      - name: Build the test variant
+        run: npm run build:test
+      - name: Documentation, types, size budget, vectors and NOTICE
+        run: npm run check
+      - name: Node tests
+        run: npm run test:node
+      - name: Browser tests (Chromium, Vite and React, Manifest V3)
+        run: npm run test:browser
+      - name: Type-check and build the example wallet
+        run: npm run example:build
+      - name: Pack the release tarball
+        run: npm run pack
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package
+          path: sdk-typescript/build/pack/
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: browser-traces
+          path: sdk-typescript/test-results/
+          retention-days: 7
+
+  # The browser tests of a page and of a Vite and React app in Playwright's WebKit on macOS. The
+  # Manifest V3 extension needs Chromium and stays in the checks job.
+  macos-webkit:
+    needs: production-merge
+    # Pull requests run without the production gate; pushes to prod only after it.
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.production-merge.result == 'success') }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: sdk-typescript
+    steps:
+      # The bindings build on sdk-rust next to this repository (wasm/Cargo.toml), from the branch
+      # this change targets.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: sdk-typescript
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: iceroot-network/sdk-rust
+          ref: ${{ github.base_ref || github.ref_name }}
+          path: sdk-rust
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: '1.98.0'
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.21.1'
+          cache: npm
+          cache-dependency-path: sdk-typescript/package-lock.json
+      # libsecp256k1 is C, and Apple's clang has no wasm32 target: the build uses Homebrew's LLVM 18,
+      # the version the Linux jobs use, installed if the runner image lacks it.
+      - name: Select clang and llvm-ar for the WebAssembly build
+        run: |
+          set -euo pipefail
+          llvm_prefix=$(brew --prefix llvm@18)
+          if [ ! -x "$llvm_prefix/bin/clang" ] || [ ! -x "$llvm_prefix/bin/llvm-ar" ]; then
+            brew install llvm@18
+          fi
+          test -x "$llvm_prefix/bin/clang"
+          test -x "$llvm_prefix/bin/llvm-ar"
+          echo "CC_wasm32_unknown_unknown=$llvm_prefix/bin/clang" >>"$GITHUB_ENV"
+          echo "AR_wasm32_unknown_unknown=$llvm_prefix/bin/llvm-ar" >>"$GITHUB_ENV"
+      # Keep the existing cache save policy.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: sdk-typescript/wasm -> target
+          save-if: ${{ github.event_name == 'pull_request' }}
+      - name: Install the wasm-bindgen CLI at the version of wasm/Cargo.lock
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' wasm/Cargo.lock)
+          test -n "$version"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+      - run: npm ci --no-audit --no-fund
+      - name: Install WebKit for the browser tests
+        run: npx playwright install webkit
+      - name: Build the package and the test variant
+        run: npm run build && npm run build:test
+      - name: Browser tests (WebKit, Vite and React)
+        run: npm run test:webkit
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: webkit-test-results
+          path: sdk-typescript/test-results/
+          retention-days: 7
+
+  # A Tauri 2 webview (WebKitGTK) under tauri-driver, in a container: the WebAssembly build in the
+  # webview, then the native plugin. The plugin check builds the example application three times
+  # (its own page, the published build, the test build) from a target directory no cache keeps,
+  # hence the longer limit.
+  tauri:
+    needs: production-merge
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.production-merge.result == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CC_wasm32_unknown_unknown: clang-18
+      AR_wasm32_unknown_unknown: llvm-ar-18
+    defaults:
+      run:
+        working-directory: sdk-typescript
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: sdk-typescript
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: iceroot-network/sdk-rust
+          ref: ${{ github.base_ref || github.ref_name }}
+          path: sdk-rust
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: '1.98.0'
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.21.1'
+          cache: npm
+          cache-dependency-path: sdk-typescript/package-lock.json
+      - name: Install clang and llvm-ar for the WebAssembly build
+        run: |
+          command -v clang-18 >/dev/null && command -v llvm-ar-18 >/dev/null ||
+            (sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-18 llvm-18)
+      # Keep the existing cache save policy.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: sdk-typescript/wasm -> target
+          save-if: ${{ github.event_name == 'pull_request' }}
+      - name: Install the wasm-bindgen CLI at the version of wasm/Cargo.lock
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p}' wasm/Cargo.lock)
+          test -n "$version"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+      - run: npm ci --no-audit --no-fund
+      - name: Build the package and the test variant
+        run: npm run build && npm run build:test
+      - name: Tauri webview tests
+        run: npm run test:tauri
+      # The SDK's test suites and vectors through the native plugin (sdk-rust's
+      # tauri-plugin-iceroot) in the Tauri example, under tauri-driver in the same container.
+      - name: Tauri plugin tests
+        run: npm run test:tauri-plugin

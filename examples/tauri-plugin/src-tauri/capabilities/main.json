@@ -1,0 +1,12 @@
+{
+  "identifier": "main",
+  "description": "The page may call the IceRoot SDK's plugin, and the plugin may reach the devnet relay.",
+  "windows": ["main"],
+  "permissions": [
+    "iceroot:default",
+    {
+      "identifier": "iceroot:allow-net-connect",
+      "allow": [{ "url": "http://127.0.0.1:6003/api" }]
+    }
+  ]
+}

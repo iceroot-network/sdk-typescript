@@ -1,0 +1,23 @@
+[package]
+name = "iceroot-sdk-tauri-check"
+description = "Loads the IceRoot SDK's browser build in a Tauri 2 webview"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+publish = false
+
+# A standalone application, not part of another workspace.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.6", features = [] }
+# The HTTP plugin, whose fetch the page passes to the SDK as its transport: requests leave from
+# Rust, outside the webview's content security policy.
+tauri-plugin-http = "2.8.0"
+
+[lints.rust]
+unsafe_code = "forbid"

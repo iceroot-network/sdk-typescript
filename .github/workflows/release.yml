@@ -1,0 +1,83 @@
+name: SDK release
+
+# A pushed tag vX.Y.Z (on prod, equal to the version in package.json) builds the package from this
+# repository and from sdk-rust at the same tag, runs the checks and tests, and publishes a GitHub
+# release with the package tarball, the WebAssembly module, the embedded-bytes file and SHA256SUMS.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-typescript-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CC_wasm32_unknown_unknown: clang-18
+  AR_wasm32_unknown_unknown: llvm-ar-18
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: sdk-typescript
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: sdk-typescript
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: iceroot-network/sdk-rust
+          ref: ${{ github.ref_name }}
+          path: sdk-rust
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: '1.98.0'
+          components: rustfmt,clippy
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.21.1'
+          cache: npm
+          cache-dependency-path: sdk-typescript/package-lock.json
+      - name: Install clang and llvm-ar for the WebAssembly build
+        run: |
+          command -v clang-18 >/dev/null && command -v llvm-ar-18 >/dev/null ||
+            (sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-18 llvm-18)
+      - name: Install the wasm-bindgen CLI at the version of wasm/Cargo.lock
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p}' wasm/Cargo.lock)
+          test -n "$version"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+      - run: npm ci --no-audit --no-fund
+      - name: Install Chromium for the browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Rust formatting, lints and documentation of the bindings
+        run: npm run check:rust
+      - name: Bindings unit tests
+        run: npm run test:rust
+      - name: Build the package and pack the release assets
+        run: npm run pack
+      - name: Build the test variant
+        run: npm run build:test
+      - name: Documentation, types, size budget, vectors and NOTICE
+        run: npm run check
+      - name: Node tests
+        run: npm run test:node
+      - name: Browser tests (Chromium, Vite and React, Manifest V3)
+        run: npm run test:browser
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release.mjs --tag "$GITHUB_REF_NAME" --no-build --require-on prod

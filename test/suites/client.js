@@ -1,0 +1,1359 @@
+// The node API client against responses recorded from a local devnet: connect and the chain's
+// identity, every read, the transport (relays, headers, timeouts, the request budget, HTTP 429),
+// submission within the pool's limits, waiting for inclusion, builders that read a draft's facts
+// from the node, and watching.
+//
+// The recordings are the node API client's own fixtures in sdk-rust, so the TypeScript client and
+// the Rust mappers are tested on the same answers. `env.node(routes, vars)` is a recorded node
+// (test/suites/recorded-node.js): reached through a transport in the process with the WebAssembly
+// entry, and over HTTP from Rust with the Tauri plugin.
+
+const FIXTURES = "rs/crates/iceroot-sdk-api/tests/fixtures/devnet";
+const TWO_RECIPIENTS = "b2abe2cabab608935280c144a15ebea3e4e8348c530a983ffbf6013a13ab54a9";
+const GENESIS_1 = "dZ1W1GsDCSyhR148oMhuHy3PkhnnSGCqVn";
+const TEAM = "daTBxkSJk2tZhujYcYSQtxj5RRFZ8HcxW8";
+const SECOND_KEY = {
+  address: "dDsmrDBibyfMtDreqHVTNix1sixL74Km2P",
+  publicKey: "025e1a3fea8d4763b6898ced2e356047d334f11cf3c799ea22b02848f608c729b1",
+};
+
+const json = (status, body, headers = {}) => ({ status, headers, body: JSON.stringify(body) });
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export default function suite(test, env) {
+  const { sdk, assert } = env;
+  const slow = env.slow ?? 1;
+  let index;
+
+  /** A recorded answer with its request, when the recording has one. */
+  async function fixture(name) {
+    index ??= JSON.parse(await env.read(`${FIXTURES}/index.json`));
+    const entry = index.find((each) => each.name === name);
+    assert.ok(entry, name);
+    return {
+      status: entry.status,
+      headers: entry.headers ?? {},
+      body: await env.read(`${FIXTURES}/${entry.file}`),
+      request: entry.requestFile ? JSON.parse(await env.read(`${FIXTURES}/${entry.requestFile}`)) : undefined,
+    };
+  }
+
+  const devnet = (relay, options = {}) => sdk.profiles.devnet({ relays: [relay], ...options });
+
+  /** A recorded node with `routes`, and a network connected to it. */
+  async function connected(routes = {}, options = {}, vars = {}) {
+    const node = await env.node(routes, vars);
+    const net = await sdk.connect(devnet(node.relay), { ...node.options, rateLimit: false, ...options });
+    return { net, node };
+  }
+
+  /** The requests of `node` since `from`, each with its query as URLSearchParams. */
+  async function requests(node, from = 0) {
+    return (await node.requests()).slice(from).map((request) => ({ ...request, query: new URLSearchParams(request.query) }));
+  }
+
+  async function last(node) {
+    return (await requests(node)).at(-1);
+  }
+
+  test("connect loads the chain, pins its identity and follows the node's height", async () => {
+    const NETHASH = JSON.parse((await fixture("node-configuration")).body).data.nethash;
+    const { net, node } = await connected();
+    assert.ok(net instanceof sdk.Network);
+    assert.equal(net.profile.chain.nethash, NETHASH);
+    assert.equal(net.chain.nethash, NETHASH);
+    assert.deepEqual(
+      (await requests(node)).map((request) => `${request.method} ${request.path}`),
+      ["GET /node/configuration/crypto", "GET /node/configuration", "GET /node/status"],
+    );
+    assert.equal(net.height, 80n);
+    assert.equal(net.nextHeight, 81);
+    assert.equal(net.stage, "s1");
+    assert.equal(net.token.assetId, sdk.AssetId.ROOT);
+    assert.equal(net.token.decimals, 8);
+    assert.equal(net.rules.height, 81);
+    assert.equal(net.rules.memo.maxBytes, 255);
+    assert.equal(net.rules.transfer.maxRecipients, 256);
+    assert.equal(net.economics.seats, 53);
+    assert.equal(net.economics.blockTimeSeconds, 8);
+    assert.equal(net.capabilities.has("transfer"), true);
+    assert.equal(net.capabilities.has("finality"), false);
+    assert.equal(net.configuration.pool.maxTransactionsPerRequest, 40);
+    assert.equal(net.configuration.pool.maxTransactionBytes, 2_000_000);
+    assert.equal(net.configuration.poolFees.minFeePool, 6173n);
+    assert.deepEqual(net.configuration.poolFees.addonBytes[0], { kind: "other", typeGroup: 1, typeId: 0, bytes: 99n });
+    assert.deepEqual(
+      net.configuration.poolFees.addonBytes.find((entry) => entry.kind === "transfer"),
+      { kind: "transfer", bytes: 85n },
+    );
+
+    // A pinned profile connects again; another chain is refused.
+    const again = await sdk.connect(net.profile, { ...node.options, rateLimit: false });
+    assert.equal(again.profile.chain.nethash, NETHASH);
+    await assert.rejects(
+      sdk.connect(devnet(node.relay, { nethash: "ab".repeat(32) }), { ...node.options, rateLimit: false }),
+      sdk.NetworkMismatch,
+    );
+    const moved = JSON.parse((await fixture("node-configuration")).body);
+    moved.data.nethash = "cd".repeat(32);
+    await assert.rejects(
+      connected({ "GET /node/configuration": json(200, moved) }),
+      (error) => error instanceof sdk.NetworkMismatch && error.details.actual === "cd".repeat(32),
+    );
+    assert.equal((await net.node.configuration()).seats, 53);
+
+    // The height follows every answer's X-Block-Height, so the rules follow the chain.
+    await net.transactions.get(TWO_RECIPIENTS);
+    assert.equal(net.height, 82n);
+    assert.equal(net.rules.height, 83);
+  });
+
+  test("the economics are computed when they are read, not with the rules", async () => {
+    // The plugin computes its rules and economics in Rust; this is the WebAssembly entry's.
+    if (!env.wasm) {
+      return;
+    }
+    const { net } = await connected();
+    let computed = 0;
+    const economics = net.chain.economics.bind(net.chain);
+    net.chain.economics = (height) => {
+      computed += 1;
+      return economics(height);
+    };
+    assert.equal(net.rules.height, 81);
+    await net.transactions.get(TWO_RECIPIENTS);
+    assert.equal(net.rules.height, 83);
+    assert.equal(computed, 0);
+    assert.equal(net.economics.seats, 53);
+    assert.equal(net.economics.seats, 53);
+    assert.equal(computed, 1);
+  });
+
+  test("connect refuses what it cannot use", async () => {
+    const node = await env.node();
+    const later = { ...devnet(node.relay), id: "idDevnet", backend: "iceroot", keyScheme: "slip10-mldsa65" };
+    await assert.rejects(sdk.connect(later, node.options), sdk.UnsupportedOnNetwork);
+    const refused = [
+      { timeoutMs: 0 },
+      { timeoutMs: Number.NaN },
+      { rateLimit: { requests: 0, windowMs: 1 } },
+      { rateLimit: { requests: 1, windowMs: -1 } },
+      // Numbers past what a timer keeps (2^31 - 1 ms) or the request budget counts (2^32 - 1).
+      { timeoutMs: 2 ** 31 },
+      { timeoutMs: 1e20 },
+      { rateLimit: { requests: 2 ** 32, windowMs: 1_000 } },
+      { rateLimit: { requests: 1, windowMs: 2 ** 31 } },
+      // Headers HTTP does not allow, or a value that is not text.
+      { headers: { "x-count": 5 } },
+      { headers: { "bad name": "value" } },
+    ];
+    for (const options of refused) {
+      await assert.rejects(sdk.connect(devnet(node.relay), { ...node.options, ...options }), sdk.InvalidArgument, JSON.stringify(options));
+    }
+    // A header value HTTP does not allow is refused without a trace of it.
+    await assert.rejects(sdk.connect(devnet(node.relay), { ...node.options, headers: { "x-api-key": "s3cret\nvalue" } }), (error) => {
+      assert.ok(error instanceof sdk.InvalidArgument, String(error));
+      assert.ok(error.message.includes("x-api-key"), error.message);
+      assert.ok(!JSON.stringify([error.message, error.details]).includes("s3cret"), error.message);
+      return true;
+    });
+    assert.equal((await node.requests()).length, 0, "nothing was sent");
+    // The largest values are accepted.
+    const largest = await sdk.connect(devnet(node.relay), {
+      ...node.options,
+      timeoutMs: 2 ** 31 - 1,
+      rateLimit: { requests: 2 ** 32 - 1, windowMs: 2 ** 31 - 1 },
+    });
+    assert.equal(largest.height, 80n);
+    await assert.rejects(
+      sdk.connect(sdk.profiles.devnet({ relays: ["http://user:secret@127.0.0.1:4003/api"] }), node.options),
+      sdk.InvalidRequest,
+    );
+    if (env.wasm) {
+      // The default transport is the global fetch.
+      const saved = globalThis.fetch;
+      globalThis.fetch = node.options.transport;
+      try {
+        const net = await sdk.connect(devnet(node.relay), { rateLimit: false });
+        assert.equal(net.height, 80n);
+      } finally {
+        globalThis.fetch = saved;
+      }
+    }
+  });
+
+  test("a node configuration's block time must be 1 to 600 seconds", async () => {
+    const configuration = JSON.parse((await fixture("node-configuration")).body);
+    for (const blockTime of [0, 601, 2_000_000, 4_294_967_295]) {
+      const changed = structuredClone(configuration);
+      changed.data.constants.blockTime = blockTime;
+      await assert.rejects(connected({ "GET /node/configuration": json(200, changed) }), (error) => {
+        assert.ok(error instanceof sdk.BadResponse, `${blockTime}: ${error}`);
+        assert.equal(error.details.reason, "block-time");
+        return true;
+      });
+    }
+    const slow = structuredClone(configuration);
+    slow.data.constants.blockTime = 600;
+    const { net } = await connected({ "GET /node/configuration": json(200, slow) });
+    assert.equal(net.configuration.blockTime, 600);
+  });
+
+  test("accounts, histories and transactions are typed records", async () => {
+    const { net, node } = await connected();
+
+    const genesis = await net.accounts.get(GENESIS_1);
+    assert.equal(genesis.address, GENESIS_1);
+    assert.equal(typeof genesis.nonce, "bigint");
+    assert.equal(genesis.balances.length, 1);
+    assert.equal(genesis.balances[0].asset, sdk.AssetId.ROOT);
+    assert.equal(sdk.balanceOf(genesis), genesis.balances[0].amount);
+    assert.equal(sdk.balanceOf(genesis, "ab".repeat(32)), 0n);
+    const second = await net.accounts.get(await sdk.Address.parse(SECOND_KEY.address, net));
+    assert.equal(second.secondPublicKey, "0318b677beadb87f35e29150a9bfdb20e1bb934bd70f1208383f4bff7ad6be5d67");
+    assert.deepEqual(second.vote, [{ validator: "genesis_14", basisPoints: 10_000 }]);
+    assert.equal("validatorName" in second, false);
+    const cold = await net.accounts.get("dW84xVtbupBGDKm73pewS4hqhDqcJoyhzv");
+    assert.equal(cold.nonce, 0n);
+    assert.equal("publicKey" in cold, false);
+    await assert.rejects(net.accounts.get("nobody-at-all"), (error) => error instanceof sdk.Refused && error.details.status === 422);
+
+    const history = await net.history.forAccount(TEAM, { direction: "sent", page: 1, limit: 10 });
+    const sent = await last(node);
+    assert.equal(sent.path, `/wallets/${TEAM}/transactions/sent`);
+    assert.equal(sent.query.get("page"), "1");
+    assert.equal(sent.query.get("limit"), "10");
+    assert.equal(sent.query.get("orderBy"), "timestamp:desc");
+    assert.equal(typeof history.total, "bigint");
+    assert.equal(typeof history.hasNext, "boolean");
+    assert.ok(history.items.length > 0);
+    for (const record of history.items) {
+      assert.ok(["sent", "to-self"].includes(record.direction), record.direction);
+      assert.equal(typeof record.fee, "bigint");
+    }
+    const votes = await net.history.votes("dTe1ruBESG2r63u3VCLrMpTcx18PSurKJJ");
+    assert.ok(votes.items.every((record) => record.details.kind === "vote"));
+
+    const transfer = await net.transactions.get(TWO_RECIPIENTS);
+    assert.equal(transfer.id, TWO_RECIPIENTS);
+    assert.equal(transfer.status, "confirmed");
+    assert.equal(transfer.block.height, 82n);
+    assert.equal(transfer.block.confirmations, 1n);
+    assert.equal(transfer.block.time.unix, 1790484455n);
+    assert.equal(transfer.details.kind, "transfer");
+    assert.deepEqual(transfer.details.recipients, [
+      { address: GENESIS_1, amount: 1_000_000_000n },
+      { address: "dMVgdVMdEWR2rVH6RRgXqheywVTzbgLNyG", amount: 2_000_000_000n },
+    ]);
+    assert.equal(transfer.nonce, 1n);
+    assert.equal(transfer.burnedFee, 1_800_000n);
+    assert.equal(transfer.memo, "fixture: two recipients");
+    assert.equal("direction" in transfer, false);
+
+    const pending = await net.transactions.pending(TWO_RECIPIENTS);
+    assert.equal(pending.status, "pending");
+    assert.equal("block" in pending, false);
+    const missing = "00".repeat(32);
+    assert.equal(await net.transactions.get(missing), null);
+    assert.deepEqual(
+      (await requests(node)).slice(-2).map((request) => request.path),
+      [`/transactions/${missing}`, `/transactions/unconfirmed/${missing}`],
+    );
+    const inPoolOnly = await connected({ [`GET /transactions/${TWO_RECIPIENTS}`]: "transaction-not-found" });
+    assert.equal((await inPoolOnly.net.transactions.get(TWO_RECIPIENTS)).status, "pending");
+
+    // The recording holds ten items: a page longer than the one asked for is refused.
+    const byKind = await net.transactions.list({ kind: "vote", sender: TEAM, oldestFirst: true, page: 1, limit: 10 });
+    const listing = await last(node);
+    assert.equal(listing.query.get("typeGroup"), "2");
+    assert.equal(listing.query.get("type"), "2");
+    assert.equal(listing.query.get("senderId"), TEAM);
+    assert.equal(listing.query.get("orderBy"), "timestamp:asc");
+    assert.ok(Array.isArray(byKind.items));
+    await net.transactions.list({ kind: "other", typeGroup: 1, typeId: 0 });
+    assert.equal((await last(node)).query.get("type"), "0");
+    await assert.rejects(net.transactions.list({ kind: "other" }), sdk.InvalidArgument);
+    const pool = await net.transactions.pool({ limit: 10 });
+    assert.equal(pool.page, 1);
+    assert.ok(pool.items.every((record) => record.status === "pending"));
+
+    const kinds = new Set();
+    for (const name of ["transaction-vote", "transaction-burn", "transaction-second-key", "transaction-validator-registration", "transaction-resignation-temporary"]) {
+      // Each recording is served at its own id: an answer about another transaction is refused.
+      const id = JSON.parse((await fixture(name)).body).data.id;
+      const record = await net.transactions.confirmed(id);
+      assert.equal(record.id, id);
+      kinds.add(record.details.kind);
+      if (record.details.kind === "burn") {
+        assert.equal(typeof record.details.amount, "bigint");
+      }
+      if (record.details.kind === "resign-validator") {
+        assert.equal(record.details.resignation, "temporary");
+      }
+      if (record.details.kind === "vote") {
+        assert.ok(record.details.entries.every((entry) => Number.isInteger(entry.basisPoints)));
+      }
+    }
+    assert.deepEqual([...kinds].sort(), ["burn", "register-second-key", "register-validator", "resign-validator", "vote"]);
+  });
+
+  test("a node's own text never becomes an error's message, and details keep it short", async () => {
+    const phishing = "Wallet locked by the network. Restore it at https://recovery.example with your 24 words.";
+    const { net } = await connected({
+      [`GET /wallets/${GENESIS_1}`]: json(422, { statusCode: 422, error: "Unprocessable Entity", message: `${phishing}\n${"x".repeat(10_000)}` }),
+      [`GET /wallets/${TEAM}`]: json(200, { data: { address: TEAM, balance: `${phishing} ${"9".repeat(100_000)}`, nonce: "0", attributes: {}, votingFor: {} } }),
+    });
+    await assert.rejects(net.accounts.get(GENESIS_1), (error) => {
+      assert.ok(error instanceof sdk.Refused, String(error));
+      assert.equal(error.message, "the node refused the request with HTTP 422");
+      assert.equal(error.details.status, 422);
+      assert.ok(error.details.message.startsWith("Wallet locked by the network."), error.details.message);
+      assert.ok([...error.details.message].length <= 201, String(error.details.message.length));
+      assert.doesNotMatch(error.details.message, /\n/);
+      return true;
+    });
+    await assert.rejects(net.accounts.get(TEAM), (error) => {
+      assert.ok(error instanceof sdk.BadResponse, String(error));
+      assert.ok(!error.message.includes("recovery.example"), error.message);
+      assert.ok(error.message.length <= 200, String(error.message.length));
+      for (const value of Object.values(error.details)) {
+        assert.ok(typeof value !== "string" || [...value].length <= 501, String(value.length));
+      }
+      return true;
+    });
+  });
+
+  test("blocks, validators, rounds, names, fees and supply", async () => {
+    const NETHASH = JSON.parse((await fixture("node-configuration")).body).data.nethash;
+    const { net, node } = await connected();
+
+    const latest = await net.blocks.latest();
+    assert.equal(typeof latest.height, "bigint");
+    assert.equal(typeof latest.reward, "bigint");
+    assert.ok(Array.isArray(latest.donations));
+    const genesis = await net.blocks.genesis();
+    assert.equal(genesis.height, 1n);
+    assert.equal("previous" in genesis, false);
+    const block = await net.blocks.get(82);
+    assert.equal(block.height, 82n);
+    assert.equal((await last(node)).path, "/blocks/82");
+    await net.blocks.get(82n);
+    assert.equal((await last(node)).path, "/blocks/82");
+    const byId = await net.blocks.get(block.id);
+    assert.equal(byId.id, block.id);
+    assert.equal(await net.blocks.get(99_999_999), null);
+    const transactions = await net.blocks.transactions(block.id, { limit: 10 });
+    assert.ok(transactions.items.length > 0);
+    const missed = await net.blocks.missed({ limit: 10 });
+    for (const slot of missed.items) {
+      assert.equal(typeof slot.height, "bigint");
+      assert.equal(typeof slot.validator, "string");
+    }
+    const blocks = await net.blocks.list({ limit: 5 });
+    assert.equal(blocks.items.length, 5);
+
+    const validators = await net.validators.list();
+    const listed = await last(node);
+    assert.equal(listed.query.get("page"), "1");
+    assert.equal(listed.query.get("limit"), "100");
+    assert.ok(validators.items.length > 0);
+    const first = validators.items[0];
+    assert.equal(first.rank, 1);
+    assert.equal(first.status, "active");
+    assert.equal(typeof first.voteWeight, "bigint");
+    assert.equal(typeof first.voters, "bigint");
+    assert.equal(typeof first.production.produced, "bigint");
+    assert.equal(typeof first.earnings.total, "bigint");
+    assert.ok(Number.isInteger(first.voteShareBasisPoints));
+    const one = await net.validators.get("genesis_5");
+    assert.equal(one.name, "genesis_5");
+    assert.equal(await net.validators.get("no_such_validator"), null);
+    const resigned = await net.validators.get("genesis_53");
+    assert.equal(resigned.status, "resigned-temporary");
+    assert.equal(resigned.rank, 4, "the node keeps ranking a temporarily resigned validator");
+    const unranked = await connected({ "GET /delegates/genesis_5": "delegate-unranked" });
+    assert.equal("rank" in (await unranked.net.validators.get("genesis_5")), false);
+    const voters = await net.validators.voters("genesis_15", { limit: 10 });
+    assert.ok(voters.items.every((voter) => voter.vote.some((entry) => entry.validator === "genesis_15")));
+    const produced = await net.validators.blocks("genesis_5", { limit: 3 });
+    assert.ok(produced.items.every((each) => each.producerName === "genesis_5"));
+    await net.validators.missed("genesis_5", { limit: 10 });
+    assert.equal((await last(node)).path, "/delegates/genesis_5/blocks/missed");
+
+    const round = await net.rounds.validators(1);
+    assert.equal(round.length, 53);
+    assert.equal(typeof round[0].voteWeight, "bigint");
+    await assert.rejects(async () => net.rounds.validators(0), sdk.InvalidArgument);
+
+    const name = await net.names.resolve("genesis_5");
+    assert.deepEqual(Object.keys(name), ["name", "address", "publicKey"]);
+    assert.equal(await net.names.resolve("no_such_validator"), null);
+
+    const fees = await net.fees.statistics();
+    const transfer = fees.entries.find((entry) => entry.kind === "transfer");
+    assert.equal(typeof transfer.min, "bigint");
+    await net.fees.statistics({ days: 30 });
+    assert.equal((await last(node)).query.get("days"), "30");
+    await assert.rejects(net.fees.statistics({ days: 31 }), sdk.InvalidRequest);
+
+    const supply = await net.economics.supply();
+    assert.equal(typeof supply.supply, "bigint");
+    assert.equal(typeof supply.burned.total, "bigint");
+    const status = await net.node.status();
+    assert.equal(status.height, 80n);
+    assert.equal(status.synced, true);
+    const crypto = await net.node.cryptoConfiguration();
+    assert.equal(crypto.nethash, NETHASH);
+    assert.equal(JSON.parse(crypto.genesisBlockJson).height, 1);
+  });
+
+  test("the transport sends the SDK's and the app's headers to the relay's base path", async () => {
+    const { net, node } = await connected({}, { headers: { authorization: "Bearer devnet-token" } });
+    await net.accounts.get(GENESIS_1);
+    const request = await last(node);
+    assert.equal(request.url, `${node.relay}/wallets/${GENESIS_1}`);
+    assert.equal(request.headers.authorization, "Bearer devnet-token");
+    assert.equal(request.headers.accept, "application/json");
+  });
+
+  test("relays are tried in order, and an unavailable network is an error", async () => {
+    const relays = await env.relays();
+    const profile = sdk.profiles.devnet({ relays: [relays.down, relays.busy, relays.working] });
+    const net = await sdk.connect(profile, { ...relays.options, rateLimit: false });
+    const tried = await relays.tried();
+    if (tried !== undefined) {
+      assert.deepEqual(tried.slice(0, 3), ["down.example", "busy.example", "127.0.0.1:4003"]);
+    } else {
+      // Over HTTP: the busy relay was asked first and refused, the working one answered.
+      assert.ok((await relays.busyRequests()) >= 1);
+    }
+    assert.equal(net.height, 80n);
+
+    const nowhere = sdk.profiles.devnet({ relays: [relays.down] });
+    await assert.rejects(sdk.connect(nowhere, { ...relays.options, rateLimit: false }), (error) => {
+      assert.ok(error instanceof sdk.NodeUnavailable);
+      if (env.wasm) {
+        assert.ok(error.cause instanceof TypeError);
+      }
+      return true;
+    });
+    const busy = sdk.profiles.devnet({ relays: [relays.busy] });
+    await assert.rejects(
+      sdk.connect(busy, { ...relays.options, rateLimit: false }),
+      (error) => error instanceof sdk.Refused && error.details.status === 503,
+    );
+
+    const silent = await env.node({ "*": { behavior: "hang" } });
+    const started = Date.now();
+    await assert.rejects(sdk.connect(devnet(silent.relay), { ...silent.options, timeoutMs: 50 }), sdk.Timeout);
+    assert.ok(Date.now() - started < 2_000);
+  });
+
+  test("a relay is asked for its chain's identity before its first answer is used", async () => {
+    // The plugin's requests are made in Rust; this is the WebAssembly entry's transport.
+    if (!env.wasm) {
+      return;
+    }
+    const status = JSON.parse((await fixture("node-status")).body);
+    const other = JSON.parse((await fixture("node-configuration")).body);
+    other.data.nethash = "cd".repeat(32);
+    const primary = await env.node();
+    const hosts = {
+      "primary.example": primary,
+      // Serves another chain: its identity differs, and its height is far ahead.
+      "other.example": await env.node({
+        "GET /node/configuration": json(200, other),
+        "GET /node/status": json(200, { ...status, data: { ...status.data, now: 5000 } }, { "x-block-height": "5000" }),
+      }),
+      // Serves the same chain.
+      "same.example": await env.node(),
+    };
+    let primaryDown = false;
+    const transport = async (url, init) => {
+      const host = new URL(url).host;
+      if (host === "primary.example" && primaryDown) {
+        throw new TypeError("fetch failed");
+      }
+      return hosts[host].options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+    };
+    const profile = (second) => sdk.profiles.devnet({ relays: ["http://primary.example/api", `http://${second}/api`] });
+
+    primaryDown = false;
+    const mixed = await sdk.connect(profile("other.example"), { transport, rateLimit: false });
+    assert.equal(mixed.height, 80n);
+    primaryDown = true;
+    await assert.rejects(mixed.node.status(), sdk.NetworkMismatch);
+    await assert.rejects(mixed.accounts.get(GENESIS_1), sdk.NetworkMismatch);
+    assert.equal(mixed.height, 80n);
+    // The relay of the other chain was asked for its identity once, and never for anything else.
+    const asked = (await hosts["other.example"].requests()).map((request) => request.path);
+    assert.deepEqual(asked, ["/node/configuration"]);
+
+    primaryDown = false;
+    const same = await sdk.connect(profile("same.example"), { transport, rateLimit: false });
+    primaryDown = true;
+    assert.equal((await same.node.status()).height, 80n);
+    assert.deepEqual(
+      (await hosts["same.example"].requests()).map((request) => request.path),
+      ["/node/configuration", "/node/status"],
+    );
+  });
+
+  test("a relay that answers with a redirect is skipped, and the redirect is never followed", async () => {
+    const relays = await env.relays();
+    const net = await sdk.connect(sdk.profiles.devnet({ relays: [relays.moved, relays.working] }), { ...relays.options, rateLimit: false });
+    assert.equal(net.height, 80n);
+    assert.ok((await relays.movedRequests()) >= 1);
+    const only = sdk.profiles.devnet({ relays: [relays.moved] });
+    await assert.rejects(sdk.connect(only, { ...relays.options, rateLimit: false }), (error) => {
+      assert.ok(error instanceof sdk.NodeUnavailable, String(error));
+      assert.match(error.message, /redirect/);
+      return true;
+    });
+    // The redirect's target was never asked, and the transport was told not to follow.
+    assert.equal(await relays.targetRequests(), 0);
+    const modes = await relays.redirectModes();
+    if (modes !== undefined) {
+      assert.ok(modes.length >= 2 && modes.every((mode) => mode === "manual/0"), JSON.stringify(modes));
+    }
+  });
+
+  test("an answer larger than 8 MiB is refused before it is decoded, and the next relay is asked", async () => {
+    // The plugin's requests are made in Rust; this is the WebAssembly entry's transport.
+    if (!env.wasm) {
+      return;
+    }
+    const node = await env.node();
+    const LIMIT = 8 * 1024 * 1024;
+    const CHUNK = 64 * 1024;
+    let pulled = 0;
+    let iterated = 0;
+    let closed = 0;
+    // How many times a response without a body to read in chunks was read whole, by host.
+    const wholeReads = {};
+    const whole = (host, headers, size) => ({
+      type: "basic",
+      status: 200,
+      headers: new Headers(headers),
+      body: null,
+      arrayBuffer: async () => {
+        wholeReads[host] = (wholeReads[host] ?? 0) + 1;
+        return new ArrayBuffer(size);
+      },
+    });
+    const answers = {
+      // Declares its length.
+      "declared.example": () => new Response(null, { status: 200, headers: { "content-length": String(8_000_000_000) } }),
+      // Declares nothing and never ends.
+      "endless.example": () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              pulled += 1;
+              controller.enqueue(new Uint8Array(CHUNK).fill(0x20));
+            },
+          }),
+          { status: 200 },
+        ),
+      // Never ends either, as an async iterable of bytes that is no web stream (as a Node.js
+      // stream is): it is read in chunks too, never whole.
+      "iterable.example": () => ({
+        type: "basic",
+        status: 200,
+        headers: new Headers(),
+        body: {
+          [Symbol.asyncIterator]() {
+            return {
+              next: async () => {
+                iterated += 1;
+                return { done: false, value: new Uint8Array(CHUNK).fill(0x20) };
+              },
+              return: async () => {
+                closed += 1;
+                return { done: true, value: undefined };
+              },
+            };
+          },
+        },
+        arrayBuffer: async () => {
+          wholeReads["iterable.example"] = (wholeReads["iterable.example"] ?? 0) + 1;
+          return new ArrayBuffer(LIMIT + 1);
+        },
+      }),
+      // No stream to read, and a declared length over the limit: refused before it is read, also
+      // when a transport joined the header's values.
+      "whole-declared.example": () => whole("whole-declared.example", { "content-length": String(LIMIT + 1) }, LIMIT + 1),
+      "whole-joined.example": () =>
+        whole("whole-joined.example", { "content-length": `${8_000_000_000}, ${8_000_000_000}` }, LIMIT + 1),
+      // A whole body just over the limit, with no stream to read and no length: read, then refused.
+      "whole.example": () => whole("whole.example", {}, LIMIT + 1),
+    };
+    const transport = async (url, init) => {
+      const host = new URL(url).host;
+      const path = new URL(url).pathname;
+      if (host in answers && path === "/api/node/status") {
+        return answers[host]();
+      }
+      return node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+    };
+    for (const host of Object.keys(answers)) {
+      const profile = sdk.profiles.devnet({ relays: [`http://${host}/api`] });
+      await assert.rejects(sdk.connect(profile, { transport, rateLimit: false }), (error) => {
+        assert.ok(error instanceof sdk.BadResponse, `${host}: ${error}`);
+        assert.equal(error.details.limit, LIMIT);
+        return true;
+      });
+    }
+    // The endless bodies were read no further than the limit, and the iteration was ended.
+    assert.ok(pulled <= LIMIT / CHUNK + 2, String(pulled));
+    assert.ok(iterated > 0 && iterated <= LIMIT / CHUNK + 1, String(iterated));
+    assert.equal(closed, 1);
+    // Only the body that declared nothing and had no chunks to read was read whole.
+    assert.deepEqual(wholeReads, { "whole.example": 1 });
+
+    // An answer in chunks of an async iterable is read as it is sent.
+    const chunked = async (url, init) => {
+      const response = await node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      return {
+        type: "basic",
+        status: response.status,
+        headers: response.headers,
+        body: {
+          async *[Symbol.asyncIterator]() {
+            for (let offset = 0; offset < bytes.length; offset += 7) {
+              yield bytes.slice(offset, offset + 7);
+            }
+          },
+        },
+        arrayBuffer: async () => {
+          throw new Error("read whole");
+        },
+      };
+    };
+    const inChunks = await sdk.connect(sdk.profiles.devnet({ relays: ["http://chunks.example/api"] }), {
+      transport: chunked,
+      rateLimit: false,
+    });
+    assert.equal(inChunks.height, 80n);
+    assert.equal((await inChunks.node.status()).height, 80n);
+
+    // With another relay listed, the answer comes from it.
+    const both = sdk.profiles.devnet({ relays: ["http://endless.example/api", node.relay] });
+    const net = await sdk.connect(both, { transport, rateLimit: false });
+    assert.equal(net.height, 80n);
+  });
+
+  test("the request budget spaces requests, and HTTP 429 is retried after the backoff", async () => {
+    const { net } = await connected({}, { rateLimit: { requests: 3, windowMs: 400 } });
+    // connect spent the three requests of the window; the next one waits for it to pass.
+    const started = Date.now();
+    await net.node.status();
+    assert.ok(Date.now() - started >= 250, `${Date.now() - started} ms`);
+
+    const { net: busy, node } = await connected();
+    await node.route("GET /node/status", { sequence: ["rate-limited", "node-status"] });
+    const before = (await node.requests()).length;
+    const retried = Date.now();
+    await busy.node.status();
+    assert.equal((await node.requests()).length - before, 2);
+    assert.ok(Date.now() - retried >= 1_900, "the first retry waits 2 s");
+
+    const always = await connected({ "GET /blocks/last": "rate-limited" });
+    await assert.rejects(always.net.blocks.latest(), sdk.RateLimited);
+  });
+
+  test("a Retry-After longer than a minute, or retries spent, move on to the next relay", async () => {
+    // The plugin's requests are made in Rust; this is the WebAssembly entry's transport.
+    if (!env.wasm) {
+      return;
+    }
+    const node = await env.node();
+    let limited = 0;
+    const transport = async (url, init) => {
+      if (url.startsWith("http://limited.example")) {
+        limited += 1;
+        return new Response(JSON.stringify({ statusCode: 429, error: "Too Many Requests", message: "slow down" }), {
+          status: 429,
+          headers: { "retry-after": "3000000000" },
+        });
+      }
+      return node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+    };
+    const both = sdk.profiles.devnet({ relays: ["http://limited.example/api", node.relay] });
+    for (const rateLimit of [undefined, false]) {
+      const started = Date.now();
+      const net = await sdk.connect(both, { transport, ...(rateLimit === undefined ? {} : { rateLimit }) });
+      assert.equal(net.height, 80n);
+      // Later requests are not held back either.
+      assert.equal((await net.node.status()).height, 80n);
+      assert.ok(Date.now() - started < 2_000, `${Date.now() - started} ms`);
+    }
+    const alone = sdk.profiles.devnet({ relays: ["http://limited.example/api"] });
+    const started = Date.now();
+    await assert.rejects(sdk.connect(alone, { transport }), (error) => {
+      assert.ok(error instanceof sdk.RateLimited, String(error));
+      assert.equal(error.details.retryAfterSeconds, 3_000_000_000);
+      return true;
+    });
+    assert.ok(Date.now() - started < 2_000, `${Date.now() - started} ms`);
+    // Each request asked the limited relay once and never waited to retry it: four for each
+    // connection and its status read, and the one refused.
+    assert.equal(limited, 9);
+
+    // The transport reads the wait itself, as the Rust client reads it: whole seconds, with an
+    // optional "+", so this one is over a minute too.
+    const plus = async (url, init) =>
+      url.startsWith("http://plus.example")
+        ? new Response(JSON.stringify({ statusCode: 429, error: "Too Many Requests", message: "slow down" }), {
+            status: 429,
+            headers: { "retry-after": " +61 " },
+          })
+        : node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+    const skipped = Date.now();
+    const past = await sdk.connect(sdk.profiles.devnet({ relays: ["http://plus.example/api", node.relay] }), {
+      transport: plus,
+      rateLimit: false,
+    });
+    assert.equal(past.height, 80n);
+    assert.ok(Date.now() - skipped < 2_000, `${Date.now() - skipped} ms`);
+
+    // Around the number, the white space the Rust client's trim ignores is ignored too: a real
+    // answer's header carries only ASCII, but a custom transport's may carry any.
+    let spaced = 0;
+    const spacedTransport = async (url, init) => {
+      if (!url.startsWith("http://spaced.example")) {
+        return node.options.transport(url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003"), init);
+      }
+      spaced += 1;
+      const body = new TextEncoder().encode(JSON.stringify({ statusCode: 429, error: "Too Many Requests", message: "slow down" }));
+      return {
+        type: "basic",
+        status: 429,
+        headers: { get: (name) => (name === "retry-after" ? "\u2000+61\u3000" : null) },
+        body: null,
+        arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+      };
+    };
+    const beyond = Date.now();
+    const spacedNet = await sdk.connect(sdk.profiles.devnet({ relays: ["http://spaced.example/api", node.relay] }), {
+      transport: spacedTransport,
+      rateLimit: false,
+    });
+    assert.equal(spacedNet.height, 80n);
+    assert.ok(Date.now() - beyond < 2_000, `${Date.now() - beyond} ms`);
+    // Asked once for each of the connection's requests, never retried.
+    assert.equal(spaced, 3);
+
+    // A relay that keeps answering 429 is left once its retries are spent (2, 4 and 8 seconds).
+    const busy = await env.node({ "*": "rate-limited" });
+    let busyNow = false;
+    const busyTransport = async (url, init) => {
+      const local = url.replace(/^http:\/\/[^/]+/, "http://127.0.0.1:4003");
+      if (url.startsWith("http://busy.example")) {
+        return (busyNow ? busy : node).options.transport(local, init);
+      }
+      return transport(url, init);
+    };
+    const net = await sdk.connect(sdk.profiles.devnet({ relays: ["http://busy.example/api", node.relay] }), {
+      transport: busyTransport,
+      rateLimit: false,
+    });
+    busyNow = true;
+    const retried = Date.now();
+    assert.equal((await net.node.status()).height, 80n);
+    assert.ok(Date.now() - retried >= 13_000, `${Date.now() - retried} ms`);
+  });
+
+  test("a wait longer than a timer can hold is not cut short", async () => {
+    if (!env.wasm) {
+      return;
+    }
+    const { net, node } = await connected();
+    const before = (await node.requests()).length;
+    const stop = net.watch({}, () => {}, { intervalMs: 3_000_000_000_000 });
+    await sleep(300);
+    stop();
+    // One poll, then a wait of about a century; a timer of more than 2^31 - 1 ms would fire at once.
+    assert.equal((await node.requests()).length - before, 1);
+  });
+
+  test("submissions keep to the pool's limits and report every outcome in order", async () => {
+    const mixed = (await fixture("submit-mixed")).request.transactions;
+    const accepted = (await fixture("submit-accepted")).request.transactions;
+    const { net, node } = await connected({ "POST /transactions": "submit-mixed" });
+    const signed = [];
+    for (const tx of mixed) {
+      signed.push(await sdk.SignedTransaction.fromJson(net.chain, tx, 81));
+    }
+    const report = await net.submitAll(signed);
+    assert.deepEqual(
+      report.outcomes.map((outcome) => [outcome.id, outcome.status, outcome.reason ?? null, outcome.nodeCode ?? null]),
+      [
+        [signed[0].id, "accepted", null, null],
+        [signed[1].id, "rejected", "low-fee", "ERR_LOW_FEE"],
+        [signed[2].id, "rejected", "nonce", "ERR_APPLY"],
+        [signed[3].id, "rejected", "balance", "ERR_APPLY"],
+        [signed[4].id, "rejected", "invalid", "ERR_BAD_DATA"],
+        [signed[5].id, "rejected", "duplicate", "ERR_COOLDOWN"],
+      ],
+    );
+    // The fifth transaction's signature was corrupted when recorded: its id is the one its bytes
+    // give, not the one its JSON claimed, and the node's refusal still maps to it.
+    assert.notEqual(signed[4].id, mixed[4].id);
+    assert.equal(signed[4].verified, false);
+    const posted = await last(node);
+    assert.equal(posted.headers["content-type"], "application/json");
+    assert.deepEqual(JSON.parse(posted.body).transactions.map((tx) => tx.id), signed.map((tx) => tx.id));
+
+    const single = await connected({ "POST /transactions": "submit-accepted" });
+    const outcome = await single.net.submit(await sdk.SignedTransaction.fromJson(single.net.chain, accepted[0], 81));
+    assert.deepEqual(outcome, { id: accepted[0].id, status: "accepted", broadcast: true });
+
+    // A pool that takes two transactions per request and 200 bytes per transaction.
+    const small = JSON.parse((await fixture("node-configuration")).body);
+    small.data.pool.maxTransactionsPerRequest = 2;
+    const sizes = signed.map((tx) => tx.bytes.length);
+    small.data.pool.maxTransactionBytes = Math.max(...sizes.slice(0, 5));
+    const bigger = await sdk.SignedTransaction.fromJson(net.chain, { ...mixed[5], memo: "x".repeat(120) }, 81);
+    assert.ok(bigger.bytes.length > small.data.pool.maxTransactionBytes);
+    const limited = await connected({
+      "GET /node/configuration": json(200, small),
+      "POST /transactions": { behavior: "accept-all" },
+    });
+    const all = [...signed.slice(0, 5), bigger];
+    const result = await limited.net.submitAll(all);
+    const batches = (await requests(limited.node))
+      .filter((request) => request.method === "POST")
+      .map((request) => JSON.parse(request.body).transactions.map((tx) => tx.id));
+    assert.deepEqual(batches.map((batch) => batch.length), [2, 2, 1]);
+    assert.deepEqual(result.outcomes.map((each) => each.id), all.map((tx) => tx.id));
+    assert.ok(result.outcomes.slice(0, 5).every((each) => each.status === "accepted" && each.broadcast === false));
+    assert.equal(result.outcomes[5].status, "rejected");
+    assert.equal(result.outcomes[5].reason, "too-large");
+
+    const refused = await connected({ "POST /transactions": "submit-empty" });
+    await assert.rejects(refused.net.submit(signed[0]), (error) => error instanceof sdk.Refused && error.details.status === 422);
+  });
+
+  test("a node's text in a submission's outcome is escaped and cut to 200 characters", async () => {
+    const mixed = (await fixture("submit-mixed")).request.transactions;
+    const answer = JSON.parse((await fixture("submit-mixed")).body);
+    const [lowFee, , , badData] = answer.data.invalid;
+    answer.errors[lowFee].message = `fee too low\u2003\u00ad\u202e${"x".repeat(300)}`;
+    answer.errors[badData].type = `ERR_BAD_DATA\u3000${"Y".repeat(300)}`;
+    const { net } = await connected({ "POST /transactions": json(200, answer) });
+    const signed = [];
+    for (const tx of mixed) {
+      signed.push(await sdk.SignedTransaction.fromJson(net.chain, tx, 81));
+    }
+    const { outcomes } = await net.submitAll(signed);
+    const low = outcomes.find((outcome) => outcome.id === lowFee);
+    assert.equal(low.status, "rejected");
+    assert.equal(low.message, `fee too low\\u{2003}\\u{ad}\\u{202e}${"x".repeat(167)}…`);
+    const bad = outcomes.find((outcome) => outcome.id === badData);
+    assert.equal(bad.nodeCode, `ERR_BAD_DATA\\u{3000}${"Y".repeat(180)}…`);
+    for (const outcome of outcomes.filter((each) => each.status === "rejected")) {
+      for (const text of [outcome.message, outcome.nodeCode]) {
+        assert.ok([...text].length <= 201, text);
+        assert.doesNotMatch(text, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]|(?! )\p{Zs}/u, text);
+      }
+    }
+  });
+
+  test("waiting follows a transaction from the pool into a block", async () => {
+    const { net } = await connected({
+      [`GET /transactions/${TWO_RECIPIENTS}`]: {
+        sequence: ["transaction-not-found", "transaction-not-found", "transaction-transfer-two-recipients"],
+      },
+    });
+    const progress = [];
+    const result = await net.transactions.wait(TWO_RECIPIENTS, { intervalMs: 5, onProgress: (step) => progress.push(step.state) });
+    assert.equal(result.state, "confirmed");
+    assert.equal(result.confirmations, 1n);
+    assert.equal(result.record.block.height, 82n);
+    assert.deepEqual(progress, ["pending", "pending"]);
+
+    await assert.rejects(
+      net.transactions.wait(TWO_RECIPIENTS, { confirmations: 2, intervalMs: 5, timeoutMs: 40 * slow }),
+      (error) => error instanceof sdk.Timeout && error.details.state === "confirmed",
+    );
+    await assert.rejects(net.transactions.wait(TWO_RECIPIENTS, { until: "final" }), (error) => {
+      assert.ok(error instanceof sdk.UnsupportedOnNetwork);
+      assert.equal(error.capability, "finality");
+      return true;
+    });
+    await assert.rejects(net.transactions.wait(TWO_RECIPIENTS, { confirmations: 0 }), sdk.InvalidArgument);
+
+    const gone = "11".repeat(32);
+    const dropped = await net.transactions.wait(gone, { intervalMs: 5, droppedAfterMs: 20 });
+    assert.deepEqual(dropped, { state: "dropped", id: gone });
+
+    const stuck = await connected({ [`GET /transactions/${TWO_RECIPIENTS}`]: "transaction-not-found" });
+    await assert.rejects(
+      stuck.net.transactions.wait(TWO_RECIPIENTS, { intervalMs: 5, timeoutMs: 30 * slow }),
+      (error) => error instanceof sdk.Timeout && error.details.state === "pending",
+    );
+    const controller = new AbortController();
+    const waiting = stuck.net.transactions.wait(TWO_RECIPIENTS, { intervalMs: 1_000, signal: controller.signal });
+    setTimeout(() => controller.abort(new Error("stop")), 20);
+    await assert.rejects(waiting, /stop/);
+  });
+
+  test("a serialized draft's fee is the floor only when read on the signer's own connection", async () => {
+    const { net } = await connected();
+    const phrase = await sdk.Mnemonic.generate();
+    const account = await net.keys.fromPhrase(phrase, { account: 0, index: 0 });
+    const text = (draft) => new TextDecoder().decode(draft.serialize());
+    const bytes = (form) => new TextEncoder().encode(form);
+    try {
+      const entries = [{ validator: "genesis_5", basisPoints: 10_000 }];
+      const draft = await net.build.vote({ from: account.publicKey, entries });
+      assert.equal(draft.summary.fee.source, "floor");
+      const serialized = draft.serialize();
+
+      // With a profile alone, the floor of the configuration the draft carries is unverified.
+      const alone = await sdk.Draft.deserialize(serialized, net.profile);
+      assert.deepEqual({ ...alone.summary.fee }, { ...draft.summary.fee, source: "unverified" });
+      // So it is with a chain, even the network's: only the network itself is a connection.
+      assert.equal((await sdk.Draft.deserialize(serialized, net.chain)).summary.fee.source, "unverified");
+      assert.equal((await sdk.Draft.deserialize(serialized, alone.chain)).summary.fee.source, "unverified");
+
+      // Read on the connected network, the floor is the floor, under the network's own chain.
+      const onNet = await sdk.Draft.deserialize(serialized, net);
+      assert.deepEqual({ ...onNet.summary.fee }, { ...draft.summary.fee });
+      assert.deepEqual(onNet.summary.lines, draft.summary.lines);
+      assert.equal(onNet.chain, net.chain);
+      assert.equal((await sdk.Draft.deserialize(alone.serialize(), net)).summary.fee.source, "floor");
+      assert.equal((await onNet.sign(account)).matches(draft), true);
+
+      // A draft that carries a fee table of its own is refused there, and unverified elsewhere.
+      const raised = await net.build.vote({ from: account.publicKey, entries, fee: draft.fee * 10n });
+      const tampered = text(raised).replace('"source":"explicit"', '"source":"floor"').replaceAll('"minFee":6173', '"minFee":61730');
+      assert.ok(tampered.includes('"minFee":61730') && tampered.includes('"source":"floor"'));
+      await assert.rejects(
+        async () => sdk.Draft.deserialize(bytes(tampered), net),
+        (error) => error instanceof sdk.NetworkMismatch && error.details.reason === "configuration",
+      );
+      const shown = await sdk.Draft.deserialize(bytes(tampered), net.profile);
+      assert.deepEqual({ ...shown.summary.fee }, { amount: draft.fee * 10n, source: "unverified", floor: draft.fee * 10n });
+    } finally {
+      await account.release();
+    }
+  });
+
+  test("a serialized draft's fee is the floor on a connection only where no fee change lies between the heights", async () => {
+    // The chain lowers its fees at height 100; the node's status says what its height is.
+    const configuration = JSON.parse((await fixture("node-configuration-crypto")).body);
+    const milestones = configuration.data.milestones;
+    const last = milestones.at(-1);
+    milestones.push({ ...last, height: 100, dynamicFees: { ...last.dynamicFees, minFee: 3000 } });
+    const { net, node } = await connected(
+      { "GET /node/configuration/crypto": json(200, configuration), "GET /node/status": { behavior: "watch-status" } },
+      {},
+      { height: 80, failing: false },
+    );
+    const phrase = await sdk.Mnemonic.generate();
+    const account = await net.keys.fromPhrase(phrase, { account: 0, index: 0 });
+    const feeOf = async (draft) => ({ ...(await sdk.Draft.deserialize(draft.serialize(), net)).summary.fee });
+    try {
+      const entries = [{ validator: "genesis_5", basisPoints: 10_000 }];
+      const early = await net.build.vote({ from: account.publicKey, entries });
+      assert.equal(early.height, 81);
+      assert.equal(early.summary.fee.source, "floor");
+      // While the network's next block is before the change, the draft's floor is the network's.
+      assert.deepEqual(await feeOf(early), { ...early.summary.fee });
+
+      // Once the network is past the change, the floor at the draft's height, which its builder
+      // chose, is not the network's: unverified, with that floor kept for display.
+      await node.set({ height: 120 });
+      assert.equal((await net.node.status()).height, 120n);
+      assert.equal(net.nextHeight, 121);
+      assert.deepEqual(await feeOf(early), { ...early.summary.fee, source: "unverified" });
+      // A draft built past the change has the lowered floor, which is the network's.
+      const late = await net.build.vote({ from: account.publicKey, entries });
+      assert.equal(late.height, 121);
+      assert.ok(late.fee < early.fee, `${late.fee} < ${early.fee}`);
+      assert.deepEqual(await feeOf(late), { ...late.summary.fee });
+      // An explicit fee stays explicit.
+      const explicit = await net.build.vote({ from: account.publicKey, entries, fee: early.fee });
+      assert.equal((await feeOf(explicit)).source, "explicit");
+
+      // A draft that names a height past the change, read while the network is before it.
+      await node.set({ height: 80 });
+      assert.equal((await net.node.status()).height, 80n);
+      assert.equal(net.nextHeight, 81);
+      assert.deepEqual(await feeOf(late), { ...late.summary.fee, source: "unverified" });
+      assert.deepEqual(await feeOf(early), { ...early.summary.fee });
+    } finally {
+      await account.release();
+    }
+  });
+
+  test("builders read the sender's nonce, the height and the second key from the node", async () => {
+    const { net, node } = await connected();
+    const phrase = await sdk.Mnemonic.generate();
+    const account = await net.keys.fromPhrase(phrase, { account: 0, index: 0 });
+    const recipient = await net.keys.fromPhrase(phrase, { account: 0, index: 1 });
+    try {
+      const draft = await net.build.transfer({
+        from: account,
+        to: [{ address: recipient.address, amount: await sdk.Amount.parse("1.5", net.token.decimals) }],
+        memo: "invoice 42",
+        fee: 1_000_000n,
+      });
+      assert.equal(draft.nonce, 1n);
+      assert.equal(draft.height, 81);
+      assert.equal(draft.fee, 1_000_000n);
+      assert.equal(draft.summary.from, account.address);
+      assert.equal(draft.summary.fee.source, "explicit");
+      let read = await requests(node);
+      assert.ok(read.some((request) => request.path === `/wallets/${account.address}`));
+      assert.ok(!read.some((request) => request.path === "/node/fees"), "an exact fee needs no statistics");
+      const signed = await draft.sign(account);
+      assert.equal(signed.verified, true);
+
+      // The default fee is the exact floor; the node's fee statistics are never read for it.
+      const vote = await net.build.vote({ from: account.publicKey, entries: [{ validator: "genesis_5", basisPoints: 10_000 }] });
+      assert.equal(net.rules.fees.floorAvailable, true);
+      assert.equal(vote.summary.fee.source, "floor");
+      assert.equal(vote.fee, vote.summary.fee.floor);
+      assert.ok(vote.fee > 0n);
+      const burn = await net.build.burn({ from: account, amount: 200_000_000n, fee: { multiplierBasisPoints: 15_000 } });
+      assert.equal(burn.kind, "burn");
+      const withdraw = await net.build.vote({ from: account, entries: [], fee: 1_000_000n });
+      assert.deepEqual(withdraw.summary.operation, { kind: "vote", entries: [] });
+      const secondKey = await net.build.registerSecondKey({ from: account, secondKey: recipient, fee: 500_000_000n });
+      assert.equal(secondKey.summary.operation.publicKey, recipient.publicKey);
+      const registration = await net.build.registerValidator({ from: account, name: "bergschrund", fee: 2_500_000_000n });
+      assert.equal(registration.kind, "register-validator");
+      const resignation = await net.build.resignValidator({ from: account, resignation: "temporary", fee: 2_500_000_000n });
+      assert.equal(resignation.summary.operation.resignation, "temporary");
+      read = await requests(node);
+      assert.ok(!read.some((request) => request.path === "/node/fees"), "no fee is read from the node's statistics");
+    } finally {
+      await account.release();
+      await recipient.release();
+    }
+
+    // An account with a second key and four transactions: the draft takes nonce 5 and needs both keys.
+    const twoKeys = await net.build.transfer({ from: SECOND_KEY.publicKey, to: [{ address: GENESIS_1, amount: 1n }], fee: 1_000_000n });
+    assert.equal(twoKeys.nonce, 5n);
+    assert.equal(twoKeys.summary.secondSignature, true);
+    // By address: the node knows the key of an account that has sent a transaction...
+    const reads = (await node.requests()).length;
+    const byAddress = await net.build.transfer({ from: SECOND_KEY.address, to: [{ address: GENESIS_1, amount: 1n }], fee: 1_000_000n });
+    assert.equal(byAddress.summary.publicKey, SECOND_KEY.publicKey);
+    assert.equal(byAddress.nonce, 5n);
+    assert.equal((await requests(node, reads)).filter((request) => request.path.startsWith("/wallets/")).length, 1);
+    // ...but not of one that never has.
+    await assert.rejects(
+      net.build.transfer({ from: "dW84xVtbupBGDKm73pewS4hqhDqcJoyhzv", to: [{ address: GENESIS_1, amount: 1n }], fee: 1_000_000n }),
+      sdk.InvalidArgument,
+    );
+    await assert.rejects(net.build.transfer({ from: "not an address", to: [], fee: 1n }), sdk.InvalidAddress);
+
+    // The node reports another key for the sender's address: refused before anything is signed.
+    const other = await connected({
+      [`GET /wallets/${SECOND_KEY.address}`]: json(200, {
+        data: { address: SECOND_KEY.address, publicKey: "03" + "11".repeat(32), balance: "1", nonce: "1", attributes: {}, votingFor: {} },
+      }),
+    });
+    await assert.rejects(
+      other.net.build.transfer({ from: SECOND_KEY.publicKey, to: [{ address: GENESIS_1, amount: 1n }], fee: 1_000_000n }),
+      sdk.WrongKey,
+    );
+    await assert.rejects(net.build.transfer({ from: "02" + "zz".repeat(32), to: [], fee: 1n }), sdk.InvalidAddress);
+
+    const legacy = await net.keys.fromLegacyPassphrase("probe passphrase");
+    const signature = await net.messages.sign(legacy, "hello");
+    assert.equal(await sdk.Messages.verify({ ...signature, message: "hello" }, net), true);
+    await legacy.release();
+  });
+
+  test("the network's message signing refuses a sign-in message, as Messages.sign does", async () => {
+    const { net } = await connected();
+    const account = await net.keys.fromLegacyPassphrase("probe passphrase");
+    try {
+      const challenge = await sdk.SignIn.build(
+        {
+          origin: "https://validators.example",
+          publicKey: account.publicKey,
+          nonce: "ab".repeat(32),
+          issuedAt: new Date("2026-09-27T10:00:00Z"),
+          expiresAt: new Date("2026-09-27T10:05:00Z"),
+        },
+        net,
+      );
+      await assert.rejects(async () => net.messages.sign(account, challenge), (error) => {
+        assert.ok(error instanceof sdk.InvalidArgument, String(error));
+        assert.equal(error.details.reason, "a sign-in message is signed only for the page that asks for it, never as a plain message");
+        return true;
+      });
+    } finally {
+      await account.release();
+    }
+  });
+
+  test("an answer about another account, transaction or name than the one asked for is refused", async () => {
+    const team = JSON.parse((await fixture("wallet-team")).body);
+    const secondKey = JSON.parse((await fixture("wallet-second-key")).body);
+    const transfer = JSON.parse((await fixture("transaction-transfer")).body);
+    const validator = JSON.parse((await fixture("delegate-by-name")).body);
+    const { net } = await connected({
+      // Asked for one account, the node answers with another that holds a key and a nonce.
+      [`GET /wallets/${GENESIS_1}`]: json(200, secondKey),
+      [`GET /wallets/${TEAM}`]: json(200, { ...team, data: { ...team.data, address: GENESIS_1 } }),
+      [`GET /transactions/${TWO_RECIPIENTS}`]: json(200, transfer),
+      [`GET /transactions/unconfirmed/${TWO_RECIPIENTS}`]: json(200, transfer),
+      "GET /delegates/genesis_5": json(200, { ...validator, data: { ...validator.data, address: TEAM } }),
+    });
+    // Refused by the node API client's decoder, or by the reads that check the answer after it.
+    const otherRecord = (error) => {
+      assert.ok(error instanceof sdk.BadResponse, String(error));
+      assert.match(`${error.details.reason} ${error.message}`, /other-record|another (account|transaction)/);
+      return true;
+    };
+    await assert.rejects(net.build.transfer({ from: GENESIS_1, to: [{ address: TEAM, amount: 1n }], fee: 1_000_000n }), otherRecord);
+    await assert.rejects(net.accounts.get(TEAM), otherRecord);
+    await assert.rejects(net.transactions.get(TWO_RECIPIENTS), otherRecord);
+    await assert.rejects(net.transactions.confirmed(TWO_RECIPIENTS), otherRecord);
+    await assert.rejects(net.transactions.pending(TWO_RECIPIENTS), otherRecord);
+    await assert.rejects(net.names.resolve("genesis_5"), (error) => {
+      assert.ok(error instanceof sdk.BadResponse, String(error));
+      assert.equal(error.details.reason, "other-record");
+      return true;
+    });
+
+    // Asked for the sender's account by address, the node answers with that address and another
+    // account's public key: the builder refuses the key before anything is signed.
+    const wrongKey = await connected({ [`GET /wallets/${TEAM}`]: json(200, { ...team, data: { ...team.data, publicKey: SECOND_KEY.publicKey } }) });
+    await assert.rejects(
+      wrongKey.net.build.transfer({ from: TEAM, to: [{ address: GENESIS_1, amount: 1n }], fee: 1_000_000n }),
+      (error) => {
+        assert.ok(error instanceof sdk.WrongKey, String(error));
+        assert.deepEqual({ ...error.details }, { address: TEAM, publicKeyAddress: SECOND_KEY.address });
+        return true;
+      },
+    );
+  });
+
+  test("a watch follows a height that went down, and never reports a transaction twice", async () => {
+    const history = JSON.parse((await fixture("wallet-transactions")).body);
+    const page = (data) => json(200, { ...history, data });
+    const newest = history.data[0];
+    const { net, node } = await connected(
+      {
+        "GET /node/status": { behavior: "watch-status" },
+        // Where the account stands, its two new transactions, the newest left out, then back.
+        [`GET /wallets/${TEAM}/transactions`]: {
+          sequence: [page(history.data.slice(2)), page(history.data), page(history.data.slice(1)), page(history.data)],
+        },
+      },
+      {},
+      { height: 80, failing: false },
+    );
+    const events = [];
+    const blocks = () => events.filter((event) => event.type === "block").length;
+    const until = async (condition) => {
+      for (let i = 0; i < 500 * slow && !condition(); i++) {
+        await sleep(5);
+      }
+      assert.ok(condition(), JSON.stringify(events.map((event) => event.type)));
+    };
+    const statusReads = async () => (await node.requests()).filter((request) => request.path === "/node/status").length;
+    const polls = async (count) => {
+      const from = await statusReads();
+      for (let i = 0; i < 500 * slow && (await statusReads()) < from + count; i++) {
+        await sleep(5);
+      }
+    };
+    const stop = net.watch({ address: TEAM }, (event) => events.push(event), { intervalMs: 10 });
+    try {
+      await polls(2);
+      // One status far ahead of the chain, then the chain's own heights again.
+      await node.set({ height: 1_000_000 });
+      await until(() => blocks() === 1);
+      await node.set({ height: 81 });
+      await polls(3);
+      await node.set({ height: 82 });
+      await until(() => blocks() === 2);
+      await node.set({ height: 83 });
+      await until(() => blocks() === 3);
+      await polls(2);
+      const reported = events.filter((event) => event.type === "transaction").map((event) => event.transaction.id);
+      assert.equal(reported.filter((id) => id === newest.id).length, 1, JSON.stringify(reported));
+    } finally {
+      stop();
+    }
+  });
+
+  test("a node's status corrects a height an answer raised, on either entry", async () => {
+    const latest = JSON.parse((await fixture("blocks-last")).body);
+    const { net, node } = await connected({ "GET /blocks/last": json(200, latest, { "x-block-height": "1000000" }) });
+    assert.equal(net.height, 80n);
+    // An answer that succeeds reports a height far ahead of the node's, as a relay may.
+    await net.blocks.latest();
+    assert.equal(net.height, 1_000_000n);
+    assert.equal(net.rules.height, 1_000_001);
+    // The node's status is its own word: the height and the rules follow it down.
+    assert.equal((await net.node.status()).height, 80n);
+    assert.equal(net.height, 80n);
+    assert.equal(net.nextHeight, 81);
+    assert.equal(net.rules.height, 81);
+    // A later answer's height counts again once it is above the status's, and never below it.
+    await node.route("GET /blocks/last", json(200, latest, { "x-block-height": "79" }));
+    await net.blocks.latest();
+    assert.equal(net.height, 80n);
+    await node.route("GET /blocks/last", json(200, latest, { "x-block-height": "81" }));
+    await net.blocks.latest();
+    assert.equal(net.height, 81n);
+    assert.equal(net.rules.height, 82);
+  });
+
+  test("a height is taken only from a used answer that succeeded, and only as a 64-bit number", async () => {
+    // The plugin keeps its own height; this is the WebAssembly entry's.
+    if (!env.wasm) {
+      return;
+    }
+    const latest = JSON.parse((await fixture("blocks-last")).body);
+    const missing = "00".repeat(32);
+    const { net, node } = await connected({
+      "GET /blocks/last": json(200, latest, { "x-block-height": "99999999999999999999" }),
+      [`GET /transactions/${missing}`]: json(404, { statusCode: 404, error: "Not Found", message: "none" }, { "x-block-height": "5000" }),
+    });
+    await net.blocks.latest();
+    assert.equal(net.height, 80n);
+    assert.equal(await net.transactions.confirmed(missing), null);
+    assert.equal(net.height, 80n);
+    // A height far ahead is followed until the node's own status says otherwise.
+    await node.route("GET /blocks/last", json(200, latest, { "x-block-height": "1000000" }));
+    await net.blocks.latest();
+    assert.equal(net.height, 1_000_000n);
+    await net.node.status();
+    assert.equal(net.height, 80n);
+    assert.equal(net.rules.height, 81);
+  });
+
+  test("watch-only accounts, and watching blocks and an account's transactions", async () => {
+    const history = JSON.parse((await fixture("wallet-transactions")).body);
+    assert.ok(history.data.length >= 3);
+    const { net, node } = await connected(
+      {
+        "GET /node/status": { behavior: "watch-status" },
+        [`GET /wallets/${TEAM}/transactions`]: { behavior: "watch-history" },
+      },
+      {},
+      { height: 80, failing: false },
+    );
+    const historyReads = async () => (await node.requests()).filter((request) => request.path === `/wallets/${TEAM}/transactions`).length;
+
+    const watched = await net.keys.watch(TEAM);
+    assert.deepEqual(watched, { address: TEAM, watchOnly: true });
+    assert.ok(Object.isFrozen(watched));
+    assert.equal((await net.keys.watch(await sdk.Address.parse(GENESIS_1, net))).address, GENESIS_1);
+    await assert.rejects(async () => net.keys.watch("dAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), sdk.InvalidAddress);
+    if (env.wasm) {
+      assert.throws(() => net.watch({ address: "not an address" }, () => {}), sdk.InvalidAddress);
+    } else {
+      // With the plugin the address is checked once the watch starts: an error event ends it.
+      const refused = [];
+      net.watch({ address: "not an address" }, (event) => refused.push(event), { intervalMs: 10 });
+      for (let i = 0; i < 200 && refused.length === 0; i++) {
+        await sleep(5);
+      }
+      assert.equal(refused.length, 1);
+      assert.equal(refused[0].type, "error");
+      assert.ok(refused[0].error instanceof sdk.InvalidAddress);
+    }
+
+    const events = [];
+    const until = async (condition) => {
+      for (let i = 0; i < 500 * slow && !(await condition()); i++) {
+        await sleep(5);
+      }
+      assert.ok(await condition(), JSON.stringify(events.map((event) => event.type)));
+    };
+    const stop = net.watch({ address: watched }, (event) => events.push(event), { intervalMs: 10 });
+
+    // The first poll only notes where the chain and the account stand.
+    await until(async () => (await historyReads()) === 1);
+    await sleep(50 * slow);
+    assert.deepEqual(events, []);
+
+    // The height moves: the latest block, then the account's two new transactions, oldest first.
+    await node.set({ height: 81 });
+    await until(() => events.length === 3);
+    const [block, older, newer] = events;
+    assert.equal(block.type, "block");
+    assert.equal(block.block.id, JSON.parse((await fixture("blocks-last")).body).data.id);
+    assert.deepEqual(
+      [older.type, older.transaction.id, newer.type, newer.transaction.id],
+      ["transaction", history.data[1].id, "transaction", history.data[0].id],
+    );
+    assert.equal(typeof older.transaction.nonce, "bigint");
+
+    // A failing poll is an event, and the watch goes on.
+    await node.set({ failing: true });
+    await until(() => events.length >= 4);
+    assert.equal(events[3].type, "error");
+    assert.ok(events[3].error instanceof sdk.IceRootError, String(events[3].error));
+    await node.set({ failing: false, height: 82 });
+    await until(() => events.some((event, index) => index > 3 && event.type === "block"));
+    assert.equal(events.filter((event) => event.type === "transaction").length, 2, "no transaction is reported twice");
+
+    // Stopped: no more requests.
+    stop();
+    await sleep(30 * slow);
+    const count = (await node.requests()).length;
+    await sleep(60 * slow);
+    assert.equal((await node.requests()).length, count);
+
+    // A signal stops a watch of blocks only, which never reads a history.
+    const controller = new AbortController();
+    const blocks = [];
+    const reads = await historyReads();
+    net.watch({}, (event) => blocks.push(event), { intervalMs: 10, signal: controller.signal });
+    await sleep(40 * slow);
+    await node.set({ height: 83 });
+    await until(() => blocks.length === 1);
+    controller.abort();
+    assert.equal(blocks[0].type, "block");
+    assert.equal(await historyReads(), reads);
+    assert.throws(() => net.watch({}, () => {}, { intervalMs: 0 }), sdk.InvalidArgument);
+
+    // Stopping a watch removes its listener from the caller's signal, which may outlive it.
+    const listeners = new Set();
+    const signal = {
+      aborted: false,
+      addEventListener: (type, listener) => {
+        assert.equal(type, "abort");
+        listeners.add(listener);
+      },
+      removeEventListener: (type, listener) => {
+        assert.equal(type, "abort");
+        listeners.delete(listener);
+      },
+    };
+    const stops = [1, 2, 3].map(() => net.watch({}, () => {}, { intervalMs: 10, signal }));
+    assert.equal(listeners.size, 3);
+    for (const stopOne of stops) {
+      stopOne();
+    }
+    assert.equal(listeners.size, 0);
+    // Aborting the signal stops the watch and removes the listener too.
+    net.watch({}, () => {}, { intervalMs: 10, signal });
+    assert.equal(listeners.size, 1);
+    const [listener] = listeners;
+    listener();
+    assert.equal(listeners.size, 0);
+    // A signal aborted already gets no listener, and the watch reads nothing. The polls the stopped
+    // watches began settle first.
+    await sleep(40 * slow);
+    const before = (await node.requests()).length;
+    net.watch({}, () => {}, { intervalMs: 10, signal: { ...signal, aborted: true } });
+    assert.equal(listeners.size, 0);
+    await sleep(40 * slow);
+    assert.equal((await node.requests()).length, before);
+  });
+}

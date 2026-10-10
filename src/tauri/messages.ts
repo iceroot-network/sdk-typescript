@@ -1,0 +1,77 @@
+/**
+ * Message signatures, made and checked in the plugin.
+ *
+ * @module
+ */
+
+import { toHex } from "../internal/hex.js";
+import { signableMessage, verifiableMessage } from "../internal/hex.js";
+import type { MessageSignature, SignedMessage } from "../messages.js";
+import type { ProfileSource } from "../profiles.js";
+import type { MessageAlgorithm } from "../types.js";
+import { invoke } from "./invoke.js";
+import { keyOf, type Account } from "./keys.js";
+import { profileJson } from "./profiles.js";
+
+export type { MessageSignature, SignedMessage } from "../messages.js";
+
+/** The network name of message signatures on the network of `source`, such as `heartwood-devnet-v90`. */
+export function messageNetworkOf(source: ProfileSource): Promise<string> {
+  return invoke<string>("profile_message_network", { profile: profileJson(source) });
+}
+
+/** The algorithm of message signatures on the network of `source`, such as `secp256k1-bip340-sha256`. */
+export function messageAlgorithmOf(source: ProfileSource): Promise<MessageAlgorithm> {
+  return invoke<MessageAlgorithm>("profile_message_algorithm", { profile: profileJson(source) });
+}
+
+/** Signing and verifying messages. */
+export const Messages = {
+  /**
+   * Signs `message` (text is signed as its UTF-8 bytes) with the key of `account`, in the plugin.
+   * A message given as bytes must be UTF-8 text, which no transaction is, or it is refused with
+   * `InvalidArgument`, and so is text whose first line is an ownership proof's (`IceRoot migration
+   * ownership proof`), before anything reaches the plugin: proofs are made only by
+   * `OwnershipProof.sign` and `OwnershipProof.fromSignature` (see the WebAssembly entry's
+   * `Messages.sign`). The plugin also refuses any text the sign-in parser accepts for some
+   * network, origin, account and time, including a lapsed challenge or another network's, with
+   * `InvalidArgument`. Its `details.reason` is
+   * "a sign-in message is signed only for the page that asks for it, never as a plain message".
+   * A wallet signs a website's sign-in message with `SignIn.sign`.
+   */
+  async sign(account: Account, message: string | Uint8Array): Promise<MessageSignature> {
+    const key = keyOf(account);
+    const bytes = signableMessage(message);
+    const text = await invoke<string>("key_sign_message", { key, message: toHex(bytes) });
+    return Object.freeze(JSON.parse(text) as MessageSignature);
+  },
+
+  /**
+   * Whether `signed` is a valid signature. Resolves to false, never rejects, for a malformed key or
+   * signature or an unknown algorithm, and for a message given as bytes that are not UTF-8 text;
+   * the public key must be a valid key. With `source`, the signature must also name that profile's network.
+   */
+  async verify(signed: SignedMessage, source?: ProfileSource): Promise<boolean> {
+    const bytes = verifiableMessage(signed.message);
+    if (bytes === undefined) {
+      return false;
+    }
+    if (source !== undefined) {
+      let network: string;
+      try {
+        network = await messageNetworkOf(source);
+      } catch {
+        return false;
+      }
+      if (signed.network !== network) {
+        return false;
+      }
+    }
+    return invoke<boolean>("message_verify", {
+      message: toHex(bytes),
+      publicKey: signed.publicKey,
+      signature: signed.signature,
+      algorithm: signed.algorithm,
+    });
+  },
+} as const;
