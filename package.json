@@ -7,6 +7,11 @@
     "type": "git",
     "url": "git+https://github.com/iceroot-network/sdk-typescript.git"
   },
+  "homepage": "https://docs.iceroot.com/developers/sdk",
+  "bugs": {
+    "url": "https://github.com/iceroot-network/sdk-typescript/issues"
+  },
+  "keywords": ["iceroot", "sdk", "typescript", "javascript", "webassembly", "blockchain", "wallet"],
   "type": "module",
   "engines": {
     "node": ">=22"
